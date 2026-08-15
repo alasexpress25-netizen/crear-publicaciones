@@ -84,17 +84,26 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
     setAudioUrlInput(slide.musicUrl || '');
   }, [slide.id, slide.imageSuggestion, slide.image, slide.musicUrl]);
 
-  // Pre-fill Pixabay search when slide changes
+  // Pre-fill Pixabay search when slide changes using Media Director Keywords or Intelligent Fallback
   useEffect(() => {
-    const defaultSearch = (slide.subtag || slide.badge || slide.title || 'business')
+    if (slide.mediaSearchKeywords && slide.mediaSearchKeywords.length > 0) {
+      const bestKeyword = slide.mediaSearchKeywords[0];
+      setSearchQuery(bestKeyword);
+      if (tab === 'pixabay') {
+        handleSearchPixabay(bestKeyword);
+      }
+      return;
+    }
+
+    const defaultSearch = (slide.subtag || slide.badge || slide.title || 'business workspace')
       .replace(/[^\w\s]/gi, ' ')
       .trim()
       .toLowerCase()
       .split(' ')
       .slice(0, 3)
       .join(' ');
-    setSearchQuery(defaultSearch || 'business');
-  }, [slide.id, slide.subtag, slide.badge, slide.title]);
+    setSearchQuery(defaultSearch || 'business workspace');
+  }, [slide.id, slide.mediaSearchKeywords, slide.subtag, slide.badge, slide.title]);
 
   // Save Pixabay Key to localStorage
   const handleSavePixabayKey = (val: string) => {
@@ -403,6 +412,31 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
                   placeholder="Pega tu API Key de Pixabay..."
                   className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-rose-500 font-mono"
                 />
+              </div>
+            )}
+            {/* AI Media Director Suggested Keywords Chips */}
+            {slide.mediaSearchKeywords && slide.mediaSearchKeywords.length > 0 && (
+              <div className="flex items-center gap-1.5 flex-wrap pt-0.5 pb-1">
+                <span className="text-[10px] text-rose-400 font-bold flex items-center gap-1">
+                  <Sparkles className="w-3 h-3" />
+                  <span>Media Director:</span>
+                </span>
+                {slide.mediaSearchKeywords.map((kw, i) => (
+                  <button
+                    key={i}
+                    onClick={() => {
+                      setSearchQuery(kw);
+                      handleSearchPixabay(kw);
+                    }}
+                    className={`text-[10px] px-2 py-0.5 rounded-lg border transition ${
+                      searchQuery === kw
+                        ? 'bg-rose-600 text-white border-rose-500 font-bold shadow-sm'
+                        : 'bg-slate-950 hover:bg-slate-800 text-slate-300 border-slate-800'
+                    }`}
+                  >
+                    {kw}
+                  </button>
+                ))}
               </div>
             )}
           </div>

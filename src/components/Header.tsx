@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Sparkles,
   BookOpen,
@@ -12,7 +12,8 @@ import {
   Share2,
   Tv,
   Users,
-  Database
+  Database,
+  Smartphone
 } from 'lucide-react';
 import { AspectRatio, BrandInfo, MarketingDocument } from '../types';
 
@@ -47,6 +48,38 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenExport,
   onResetCarousel,
 }) => {
+  const [installPrompt, setInstallPrompt] = useState<any>(null);
+  const [isInstalled, setIsInstalled] = useState<boolean>(false);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+      setIsInstalled(true);
+    }
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!installPrompt) {
+      alert('Para instalar en iPhone/iPad: toca el botón "Compartir" en Safari y selecciona "Agregar al inicio". En Android/PC: toca el menú de tres puntos y selecciona "Instalar aplicación".');
+      return;
+    }
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setIsInstalled(true);
+      setInstallPrompt(null);
+    }
+  };
   return (
     <header className="sticky top-0 z-40 w-full bg-slate-950/95 backdrop-blur-md border-b border-slate-800/80 px-3 sm:px-6 py-2.5">
       <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
@@ -166,6 +199,18 @@ export const Header: React.FC<HeaderProps> = ({
             <MessageSquare className="w-3.5 h-3.5 text-slate-400" />
             <span className="hidden md:inline">Copy Post</span>
           </button>
+
+          {/* PWA Install Button (When not yet running in standalone) */}
+          {!isInstalled && (
+            <button
+              onClick={handleInstallClick}
+              className="flex items-center gap-1.5 bg-emerald-950/70 hover:bg-emerald-900 border border-emerald-600/50 text-emerald-300 hover:text-white text-xs font-semibold px-2.5 sm:px-3 py-1.5 rounded-xl transition shadow-sm"
+              title="Instalar como App en Celular o Computadora (PWA)"
+            >
+              <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="hidden lg:inline">Instalar App</span>
+            </button>
+          )}
 
           {/* Export Modal Button */}
           <button

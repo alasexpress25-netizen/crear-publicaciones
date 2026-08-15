@@ -85,6 +85,7 @@ export interface Slide {
   overlayType?: 'gradient' | 'solid' | 'card' | 'cinematic';
   accentColor?: string;
   imageSuggestion?: string;
+  mediaSearchKeywords?: string[]; // Media Director Keywords (English/Spanish) for auto stock photo matching
   textPos?: Record<string, TextPosition>;
   textStyle?: Record<string, TextStyleItem>;
   includeMusic?: boolean;
