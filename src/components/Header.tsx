@@ -13,7 +13,9 @@ import {
   Tv,
   Users,
   Database,
-  Smartphone
+  Smartphone,
+  FolderArchive,
+  Save
 } from 'lucide-react';
 import { AspectRatio, BrandInfo, MarketingDocument } from '../types';
 
@@ -26,6 +28,7 @@ interface HeaderProps {
   selectedClientName?: string;
   selectedClientColor?: string;
   onOpenClientSelector: () => void;
+  onOpenProjects: () => void;
   onOpenKnowledgeBase: () => void;
   onOpenHookLab: () => void;
   onOpenPostCaption: () => void;
@@ -42,6 +45,7 @@ export const Header: React.FC<HeaderProps> = ({
   selectedClientName,
   selectedClientColor,
   onOpenClientSelector,
+  onOpenProjects,
   onOpenKnowledgeBase,
   onOpenHookLab,
   onOpenPostCaption,
@@ -167,6 +171,16 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Strategic Quick Tools */}
         <div className="flex items-center gap-2">
           
+          {/* Projects & Saved Carousels Button */}
+          <button
+            onClick={onOpenProjects}
+            className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700/80 hover:border-indigo-500/60 text-slate-200 text-xs font-bold px-3 py-1.5 rounded-xl transition shadow-sm group"
+            title="Mis Carruseles Guardados / Cargar o Guardar Proyecto"
+          >
+            <FolderArchive className="w-3.5 h-3.5 text-indigo-400 group-hover:scale-110 transition" />
+            <span className="hidden sm:inline">Proyectos</span>
+          </button>
+
           {/* Docs & Training Button */}
           <button
             onClick={onOpenKnowledgeBase}

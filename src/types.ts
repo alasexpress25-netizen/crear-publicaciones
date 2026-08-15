@@ -149,3 +149,18 @@ export interface CarouselGenerationResponse {
   slides: Slide[];
   post?: CarouselPostMeta;
 }
+
+export interface SavedCarouselProject {
+  id: string;
+  title: string;
+  clientName: string;
+  clientId?: string;
+  createdAt: string;
+  updatedAt: string;
+  slides: Slide[];
+  brand: BrandInfo;
+  brief: string;
+  targetAudience: string;
+  postMeta: CarouselPostMeta;
+  aspectRatio: AspectRatio;
+}

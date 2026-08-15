@@ -1,7 +1,7 @@
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -11,6 +11,7 @@ let currentKeyIndex = 0;
 
 function getAI(): GoogleGenAI {
   if (aiClients.length === 0) {
+    // Read single key or comma-separated list of keys, or GEMINI_API_KEY_2, etc.
     const rawKeys = [
       process.env.GEMINI_API_KEY,
       process.env.GEMINI_API_KEY_2,
@@ -18,6 +19,7 @@ function getAI(): GoogleGenAI {
       process.env.GEMINI_API_KEY_BACKUP,
     ].filter(Boolean) as string[];
 
+    // Also support comma-separated keys inside GEMINI_API_KEY
     const allKeys: string[] = [];
     rawKeys.forEach(k => {
       k.split(",").forEach(item => {
@@ -133,21 +135,27 @@ FILOSOFÍA DEL "MARKETING DE CONFIANZA Y PSICOLOGÍA DEL SCROLL":
 
 REGLAS DE FORMATO Y REDACCIÓN PARA CADA DIAPOSITIVA:
 - Brevedad implacable: Esto se lee en pantallas de celular. Textos concisos, de alto impacto.
-- Resaltar ideas clave: Títulos contundentes, subtítulos que despiertan curiosidad y llamadas a la acción naturales.
+- Título (title): 3 a 8 palabras en MAYÚSCULAS o impacto.
+- Subtítulo / Gancho secundario (subtag): 2 a 6 palabras.
+- Cuerpo (body): 1 a 2 frases contundentes (máximo 15 palabras).
+- Insignia (badge): Etiqueta corta opcional (ej: "ERROR COMÚN", "SECRETO", "GUÍA", "ATENCIÓN").
+- Puntos clave (bullets): Opcional para diapositivas de tips/pasos, frases directas de 3 a 6 palabras.
+- Llamado a la acción (cta): Claro, conversacional y motivador.
+- imageSuggestion: Descripción exacta en español de la escena fotográfica o visual para esa diapositiva.
 `;
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json({ limit: "50mb" }));
-  app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+  app.use(express.json({ limit: "25mb" }));
 
+  // Health check
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
-  // 1. Analyze Marketing Sources (Website URL or Raw Copy)
+  // 1. Analyze Marketing Source (URL or Document text)
   app.post("/api/analyze-marketing-source", async (req, res) => {
     try {
       const { url, rawText, documentName } = req.body;
@@ -158,6 +166,7 @@ async function startServer() {
           const fetchRes = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
           if (fetchRes.ok) {
             const html = await fetchRes.text();
+            // Basic extraction of readable text from html
             contextToAnalyze = html
               .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
               .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
@@ -240,42 +249,43 @@ ${targetAudience || "Clientes potenciales que buscan solucionar un problema real
 DOCUMENTOS / CONOCIMIENTO DE MARKETING AGREGADO:
 ${knowledgeBase || "Sin documentos adicionales"}
 
-PARÁMETROS DEL POST:
-- Objetivo principal: ${objective}
-- Tipo de gancho para Slide 1: ${hookType}
-- Idioma de redacción: ${language === "pt" ? "Portugués (pt-BR)" : "Español (es)"}
-- Marca / Firma: "${brand?.name || 'LA VISUAL MK'}" (Web/Usuario: "${brand?.web || 'lavisualmk.com'}")
+OBJETIVO DEL CARRUSEL:
+${objective} (ventas, interacción/comentarios, guardados/tips, autoridad/marca, o alcance)
 
-ESTRUCTURA OBLIGATORIA DE CADA DIAPOSITIVA:
-1. DIAPOSITIVA 1 (EL GANCHO SCROLL-STOPPER):
-   - Tipo de gancho: "${hookType}".
-   - "badge": Etiqueta superior corta y llamativa en MAYÚSCULAS (ej: "ERROR #1", "NO HAGAS ESTO", "SECRETO DE AGENCIA", "CASO REAL").
-   - "subtag": Frase de entrada intrigante (ej: "El problema casi nunca es el precio...", "Si tu servicio es bueno pero nadie te compra...").
-   - "title": FRASE DE ALTO IMPACTO (8-14 palabras).
-   - "cta": Micro-llamada al pie para deslizar (ej: "Desliza para entender por qué 👉", "Pasa a la siguiente si te pasa esto ➡️").
-2. DIAPOSITIVAS INTERMEDIAS (2 a ${slideCount - 1}):
-   - Un solo punto de aprendizaje por diapositiva. No sobrecargar.
-   - "badge": "PASO 01", "EL ERROR", "LA VERDAD", etc.
-   - "title": Idea central o revelación directa.
-   - "body": Explicación masticable de 1 a 2 oraciones.
+TIPO DE GANCHO PRIORITARIO PARA LA DIAPOSITIVA 1:
+${hookType} (pregunta_reflexiva, error_costoso, quiebre_creencia, contraste_antes_despues, analogia, caso_revelado)
+
+NOMBRE DE MARCA: ${brand.name} | WEB: ${brand.web}
+IDIOMA DE REDACCIÓN: ${language === "pt" ? "Portugués de Brasil (pt-BR)" : "Español (es)"}
+
+REQUISITOS CRÍTICOS:
+1. DIAPOSITIVA 1 (EL SCROLL-STOPPER):
+   - Debe frenar el scroll de inmediato.
+   - NADA de "Vendemos esto" ni frases genéricas.
+   - Debe usar preguntas reflexivas que duelan o generen intriga (Ej: "¿Por qué no tienes clientes?", "¿Cometes alguno de estos errores al vender?", "¿Por qué tu competencia cobra el doble?").
+   - Título impactante de 4 a 8 palabras en MAYÚSCULAS.
+2. DIAPOSITIVAS INTERMEDIAS (EL DESARROLLO DEL VALOR / TENSIÓN):
+   - Desarrollan la idea con lógica implacable, datos concretos, errores específicos o pasos accionables.
    - Si corresponde, usar "bullets" con 2 a 3 puntos concisos.
 3. DIAPOSITIVA FINAL (EL CIERRE / CTA):
    - Llamado a la acción inequívoco y natural para ${objective}.
 4. DIRECTOR DE MEDIOS & FONDOS VISUALES (STOCK & IA):
-   - Para CADA diapositiva, provee "mediaSearchKeywords": lista de 2 a 3 palabras clave EN INGLÉS ultra-precisas para buscar fondos fotográficos de stock en Pixabay (ej: ["luxury office", "confident executive", "dark workspace"]).
-   - "imageSuggestion": Prompt detallado en español para dirección de arte.
+   - Para CADA diapositiva, debes actuar como Director de Medios. Provee "mediaSearchKeywords": lista de 2 a 3 palabras clave EN INGLÉS ultra-precisas para buscar fondos fotográficos cinematográficos de stock en Pixabay (ej: ["luxury office", "confident executive", "dark workspace", "financial chart", "minimalist architecture"]).
+   - "imageSuggestion": Prompt detallado en español para dirección de arte o generación de IA.
 5. POST CAPTION & HASHTAGS:
    - Redactar el texto completo para el pie de foto de Instagram/LinkedIn con gancho de lectura, espaciado elegante y llamada a la acción.
-   - Lista de 5-10 hashtags ultra-específicos del nicho (sin el #, en minúsculas).
+   - Lista de 5-10 hashtags ultra-específicos del nicho (sin el caracter #, en minúsculas).
 
-FORMATO JSON ESTRICTO:
+Devuelve EXCLUSIVAMENTE un JSON con esta estructura exacta:
 {
+  "strategySummary": "Explicación de 1 frase del ángulo psicológico utilizado",
+  "hookRationale": "Por qué este gancho de la Diapositiva 1 detiene el scroll",
   "slides": [
     {
-      "slideNumber": 1,
-      "badge": "ERROR CRÍTICO",
-      "subtag": "Lo que casi nadie te dice sobre...",
-      "title": "EL TÍTULO DE IMPACTO EN MAYÚSCULAS",
+      "id": 1,
+      "badge": "ETIQUETA CORTA O VACÍO",
+      "subtag": "Subtítulo de tensión",
+      "title": "TÍTULO GANCHO EN MAYÚSCULAS",
       "body": "Cuerpo de 1 frase concisa o vacío si el título es autosuficiente",
       "cta": "Desliza para ver la verdad 👉",
       "bullets": [],

@@ -11,7 +11,8 @@ import {
   ComparisonData,
   BigStatData,
   QuoteData,
-  CtaFinalData
+  CtaFinalData,
+  SavedCarouselProject
 } from './types';
 import {
   INITIAL_DEFAULT_SLIDES,
@@ -32,6 +33,7 @@ import { HookOptimizerModal } from './components/HookOptimizerModal';
 import { PostCaptionModal } from './components/PostCaptionModal';
 import { ExportModal } from './components/ExportModal';
 import { ClientSelectorModal } from './components/ClientSelectorModal';
+import { ProjectsManagerModal } from './components/ProjectsManagerModal';
 
 const LOCAL_STORAGE_SLIDES_KEY = 'lavisualmk_carousel_slides_v3';
 const LOCAL_STORAGE_BRAND_KEY = 'lavisualmk_carousel_brand_v3';
@@ -125,10 +127,28 @@ export default function App() {
 
   // Modals state
   const [isClientSelectorOpen, setIsClientSelectorOpen] = useState(false);
+  const [isProjectsOpen, setIsProjectsOpen] = useState(false);
   const [isKnowledgeOpen, setIsKnowledgeOpen] = useState(false);
   const [isHookLabOpen, setIsHookLabOpen] = useState(false);
   const [isPostCaptionOpen, setIsPostCaptionOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
+
+  // Load Saved Project Handler
+  const handleLoadSavedProject = (proj: SavedCarouselProject) => {
+    if (proj.slides && proj.slides.length > 0) setSlides(proj.slides);
+    if (proj.brand) setBrand(proj.brand);
+    if (proj.brief) setBrief(proj.brief);
+    if (proj.targetAudience) setTargetAudience(proj.targetAudience);
+    if (proj.postMeta) setPostMeta(proj.postMeta);
+    if (proj.aspectRatio) setAspectRatio(proj.aspectRatio);
+    setCurrentIndex(0);
+  };
+
+  const handleCreateNewBlankProject = () => {
+    setSlides(INITIAL_DEFAULT_SLIDES);
+    setBrief('');
+    setCurrentIndex(0);
+  };
 
   // Sync to LocalStorage
   useEffect(() => {
@@ -498,6 +518,7 @@ export default function App() {
         selectedClientName={selectedClient?.name}
         selectedClientColor={selectedClient?.brand_color}
         onOpenClientSelector={() => setIsClientSelectorOpen(true)}
+        onOpenProjects={() => setIsProjectsOpen(true)}
         onOpenKnowledgeBase={() => setIsKnowledgeOpen(true)}
         onOpenHookLab={() => setIsHookLabOpen(true)}
         onOpenPostCaption={() => setIsPostCaptionOpen(true)}
@@ -539,6 +560,7 @@ export default function App() {
               aspectRatio={aspectRatio}
               onSelectAspect={setAspectRatio}
               brand={brand}
+              onUpdateBrand={handleUpdateBrand}
             />
 
             {/* Main Center + Right Studio Workspace */}
@@ -669,6 +691,21 @@ export default function App() {
         onClose={() => setIsClientSelectorOpen(false)}
         selectedClientId={selectedClient?.id}
         onSelectClient={handleSelectClient}
+        brand={brand}
+        onUpdateBrand={handleUpdateBrand}
+      />
+
+      <ProjectsManagerModal
+        isOpen={isProjectsOpen}
+        onClose={() => setIsProjectsOpen(false)}
+        currentSlides={slides}
+        currentBrand={brand}
+        currentBrief={brief}
+        currentTargetAudience={targetAudience}
+        currentPostMeta={postMeta}
+        currentAspectRatio={aspectRatio}
+        onLoadProject={handleLoadSavedProject}
+        onNewProject={handleCreateNewBlankProject}
       />
 
       <KnowledgeBaseModal
