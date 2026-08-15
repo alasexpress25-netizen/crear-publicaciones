@@ -49,8 +49,9 @@ function getAI(): GoogleGenAI {
 // Official supported Gemini models for current SDK
 const SUPPORTED_MODELS = [
   "gemini-2.5-flash",
-  "gemini-2.0-flash",
-  "gemini-flash-latest"
+  "gemini-3.1-flash-lite",
+  "gemini-flash-latest",
+  "gemini-3.7-flash"
 ];
 
 const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
