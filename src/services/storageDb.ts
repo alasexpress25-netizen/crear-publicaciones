@@ -1,12 +1,13 @@
 import { SavedCarouselProject } from '../types';
 
 const DB_NAME = 'LaVisualMK_CarouselDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_PROJECTS = 'projects';
 const STORE_META = 'metadata';
+const STORE_LOGOS = 'client_logos';
 const LEGACY_STORAGE_KEY = 'lavisualmk_saved_projects_v2';
 
-function openDB(): Promise<IDBDatabase> {
+export function openAppDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     if (!('indexedDB' in window)) {
       reject(new Error('IndexedDB no está soportado en este navegador.'));
@@ -25,11 +26,20 @@ function openDB(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(STORE_META)) {
         db.createObjectStore(STORE_META, { keyPath: 'key' });
       }
+      if (!db.objectStoreNames.contains(STORE_LOGOS)) {
+        const logoStore = db.createObjectStore(STORE_LOGOS, { keyPath: 'id' });
+        logoStore.createIndex('clientName', 'clientName', { unique: false });
+        logoStore.createIndex('createdAt', 'createdAt', { unique: false });
+      }
     };
 
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
+}
+
+function openDB(): Promise<IDBDatabase> {
+  return openAppDB();
 }
 
 /**

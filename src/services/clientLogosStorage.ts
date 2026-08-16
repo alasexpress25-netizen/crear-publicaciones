@@ -1,3 +1,5 @@
+import { openAppDB } from './storageDb';
+
 export interface ClientLogoAsset {
   id: string;
   clientId?: string;
@@ -10,7 +12,6 @@ export interface ClientLogoAsset {
 
 const LOGOS_STORAGE_KEY = 'lavisualmk_client_logos_v1';
 const CLIENT_LOGOS_MAP_KEY = 'lavisualmk_client_logos_map_v1';
-const DB_NAME = 'LaVisualMK_CarouselDB';
 const STORE_LOGOS = 'client_logos';
 
 export function getClientLogoMap(): Record<string, string> {
@@ -74,29 +75,7 @@ export function findLogoForClient(
 }
 
 function openLogosDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    if (!('indexedDB' in window)) {
-      reject(new Error('IndexedDB no soportado'));
-      return;
-    }
-    const request = indexedDB.open(DB_NAME, 2);
-    request.onupgradeneeded = (event) => {
-      const db = (event.target as IDBOpenDBRequest).result;
-      if (!db.objectStoreNames.contains('projects')) {
-        db.createObjectStore('projects', { keyPath: 'id' });
-      }
-      if (!db.objectStoreNames.contains('metadata')) {
-        db.createObjectStore('metadata', { keyPath: 'key' });
-      }
-      if (!db.objectStoreNames.contains(STORE_LOGOS)) {
-        const logoStore = db.createObjectStore(STORE_LOGOS, { keyPath: 'id' });
-        logoStore.createIndex('clientName', 'clientName', { unique: false });
-        logoStore.createIndex('createdAt', 'createdAt', { unique: false });
-      }
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
+  return openAppDB();
 }
 
 export async function getAllClientLogosDB(): Promise<ClientLogoAsset[]> {

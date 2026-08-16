@@ -80,9 +80,9 @@ export const SlideNavigation: React.FC<SlideNavigationProps> = ({
           </button>
 
           <div className="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs font-bold text-slate-200 flex items-center gap-1.5">
-            <span>Diapositiva</span>
+            <span>{loc.uiLabels.slide}</span>
             <span className="text-rose-500 font-mono text-sm">{currentIndex + 1}</span>
-            <span className="text-slate-500">de</span>
+            <span className="text-slate-500">{loc.uiLabels.of}</span>
             <span className="font-mono text-sm">{slides.length}</span>
           </div>
 
@@ -132,7 +132,7 @@ export const SlideNavigation: React.FC<SlideNavigationProps> = ({
               title="Re-escribir y optimizar esta diapositiva con IA"
             >
               <Wand2 className="w-3.5 h-3.5 text-amber-200" />
-              <span className="hidden sm:inline">Mejorar con IA</span>
+              <span className="hidden sm:inline">{loc.uiLabels.rewriteAi}</span>
             </button>
           )}
 
@@ -142,7 +142,7 @@ export const SlideNavigation: React.FC<SlideNavigationProps> = ({
             title="Agregar nueva diapositiva en blanco"
           >
             <Plus className="w-3.5 h-3.5 text-rose-400" />
-            <span className="hidden sm:inline">Nueva</span>
+            <span className="hidden sm:inline">{loc.uiLabels.new}</span>
           </button>
 
           <button
@@ -173,7 +173,7 @@ export const SlideNavigation: React.FC<SlideNavigationProps> = ({
             }`}
           >
             <Grid className="w-3.5 h-3.5" />
-            <span>{isGridView ? 'Vista Individual' : 'Ver Todo'}</span>
+            <span>{isGridView ? loc.uiLabels.singleMode : loc.uiLabels.gridMode}</span>
           </button>
         </div>
 

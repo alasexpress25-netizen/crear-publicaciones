@@ -10,7 +10,7 @@ import {
   SlideLayoutTemplate,
   CustomTextLayer
 } from '../types';
-import { getTemplateLocalization } from '../data/templateLocalizations';
+import { getTemplateLocalization, resolveChecklistBullets } from '../data/templateLocalizations';
 import {
   Quote,
   CheckCircle2,
@@ -516,7 +516,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                     className="no-export flex items-center gap-1.5 text-[11px] font-bold text-slate-400 hover:text-rose-400 transition px-2 py-1"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>+ Añadir Punto a la Lista</span>
+                    <span>{loc.uiLabels?.addBullet || '+ Añadir Punto a la Lista'}</span>
                   </button>
                 )}
               </div>
@@ -744,10 +744,13 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
             </div>
 
             <div className="space-y-2 pt-1">
-              {(slide.bullets && slide.bullets.length > 0 ? slide.bullets : loc.checklist.bullets).map((bullet, idx) => (
+              {(slide.bullets && slide.bullets.length > 0
+                ? resolveChecklistBullets(slide.bullets, language)
+                : loc.checklist.bullets
+              ).map((bullet, idx, arr) => (
                 <div
                   key={idx}
-                  className="flex items-start gap-3 bg-slate-900/85 border border-slate-800 rounded-2xl p-3 text-xs text-slate-200 shadow-sm"
+                  className="group relative flex items-start gap-3 bg-slate-900/85 border border-slate-800 rounded-2xl p-3 text-xs text-slate-200 shadow-sm"
                 >
                   <div
                     className="w-6 h-6 rounded-xl flex items-center justify-center text-[11px] font-black text-white shrink-0 mt-0.5 shadow-sm"
@@ -763,8 +766,39 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                   >
                     {bullet}
                   </span>
+                  {onDeleteBullet && arr.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteBullet(idx);
+                      }}
+                      className="no-export opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-400 transition rounded"
+                      title={language === 'pt' ? 'Excluir este ponto' : language === 'en' ? 'Delete this step' : 'Eliminar este punto'}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
               ))}
+
+              {onAddBullet && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const currentCount = (slide.bullets && slide.bullets.length > 0 ? slide.bullets.length : loc.checklist.bullets.length);
+                    const nextNum = currentCount + 1;
+                    const defaultPrefix = language === 'pt' ? `Passo ${nextNum}: ` : language === 'en' ? `Step ${nextNum}: ` : `Paso ${nextNum}: `;
+                    const defaultText = language === 'pt' ? 'Novo passo estratégico para executar...' : language === 'en' ? 'New strategic step to execute...' : 'Nuevo paso estratégico para ejecutar...';
+                    onAddBullet(defaultPrefix + defaultText);
+                  }}
+                  className="no-export flex items-center gap-1.5 text-[11px] font-bold text-slate-400 hover:text-rose-400 transition px-2 py-1"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>{loc.uiLabels?.addBullet || (language === 'pt' ? '+ Adicionar Ponto à Lista' : language === 'en' ? '+ Add Step to List' : '+ Añadir Punto a la Lista')}</span>
+                </button>
+              )}
             </div>
           </div>
         )}
