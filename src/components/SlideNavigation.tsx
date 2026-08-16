@@ -16,11 +16,13 @@ import {
   Send
 } from 'lucide-react';
 import { Slide, SlideLayoutTemplate } from '../types';
+import { getTemplateLocalization } from '../data/templateLocalizations';
 
 interface SlideNavigationProps {
   slides: Slide[];
   currentIndex: number;
   isGridView: boolean;
+  language?: 'es' | 'pt' | 'en';
   onSelectSlide: (index: number) => void;
   onPrev: () => void;
   onNext: () => void;
@@ -32,19 +34,11 @@ interface SlideNavigationProps {
   onUpdateSlideLayout?: (layout: SlideLayoutTemplate) => void;
 }
 
-const LAYOUT_TEMPLATES: { id: SlideLayoutTemplate; label: string; icon: any; desc: string }[] = [
-  { id: 'standard', label: 'Estándar', icon: LayoutGrid, desc: 'Título, cuerpo y viñetas' },
-  { id: 'split_comparison', label: 'Comparativa', icon: Columns2, desc: 'Antes vs Después / Bien vs Mal' },
-  { id: 'quote', label: 'Cita / Frase', icon: Quote, desc: 'Frase de autoridad con autor' },
-  { id: 'big_number', label: 'Gran Cifra', icon: Hash, desc: 'Métrica o estadística de impacto' },
-  { id: 'checklist', label: 'Checklist', icon: ListOrdered, desc: 'Pasos secuenciales 1, 2, 3...' },
-  { id: 'cta_final', label: 'Conversión CTA', icon: Send, desc: 'Slide final con llamados a la acción' },
-];
-
 export const SlideNavigation: React.FC<SlideNavigationProps> = ({
   slides,
   currentIndex,
   isGridView,
+  language = 'es',
   onSelectSlide,
   onPrev,
   onNext,
@@ -57,6 +51,16 @@ export const SlideNavigation: React.FC<SlideNavigationProps> = ({
 }) => {
   const currentSlide = slides[currentIndex] || slides[0];
   const currentLayout = currentSlide?.layoutTemplate || 'standard';
+  const loc = getTemplateLocalization(language);
+
+  const layoutTemplates: { id: SlideLayoutTemplate; label: string; icon: any; desc: string }[] = [
+    { id: 'standard', label: loc.uiLabels.standard, icon: LayoutGrid, desc: 'Título, cuerpo y viñetas' },
+    { id: 'split_comparison', label: loc.uiLabels.split_comparison, icon: Columns2, desc: 'Antes vs Después / Bien vs Mal' },
+    { id: 'quote', label: loc.uiLabels.quote, icon: Quote, desc: 'Frase de autoridad con autor' },
+    { id: 'big_number', label: loc.uiLabels.big_number, icon: Hash, desc: 'Métrica o estadística de impacto' },
+    { id: 'checklist', label: loc.uiLabels.checklist, icon: ListOrdered, desc: 'Pasos secuenciales 1, 2, 3...' },
+    { id: 'cta_final', label: loc.uiLabels.cta_final, icon: Send, desc: 'Slide final con llamados a la acción' },
+  ];
 
   return (
     <div className="bg-slate-900/90 backdrop-blur border border-slate-800 rounded-2xl p-3 sm:p-3.5 shadow-xl space-y-3">
@@ -182,10 +186,10 @@ export const SlideNavigation: React.FC<SlideNavigationProps> = ({
           <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar pb-1 pt-0.5 max-w-full">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider shrink-0 flex items-center gap-1 mr-1">
               <Layers className="w-3.5 h-3.5 text-rose-500" />
-              <span>Plantilla:</span>
+              <span>{loc.uiLabels.template}</span>
             </span>
 
-            {LAYOUT_TEMPLATES.map((tmpl) => {
+            {layoutTemplates.map((tmpl) => {
               const Icon = tmpl.icon;
               const isActive = currentLayout === tmpl.id;
               return (
@@ -207,9 +211,9 @@ export const SlideNavigation: React.FC<SlideNavigationProps> = ({
           </div>
 
           <div className="hidden lg:flex items-center gap-1.5 text-[11px] text-slate-500 font-mono shrink-0">
-            <span>Diseño:</span>
+            <span>{loc.uiLabels.design}</span>
             <strong className="text-slate-300 uppercase">
-              {LAYOUT_TEMPLATES.find((t) => t.id === currentLayout)?.label || currentLayout}
+              {layoutTemplates.find((t) => t.id === currentLayout)?.label || currentLayout}
             </strong>
           </div>
 

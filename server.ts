@@ -588,24 +588,33 @@ Devuelve un JSON con:
       const langName = targetLanguage === "pt" ? "Portugués (Brasil - pt-BR)" : targetLanguage === "en" ? "English (US - en-US)" : "Español (es)";
 
       const prompt = `
-Actúa como Traductor Publicitario Experto y Copywriter de Redes Sociales.
-Traduce y adapta estratégicamente este carrusel completo de diapositivas al idioma: ${langName}.
+Actúa como Traductor Publicitario Experto y Copywriter de Redes Sociales de Alto Impacto.
+Traduce y adapta estratégicamente este carrusel completo de diapositivas y el copy del post al idioma: ${langName}.
 
-Mantén el gancho emocional, la fuerza persuasiva, el ritmo y el tono publicitario de cada diapositiva.
-Traduce todos los campos de texto: badge, subtag, title, body, cta, bullets, customTexts, comparison, stat, quote, ctaFinal, caption y hashtags.
-Conserva intactas las propiedades numéricas, IDs, imágenes, estilos y configuraciones de diseño.
+REGLAS CRÍTICAS DE TRADUCCIÓN:
+1. Mantén el gancho emocional, la fuerza persuasiva, el ritmo y el tono publicitario de cada diapositiva.
+2. Traduce rigurosamente TODOS los campos de texto estándar y plantillas especializadas:
+   - Campos estándar: badge, subtag, title, body, cta, bullets
+   - Plantilla Cita / Quote: quote.quoteText, quote.authorRole (mantén quote.authorName o el nombre del cliente intacto)
+   - Plantilla Comparativa / Comparison: comparison.title, comparison.leftTag, comparison.leftTitle, comparison.leftText, comparison.rightTag, comparison.rightTitle, comparison.rightText
+   - Plantilla Gran Cifra / Stat: stat.badge, stat.statLabel, stat.statSubtext
+   - Plantilla Checklist: bullets, title, badge
+   - Plantilla CTA Final: ctaFinal.badge, ctaFinal.headline, ctaFinal.subheadline, ctaFinal.actionPill
+   - Capas personalizadas: customTexts (traducir el campo text de cada capa)
+   - Post: caption y hashtags (hashtags relevantes y en el idioma de destino)
+3. Conserva intactos los IDs (_uid, id), URLs de imágenes, colores, posiciones numéricas (posX, posY, zoom, textPos) y configuraciones de diseño.
 
 CARRUSEL ORIGINAL A TRADUCIR:
 ${JSON.stringify({ slides, postMeta }, null, 2)}
 
-Devuelve EXCLUSIVAMENTE un JSON válido con la misma estructura:
+Devuelve EXCLUSIVAMENTE un JSON válido con la estructura exacta:
 {
   "slides": [
-    ... // array de slides con todos sus textos traducidos al ${langName}
+    ... // array de slides con TODOS sus campos y plantillas traducidos al ${langName}
   ],
   "post": {
-    "caption": "...", // post caption traducido al ${langName}
-    "hashtags": [...] // hashtags relevantes en minúsculas en el idioma ${langName}
+    "caption": "...", // post caption adaptado al ${langName}
+    "hashtags": [...] // hashtags en minúsculas en el idioma ${langName}
   }
 }
 `;

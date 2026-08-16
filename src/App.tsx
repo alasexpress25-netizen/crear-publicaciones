@@ -18,6 +18,7 @@ import {
   INITIAL_DEFAULT_SLIDES,
   DEFAULT_MARKETING_DOCUMENTS
 } from './data/marketingPlaybooks';
+import { applyLayoutTemplateToSlide, getTemplateLocalization } from './data/templateLocalizations';
 import { AgencyClient, getFallbackAgencyClients } from './services/supabase';
 import { findLogoForClient } from './services/clientLogosStorage';
 import { apiTranslateCarousel } from './services/api';
@@ -191,7 +192,11 @@ export default function App() {
 
     // Update Language automatically from client profile
     if (client.language) {
+      const previousLang = language;
       setLanguage(client.language);
+      if (client.language !== previousLang) {
+        handleTranslateCarousel(client.language);
+      }
     }
 
     // Update Brief & Audience
@@ -273,7 +278,14 @@ export default function App() {
   };
 
   const handleUpdateSlideLayout = (layout: SlideLayoutTemplate) => {
-    handleUpdateSlideField('layoutTemplate', layout);
+    setSlides((prev) => {
+      const copy = [...prev];
+      if (!copy[currentIndex]) return prev;
+      const targetLang = language || selectedClient?.language || 'es';
+      const updated = applyLayoutTemplateToSlide(copy[currentIndex], layout, targetLang, brand.name);
+      copy[currentIndex] = updated;
+      return copy;
+    });
   };
 
   const handleUpdateSlideOverlayType = (type: 'gradient' | 'solid' | 'card' | 'cinematic') => {
@@ -530,15 +542,16 @@ export default function App() {
 
   const handleAddSlide = () => {
     const primaryCol = brand.primaryColor || '#e11d48';
+    const loc = getTemplateLocalization(language);
     const newSlide: Slide = {
       id: slides.length + 1,
       _uid: `sl-${Date.now()}`,
       layoutTemplate: 'standard',
-      badge: 'NUEVO PUNTO',
-      subtag: 'Paso siguiente',
-      title: 'TÍTULO DE LA NUEVA DIAPOSITIVA',
-      body: 'Escribe aquí la explicación clara y persuasiva.',
-      cta: '👉 Desliza para ver más',
+      badge: loc.standard.badge,
+      subtag: loc.standard.subtag,
+      title: language === 'pt' ? 'TÍTULO DO NOVO SLIDE' : language === 'en' ? 'NEW SLIDE HEADLINE' : 'TÍTULO DE LA NUEVA DIAPOSITIVA',
+      body: language === 'pt' ? 'Escreva aqui a explicação clara e persuasiva.' : language === 'en' ? 'Write here the clear and persuasive explanation.' : 'Escribe aquí la explicación clara y persuasiva.',
+      cta: loc.standard.cta,
       bullets: [],
       accentColor: primaryCol,
       image: currentSlide.image || 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?q=80&w=1200&auto=format&fit=crop',
@@ -811,6 +824,7 @@ export default function App() {
                   aspectRatio={aspectRatio}
                   zoomLevel={zoomLevel}
                   activeElementKey={activeElementKey}
+                  language={language}
                   onSelectElement={setActiveElementKey}
                   onUpdateField={handleUpdateSlideField}
                   onUpdateBullet={handleUpdateBullet}
@@ -834,6 +848,7 @@ export default function App() {
                 slides={slides}
                 currentIndex={currentIndex}
                 isGridView={isGridView}
+                language={language}
                 onSelectSlide={setCurrentIndex}
                 onPrev={() => setCurrentIndex((prev) => Math.max(0, prev - 1))}
                 onNext={() => setCurrentIndex((prev) => Math.min(slides.length - 1, prev + 1))}

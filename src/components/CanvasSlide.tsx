@@ -10,6 +10,7 @@ import {
   SlideLayoutTemplate,
   CustomTextLayer
 } from '../types';
+import { getTemplateLocalization } from '../data/templateLocalizations';
 import {
   Quote,
   CheckCircle2,
@@ -33,6 +34,7 @@ interface CanvasSlideProps {
   aspectRatio: AspectRatio;
   zoomLevel: number;
   activeElementKey: string | null;
+  language?: 'es' | 'pt' | 'en';
   onSelectElement: (key: string) => void;
   onUpdateField: (field: keyof Slide, value: any) => void;
   onUpdateBullet: (index: number, value: string) => void;
@@ -57,6 +59,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
   aspectRatio,
   zoomLevel,
   activeElementKey,
+  language = 'es',
   onSelectElement,
   onUpdateField,
   onUpdateBullet,
@@ -75,6 +78,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
   isExportMode = false,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const loc = getTemplateLocalization(language);
 
   const primaryColor = slide.accentColor || brand.primaryColor || '#e11d48';
 
@@ -540,7 +544,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                 onBlur={(e) => onUpdateField('title', e.currentTarget.innerText)}
                 className="font-black text-base sm:text-xl text-white leading-tight uppercase outline-none"
               >
-                {slide.title || 'COMPARACIÓN CLAVE'}
+                {slide.title || loc.comparison.title}
               </h2>
             </div>
 
@@ -555,7 +559,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                     onBlur={(e) => onUpdateComparison?.({ leftTag: e.currentTarget.innerText })}
                     className="outline-none"
                   >
-                    {slide.comparison?.leftTag || 'El Error Común'}
+                    {slide.comparison?.leftTag || loc.comparison.leftTag}
                   </span>
                 </div>
                 <h4
@@ -564,7 +568,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                   onBlur={(e) => onUpdateComparison?.({ leftTitle: e.currentTarget.innerText })}
                   className="text-xs font-bold text-white leading-snug outline-none"
                 >
-                  {slide.comparison?.leftTitle || 'Publicar sin estrategia ni oferta clara'}
+                  {slide.comparison?.leftTitle || loc.comparison.leftTitle}
                 </h4>
                 <p
                   contentEditable
@@ -572,7 +576,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                   onBlur={(e) => onUpdateComparison?.({ leftText: e.currentTarget.innerText })}
                   className="text-[11px] text-slate-300 leading-relaxed outline-none"
                 >
-                  {slide.comparison?.leftText || 'Atrae solo curiosos y nadie pregunta por el servicio.'}
+                  {slide.comparison?.leftText || loc.comparison.leftText}
                 </p>
               </div>
 
@@ -586,7 +590,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                     onBlur={(e) => onUpdateComparison?.({ rightTag: e.currentTarget.innerText })}
                     className="outline-none"
                   >
-                    {slide.comparison?.rightTag || 'La Estrategia Real'}
+                    {slide.comparison?.rightTag || loc.comparison.rightTag}
                   </span>
                 </div>
                 <h4
@@ -595,7 +599,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                   onBlur={(e) => onUpdateComparison?.({ rightTitle: e.currentTarget.innerText })}
                   className="text-xs font-bold text-white leading-snug outline-none"
                 >
-                  {slide.comparison?.rightTitle || 'Carruseles con ganchos de dolor & solución'}
+                  {slide.comparison?.rightTitle || loc.comparison.rightTitle}
                 </h4>
                 <p
                   contentEditable
@@ -603,7 +607,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                   onBlur={(e) => onUpdateComparison?.({ rightText: e.currentTarget.innerText })}
                   className="text-[11px] text-slate-300 leading-relaxed outline-none"
                 >
-                  {slide.comparison?.rightText || 'Filtra clientes calificados listos para comprar.'}
+                  {slide.comparison?.rightText || loc.comparison.rightText}
                 </p>
               </div>
             </div>
@@ -642,7 +646,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                 onBlur={(e) => onUpdateQuote?.({ quoteText: e.currentTarget.innerText })}
                 className="text-base sm:text-xl font-bold text-white italic leading-relaxed outline-none font-serif"
               >
-                "{slide.quote?.quoteText || slide.body || 'No necesitas más seguidores, necesitas una oferta que no puedan rechazar y un gancho que los detenga.'}"
+                "{slide.quote?.quoteText || slide.body || loc.quote.quoteText}"
               </p>
             </div>
 
@@ -661,7 +665,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                 onBlur={(e) => onUpdateQuote?.({ authorRole: e.currentTarget.innerText })}
                 className="text-[11px] font-semibold text-rose-400 outline-none"
               >
-                {slide.quote?.authorRole || 'Estrategia de Crecimiento & Ventas'}
+                {slide.quote?.authorRole || loc.quote.authorRole}
               </p>
             </div>
           </div>
@@ -677,7 +681,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                 className="text-white font-black text-[9px] px-3 py-1 rounded uppercase tracking-wider inline-block shadow"
                 style={{ backgroundColor: primaryColor }}
               >
-                {slide.badge}
+                {slide.badge || loc.stat.badge}
               </span>
             )}
 
@@ -692,7 +696,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                   color: primaryColor,
                 }}
               >
-                {slide.stat?.statNumber || '+350%'}
+                {slide.stat?.statNumber || loc.stat.statNumber}
               </span>
               <p
                 contentEditable
@@ -700,7 +704,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                 onBlur={(e) => onUpdateStat?.({ statLabel: e.currentTarget.innerText })}
                 className="text-xs sm:text-sm font-black text-white uppercase tracking-widest outline-none mt-1"
               >
-                {slide.stat?.statLabel || slide.title || 'MÁS CONSULTAS CALIFICADAS'}
+                {slide.stat?.statLabel || slide.title || loc.stat.statLabel}
               </p>
             </div>
 
@@ -711,7 +715,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                 onBlur={(e) => onUpdateStat?.({ statSubtext: e.currentTarget.innerText })}
                 className="text-xs text-slate-300 leading-relaxed outline-none"
               >
-                {slide.stat?.statSubtext || slide.body || 'Al cambiar publicaciones genéricas por carruseles con ganchos de problema y solución directa.'}
+                {slide.stat?.statSubtext || slide.body || loc.stat.statSubtext}
               </p>
             </div>
           </div>
@@ -727,7 +731,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                 className="text-white font-black text-[9px] px-2.5 py-0.5 rounded uppercase tracking-wider inline-block"
                 style={{ backgroundColor: primaryColor }}
               >
-                {slide.badge || 'CHECKLIST ESTRATÉGICO'}
+                {slide.badge || loc.checklist.badge}
               </span>
               <h2
                 contentEditable
@@ -735,16 +739,12 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                 onBlur={(e) => onUpdateField('title', e.currentTarget.innerText)}
                 className="font-black text-base sm:text-xl text-white leading-tight uppercase outline-none"
               >
-                {slide.title || '3 PASOS PARA EJECUTAR HOY'}
+                {slide.title || loc.checklist.title}
               </h2>
             </div>
 
             <div className="space-y-2 pt-1">
-              {(slide.bullets && slide.bullets.length > 0 ? slide.bullets : [
-                'Paso 1: Define el dolor número 1 que le quita el sueño a tu cliente.',
-                'Paso 2: Usa un gancho de pregunta reflexiva en la primera diapositiva.',
-                'Paso 3: Entrega la solución en 3 puntos y remata con un CTA a mensaje directo.'
-              ]).map((bullet, idx) => (
+              {(slide.bullets && slide.bullets.length > 0 ? slide.bullets : loc.checklist.bullets).map((bullet, idx) => (
                 <div
                   key={idx}
                   className="flex items-start gap-3 bg-slate-900/85 border border-slate-800 rounded-2xl p-3 text-xs text-slate-200 shadow-sm"
@@ -797,7 +797,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                 className="text-white font-black text-[9px] px-3 py-1 rounded-full uppercase tracking-wider inline-block shadow-sm"
                 style={{ backgroundColor: primaryColor }}
               >
-                {slide.badge || '¿LISTO PARA ESCALAR?'}
+                {slide.badge || loc.ctaFinal.badge}
               </span>
               <h2
                 contentEditable
@@ -805,7 +805,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                 onBlur={(e) => onUpdateCtaFinal?.({ headline: e.currentTarget.innerText })}
                 className="font-black text-lg sm:text-2xl text-white leading-tight uppercase outline-none"
               >
-                {slide.ctaFinal?.headline || slide.title || 'COMENZÁ A RECIBIR CLIENTES ESTA SEMANA'}
+                {slide.ctaFinal?.headline || slide.title || loc.ctaFinal.headline}
               </h2>
             </div>
 
@@ -816,7 +816,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                 onBlur={(e) => onUpdateCtaFinal?.({ subheadline: e.currentTarget.innerText })}
                 className="text-xs text-slate-300 leading-relaxed outline-none"
               >
-                {slide.ctaFinal?.subheadline || slide.body || 'Envíanos un mensaje directo o comenta con la palabra clave para recibir la guía completa.'}
+                {slide.ctaFinal?.subheadline || slide.body || loc.ctaFinal.subheadline}
               </p>
 
               {/* Action Trigger Button Simulation */}
@@ -831,7 +831,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                   onBlur={(e) => onUpdateCtaFinal?.({ actionPill: e.currentTarget.innerText })}
                   className="outline-none"
                 >
-                  {slide.ctaFinal?.actionPill || 'Comenta "CARRUSEL" y te escribimos'}
+                  {slide.ctaFinal?.actionPill || loc.ctaFinal.actionPill}
                 </span>
               </div>
             </div>
@@ -905,7 +905,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
             onBlur={(e) => onUpdateField('cta', e.currentTarget.innerText)}
             className="text-xs font-semibold text-slate-300 outline-none flex items-center gap-1.5"
           >
-            {slide.cta || '👉 Desliza para ver más'}
+            {slide.cta || loc.standard.cta}
           </span>
         </div>
 
