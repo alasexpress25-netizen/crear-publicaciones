@@ -594,13 +594,13 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
         </div>
       </div>
 
-      {/* Tabs Navigation */}
-      <div className="flex items-center gap-1.5 border-b border-slate-800 pb-2 text-xs overflow-x-auto scrollbar-none">
+      {/* Tabs Navigation - Auto-fitting wrap so all options are always visible */}
+      <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-800 pb-2.5 text-xs">
         <button
           onClick={() => setTab('pixabay')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold transition whitespace-nowrap ${
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold transition ${
             tab === 'pixabay'
-              ? 'bg-rose-600 text-white shadow'
+              ? 'bg-rose-600 text-white shadow-sm'
               : 'bg-slate-950 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800'
           }`}
         >
@@ -610,9 +610,9 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
 
         <button
           onClick={() => setTab('ai-prompt')}
-          className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition whitespace-nowrap ${
+          className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition ${
             tab === 'ai-prompt'
-              ? 'bg-gradient-to-r from-rose-900 to-pink-900 text-rose-200 border border-rose-600/70 shadow'
+              ? 'bg-gradient-to-r from-rose-900 to-pink-900 text-rose-200 border border-rose-600/70 shadow-sm'
               : 'bg-slate-950 hover:bg-slate-800 text-rose-400 border border-rose-950/60'
           }`}
         >
@@ -622,7 +622,7 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
 
         <button
           onClick={() => setTab('presets')}
-          className={`px-3 py-1.5 rounded-xl font-semibold transition whitespace-nowrap ${
+          className={`px-3 py-1.5 rounded-xl font-semibold transition ${
             tab === 'presets'
               ? 'bg-slate-800 text-white border border-slate-700'
               : 'bg-slate-950 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800'
@@ -633,21 +633,21 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
 
         <button
           onClick={() => setTab('custom')}
-          className={`flex items-center gap-1 px-3 py-1.5 rounded-xl font-semibold transition whitespace-nowrap ${
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-semibold transition ${
             tab === 'custom'
               ? 'bg-slate-800 text-white border border-slate-700'
               : 'bg-slate-950 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800'
           }`}
         >
-          <Upload className="w-3 h-3" />
+          <Upload className="w-3.5 h-3.5" />
           <span>Subir / URL</span>
         </button>
 
         <button
           onClick={() => setTab('music')}
-          className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition whitespace-nowrap ${
+          className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition ${
             tab === 'music'
-              ? 'bg-emerald-950 text-emerald-300 border border-emerald-700 shadow'
+              ? 'bg-emerald-950 text-emerald-300 border border-emerald-700 shadow-sm'
               : 'bg-slate-950 hover:bg-slate-800 text-emerald-400 border border-emerald-950/60'
           }`}
         >
@@ -777,7 +777,7 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
 
           {/* Results Grid 3x3 */}
           {pixabayResults.length > 0 ? (
-            <div className="grid grid-cols-3 gap-2 max-h-[260px] overflow-y-auto pr-1">
+            <div className="grid grid-cols-3 gap-2 max-h-[240px] overflow-y-auto custom-scrollbar pr-1.5">
               {pixabayResults.map((item) => (
                 <button
                   key={item.id}
@@ -1047,7 +1047,7 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
       {/* ========================================================= */}
       {tab === 'presets' && (
         <div className="space-y-3">
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-[240px] overflow-y-auto custom-scrollbar pr-1.5">
             {CURATED_STOCK_PHOTOS.map((photo, i) => (
               <button
                 key={i}
@@ -1352,28 +1352,69 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
 
       {/* Adjustments: Darkness Overlay, Zoom, Pan (Always Accessible) */}
       <div className="space-y-3 pt-3 border-t border-slate-800">
-        <div className="flex items-center justify-between text-xs text-slate-400">
-          <span className="flex items-center gap-1.5">
-            <Sliders className="w-3.5 h-3.5 text-slate-400" />
-            <span>Oscurecido para legibilidad:</span>
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+          <span className="flex items-center gap-1.5 font-bold text-slate-300">
+            <Sliders className="w-3.5 h-3.5 text-rose-400" />
+            <span>Ajustes Visuales del Fondo:</span>
           </span>
-          <span className="font-mono text-slate-200 font-bold">{overlayIntensity}%</span>
-        </div>
-        <input
-          type="range"
-          min="0"
-          max="100"
-          value={overlayIntensity}
-          onChange={(e) => onUpdateSlide({ overlayIntensity: parseInt(e.target.value, 10) })}
-          className="w-full accent-rose-600 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
-        />
 
-        <div className="grid grid-cols-3 gap-3 pt-1">
+          <div className="flex items-center gap-1.5">
+            {/* Reset adjustments button */}
+            <button
+              type="button"
+              onClick={() =>
+                onUpdateSlide({
+                  overlayIntensity: 85,
+                  zoom: 1,
+                  posX: 50,
+                  posY: 50,
+                  fit: 'cover',
+                })
+              }
+              className="text-[10px] text-slate-400 hover:text-white bg-slate-950 hover:bg-slate-800 px-2 py-1 rounded-lg border border-slate-800 transition"
+              title="Restablecer valores por defecto (100% zoom, centro, 85% opacidad)"
+            >
+              Restablecer
+            </button>
+
+            {/* Remove background image button if present */}
+            {slide.image && (
+              <button
+                type="button"
+                onClick={() => onUpdateSlide({ image: '' })}
+                className="text-[10px] text-rose-400 hover:text-rose-300 bg-rose-950/40 hover:bg-rose-900/60 px-2 py-1 rounded-lg border border-rose-800/40 transition flex items-center gap-1"
+                title="Quitar la imagen o fondo actual de esta diapositiva"
+              >
+                <Trash2 className="w-3 h-3" />
+                <span>Quitar Fondo</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Darkness Overlay Slider */}
+        <div className="space-y-1 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
+          <div className="flex items-center justify-between text-[11px] text-slate-400">
+            <span>Oscurecido para legibilidad del texto:</span>
+            <span className="font-mono text-rose-400 font-bold">{overlayIntensity}%</span>
+          </div>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value={overlayIntensity}
+            onChange={(e) => onUpdateSlide({ overlayIntensity: parseInt(e.target.value, 10) })}
+            className="w-full accent-rose-600 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
+          />
+        </div>
+
+        {/* Zoom, Pos X, Pos Y Grid */}
+        <div className="grid grid-cols-3 gap-2 pt-0.5">
           {/* Zoom Slider */}
-          <div>
-            <div className="flex justify-between text-[10px] text-slate-400 mb-1">
-              <span>Zoom</span>
-              <span className="font-mono">{zoom}%</span>
+          <div className="bg-slate-950/60 p-2 rounded-xl border border-slate-800/80 space-y-1">
+            <div className="flex justify-between text-[10px] text-slate-400">
+              <span className="font-semibold">Zoom</span>
+              <span className="font-mono text-slate-200 font-bold">{zoom}%</span>
             </div>
             <input
               type="range"
@@ -1381,15 +1422,15 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
               max="250"
               value={zoom}
               onChange={(e) => onUpdateSlide({ zoom: parseInt(e.target.value, 10) / 100 })}
-              className="w-full accent-rose-600 cursor-pointer h-1 bg-slate-800 rounded-lg"
+              className="w-full accent-rose-600 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
             />
           </div>
 
           {/* Pan X Slider */}
-          <div>
-            <div className="flex justify-between text-[10px] text-slate-400 mb-1">
-              <span>Posición X</span>
-              <span className="font-mono">{posX}%</span>
+          <div className="bg-slate-950/60 p-2 rounded-xl border border-slate-800/80 space-y-1">
+            <div className="flex justify-between text-[10px] text-slate-400">
+              <span className="font-semibold">Posición X</span>
+              <span className="font-mono text-slate-200 font-bold">{posX}%</span>
             </div>
             <input
               type="range"
@@ -1397,15 +1438,15 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
               max="100"
               value={posX}
               onChange={(e) => onUpdateSlide({ posX: parseInt(e.target.value, 10) })}
-              className="w-full accent-rose-600 cursor-pointer h-1 bg-slate-800 rounded-lg"
+              className="w-full accent-rose-600 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
             />
           </div>
 
           {/* Pan Y Slider */}
-          <div>
-            <div className="flex justify-between text-[10px] text-slate-400 mb-1">
-              <span>Posición Y</span>
-              <span className="font-mono">{posY}%</span>
+          <div className="bg-slate-950/60 p-2 rounded-xl border border-slate-800/80 space-y-1">
+            <div className="flex justify-between text-[10px] text-slate-400">
+              <span className="font-semibold">Posición Y</span>
+              <span className="font-mono text-slate-200 font-bold">{posY}%</span>
             </div>
             <input
               type="range"
@@ -1413,7 +1454,7 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
               max="100"
               value={posY}
               onChange={(e) => onUpdateSlide({ posY: parseInt(e.target.value, 10) })}
-              className="w-full accent-rose-600 cursor-pointer h-1 bg-slate-800 rounded-lg"
+              className="w-full accent-rose-600 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
             />
           </div>
         </div>
