@@ -12,10 +12,13 @@ import {
 } from 'lucide-react';
 import { Slide, BrandInfo, AspectRatio, CarouselPostMeta } from '../types';
 import {
-  downloadSlideAsPng,
-  downloadAllSlidesAsZip,
+  captureSlideDomToBlob,
+  getExportFilePrefix,
+  renderSlideToCanvas,
   formatAllSlidesForCanva
 } from '../utils/exportUtils';
+import { CanvasSlide } from './CanvasSlide';
+import JSZip from 'jszip';
 import confetti from 'canvas-confetti';
 
 interface ExportModalProps {
@@ -45,6 +48,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 }) => {
   const [isExportingPng, setIsExportingPng] = useState(false);
   const [isExportingZip, setIsExportingZip] = useState(false);
+  const [exportProgress, setExportProgress] = useState<string>('');
   const [copiedCanva, setCopiedCanva] = useState(false);
   const [copiedJson, setCopiedJson] = useState(false);
 
@@ -63,7 +67,29 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const handleDownloadCurrentPng = async () => {
     setIsExportingPng(true);
     try {
-      await downloadSlideAsPng(currentSlide, brand, aspectRatio);
+      // Find rendered slide container for 100% WYSIWYG match
+      const targetDom =
+        document.getElementById(`export-dom-slide-${currentSlide.id}`) ||
+        document.getElementById('active-canvas-slide-container');
+
+      let blob: Blob | null = null;
+      if (targetDom) {
+        blob = await captureSlideDomToBlob(targetDom, 2.5);
+      } else {
+        const canvas = await renderSlideToCanvas(currentSlide, brand, aspectRatio, 2);
+        blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/png'));
+      }
+
+      if (!blob) throw new Error('No se pudo generar la imagen');
+
+      const prefix = getExportFilePrefix(brand.name);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.download = `${prefix}_slide_${currentSlide.id}.png`;
+      link.href = url;
+      link.click();
+      URL.revokeObjectURL(url);
+
       triggerConfetti();
     } catch (err) {
       console.error(err);
@@ -75,14 +101,102 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
   const handleDownloadZip = async () => {
     setIsExportingZip(true);
+    setExportProgress('Iniciando empaquetado...');
     try {
-      await downloadAllSlidesAsZip(slides, brand, aspectRatio, postMeta);
+      const zip = new JSZip();
+      const prefix = getExportFilePrefix(brand.name);
+
+      for (let i = 0; i < slides.length; i++) {
+        const s = slides[i];
+        setExportProgress(`Renderizando diapositiva ${i + 1} de ${slides.length}...`);
+
+        const domEl = document.getElementById(`export-dom-slide-${s.id}`);
+        let slideBlob: Blob | null = null;
+
+        if (domEl) {
+          slideBlob = await captureSlideDomToBlob(domEl, 2.5).catch(() => null);
+        }
+
+        if (!slideBlob) {
+          const canvas = await renderSlideToCanvas(s, brand, aspectRatio, 2);
+          slideBlob = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/png'));
+        }
+
+        if (slideBlob) {
+          zip.file(`${prefix}_slide_${i + 1}.png`, slideBlob);
+        }
+
+        // Add media if present
+        if (s.mediaType === 'video' && s.image) {
+          try {
+            const resp = await fetch(s.image);
+            if (resp.ok) {
+              const videoBlob = await resp.blob();
+              zip.file(`${prefix}_slide_${i + 1}_video.mp4`, videoBlob);
+            }
+          } catch {}
+        }
+      }
+
+      // Add Canva-formatted texts
+      setExportProgress('Agregando textos estructurados...');
+      const canvaText = formatAllSlidesForCanva(slides, brand);
+      zip.file(`${prefix}_textos_canva.txt`, canvaText);
+
+      // Add background music audio file if present
+      const slideWithMusic = slides.find((s) => s.includeMusic && s.musicUrl) || slides.find((s) => s.musicUrl);
+      if (slideWithMusic && slideWithMusic.musicUrl) {
+        setExportProgress('Empaquetando pista de audio MP3...');
+        try {
+          let audioBlob: Blob | null = null;
+          if (slideWithMusic.musicUrl.startsWith('data:')) {
+            const res = await fetch(slideWithMusic.musicUrl);
+            audioBlob = await res.blob();
+          } else {
+            const res = await fetch(slideWithMusic.musicUrl, { mode: 'cors' });
+            if (res.ok) {
+              audioBlob = await res.blob();
+            }
+          }
+
+          if (audioBlob) {
+            const cleanAudioName = slideWithMusic.musicName
+              ? slideWithMusic.musicName.replace(/[^\w.-]/g, '_')
+              : 'audio_fondo.mp3';
+            const audioFileName = cleanAudioName.endsWith('.mp3') || cleanAudioName.endsWith('.m4a') || cleanAudioName.endsWith('.wav')
+              ? `${prefix}_${cleanAudioName}`
+              : `${prefix}_${cleanAudioName}.mp3`;
+            zip.file(audioFileName, audioBlob);
+          }
+        } catch (audioErr) {
+          console.warn('No se pudo empaquetar el audio en el ZIP:', audioErr);
+        }
+      }
+
+      // Add Instagram / social post caption
+      if (postMeta && postMeta.caption) {
+        let postContent = `${postMeta.caption}\n\n`;
+        if (postMeta.hashtags && postMeta.hashtags.length > 0) {
+          postContent += postMeta.hashtags.map((h) => `#${h.replace(/^#/, '')}`).join(' ');
+        }
+        zip.file(`${prefix}_copy_redes.txt`, postContent);
+      }
+
+      setExportProgress('Comprimiendo archivo ZIP...');
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const link = document.createElement('a');
+      link.download = `${prefix}_carrusel_completo.zip`;
+      link.href = URL.createObjectURL(zipBlob);
+      link.click();
+      URL.revokeObjectURL(link.href);
+
       triggerConfetti();
     } catch (err) {
       console.error(err);
       alert('Error al generar el archivo ZIP del carrusel.');
     } finally {
       setIsExportingZip(false);
+      setExportProgress('');
     }
   };
 
@@ -137,8 +251,31 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+      {/* Hidden Offscreen DOM slides container for 100% WYSIWYG direct export */}
+      <div
+        aria-hidden="true"
+        className="fixed -left-[9999px] -top-[9999px] pointer-events-none opacity-100 flex flex-col gap-10"
+        style={{ width: '540px' }}
+      >
+        {slides.map((s) => (
+          <div key={s.id} id={`export-dom-slide-${s.id}`} style={{ width: '540px' }}>
+            <CanvasSlide
+              slide={s}
+              brand={brand}
+              aspectRatio={aspectRatio}
+              zoomLevel={1}
+              activeElementKey={null}
+              onSelectElement={() => {}}
+              onUpdateField={() => {}}
+              onUpdateBullet={() => {}}
+              onUpdateBrand={() => {}}
+              isExportMode={true}
+            />
+          </div>
+        ))}
+      </div>
+
       <div className="relative w-full max-w-xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-        
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/90">
           <div className="flex items-center gap-3">
@@ -150,7 +287,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 Exportar Carrusel & Formatos
               </h3>
               <p className="text-xs text-slate-400">
-                Descarga en alta resolución (2X), paquete ZIP completo o copia para Canva
+                Descarga en alta fidelidad 1:1, paquete ZIP completo o copia para Canva
               </p>
             </div>
           </div>
@@ -164,7 +301,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
         {/* Content */}
         <div className="p-6 space-y-3.5">
-          
           {/* Action 1: Download Full ZIP */}
           <button
             onClick={handleDownloadZip}
@@ -180,8 +316,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   Descargar Carrusel Completo (.ZIP)
                 </h4>
                 <p className="text-xs text-slate-400">
-                  {slides.length} diapositivas (PNG HD) + videos MP4 reales + audios MP3 + textos Canva y copy de redes
+                  {slides.length} diapositivas (PNG HD) + videos MP4 + audios MP3 + textos Canva y copy de redes
                 </p>
+                {exportProgress && isExportingZip && (
+                  <p className="text-[11px] text-rose-400 font-semibold mt-1 animate-pulse">
+                    {exportProgress}
+                  </p>
+                )}
               </div>
             </div>
             {isExportingZip ? (
@@ -208,7 +349,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   Descargar Diapositiva Actual #{currentSlide.id} (PNG)
                 </h4>
                 <p className="text-xs text-slate-400">
-                  Formato {aspectRatio} en resolución 2X ultra nítida
+                  Formato {aspectRatio} con 100% de fidelidad de sombras, posición y estilos
                 </p>
               </div>
             </div>
@@ -265,7 +406,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               />
             </label>
           </div>
-
         </div>
 
         {/* Footer */}
@@ -277,7 +417,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             Cerrar
           </button>
         </div>
-
       </div>
     </div>
   );

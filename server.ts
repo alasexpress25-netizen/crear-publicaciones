@@ -187,6 +187,7 @@ ${contextToAnalyze.slice(0, 8000)}
 """
 
 Extrae y sintetiza un perfil estratégico de marketing de alto valor para entrenar a la IA en la creación de carruseles.
+Identifica especialmente el vocabulario técnico, métricas, acrónimos o jerga profesional propios de esta industria.
 Devuelve un JSON con:
 {
   "businessSummary": "Resumen claro del negocio y propuesta de valor (2-3 líneas)",
@@ -194,6 +195,7 @@ Devuelve un JSON con:
   "painPoints": ["Dolor o frustración 1", "Dolor 2", "Dolor 3", "Dolor 4"],
   "commonMistakes": ["Error común que comete el cliente ideal 1", "Error 2", "Error 3"],
   "uniqueAngles": ["Ángulo diferenciador o propuesta única 1", "Ángulo 2", "Ángulo 3"],
+  "technicalTerms": ["Término técnico/jerga 1", "Término 2", "Término 3", "Término 4", "Término 5", "Término 6"],
   "recommendedHooks": [
     "Pregunta provocadora de scroll-stopper 1",
     "Pregunta o gancho de error 2",
@@ -233,9 +235,16 @@ Devuelve un JSON con:
         hookType = "pregunta_reflexiva",
         targetAudience = "",
         knowledgeBase = "",
+        technicalTerms = [],
         brand = { name: "LA VISUAL MK", web: "lavisualmk.com" },
         language = "es"
       } = req.body;
+
+      const languageName = language === "pt" ? "Portugués (Brasil - pt-BR)" : language === "en" ? "English (US - en-US)" : "Español (es)";
+      
+      const technicalTermsList = Array.isArray(technicalTerms) && technicalTerms.length > 0
+        ? technicalTerms.join(", ")
+        : (brand.technicalTerms && brand.technicalTerms.length > 0 ? brand.technicalTerms.join(", ") : "");
 
       const prompt = `
 CREAR UN CARRUSEL DE REDES SOCIALES ESTRATÉGICO DE EXACTAMENTE ${slideCount} DIAPOSITIVAS.
@@ -249,6 +258,10 @@ ${targetAudience || "Clientes potenciales que buscan solucionar un problema real
 DOCUMENTOS / CONOCIMIENTO DE MARKETING AGREGADO:
 ${knowledgeBase || "Sin documentos adicionales"}
 
+${technicalTermsList ? `VOCABULARIO TÉCNICO, JERGA O TÉRMINOS OBLIGATORIOS DEL SECTOR A INCLUIR NATURALMENTE:
+${technicalTermsList}
+-> INSTRUCCIÓN CRÍTICA DE VOCABULARIO: Incorpora de 2 a 4 de estos términos técnicos especializados de forma orgánica en los títulos, bullets o cuerpo de las diapositivas para transmitir autoridad, dominio profesional y experiencia real en el nicho.` : ''}
+
 OBJETIVO DEL CARRUSEL:
 ${objective} (ventas, interacción/comentarios, guardados/tips, autoridad/marca, o alcance)
 
@@ -256,7 +269,8 @@ TIPO DE GANCHO PRIORITARIO PARA LA DIAPOSITIVA 1:
 ${hookType} (pregunta_reflexiva, error_costoso, quiebre_creencia, contraste_antes_despues, analogia, caso_revelado)
 
 NOMBRE DE MARCA: ${brand.name} | WEB: ${brand.web}
-IDIOMA DE REDACCIÓN: ${language === "pt" ? "Portugués de Brasil (pt-BR)" : "Español (es)"}
+IDIOMA DE REDACCIÓN OBLIGATORIO: ${languageName}
+¡TODOS los textos (títulos, subtítulos, cuerpo, badges, bullets, cta, caption y hashtags) DEBEN ESTAR EN ${languageName}!
 
 REQUISITOS CRÍTICOS:
 1. DIAPOSITIVA 1 (EL SCROLL-STOPPER):
@@ -267,6 +281,7 @@ REQUISITOS CRÍTICOS:
 2. DIAPOSITIVAS INTERMEDIAS (EL DESARROLLO DEL VALOR / TENSIÓN):
    - Desarrollan la idea con lógica implacable, datos concretos, errores específicos o pasos accionables.
    - Si corresponde, usar "bullets" con 2 a 3 puntos concisos.
+   - Usa la jerga o términos del sector para diferenciar este contenido de contenido genérico de novatos.
 3. DIAPOSITIVA FINAL (EL CIERRE / CTA):
    - Llamado a la acción inequívoco y natural para ${objective}.
 4. DIRECTOR DE MEDIOS & FONDOS VISUALES (STOCK & IA):
@@ -320,10 +335,194 @@ Devuelve EXCLUSIVAMENTE un JSON con esta estructura exacta:
     }
   });
 
+  // 2.5 Generate Niche Knowledge & Technical Glossary with 1 Click
+  app.post("/api/generate-niche-knowledge", async (req, res) => {
+    try {
+      const { niche, language = "es" } = req.body;
+      if (!niche || typeof niche !== "string" || !niche.trim()) {
+        return res.status(400).json({ error: "Por favor especifica el nicho o industria" });
+      }
+
+      const langName = language === "pt" ? "Portugués (Brasil - pt-BR)" : language === "en" ? "English (US - en-US)" : "Español (es)";
+
+      const prompt = `
+Actúa como Consultor Senior de Estrategia de Contenidos y Experto en la Industria: "${niche}".
+Genera un Dossier de Conocimiento de Marketing y Glosario Técnico Completo para capacitar a la IA y crear carruseles de alta conversión para clientes de este sector.
+
+IDIOMA: ${langName}
+
+Devuelve EXCLUSIVAMENTE un JSON con:
+{
+  "title": "Guía Estratégica & Glosario: ${niche}",
+  "businessSummary": "Resumen de cómo opera esta industria, propuesta de valor y modelo de monetización (2-3 párrafos)",
+  "targetAudience": "Perfil detallado del cliente ideal (dolores, nivel de consciencia, qué busca)",
+  "technicalTerms": [
+    "Término 1 (ej: KPI, sigla o concepto clave)",
+    "Término 2",
+    "Término 3",
+    "Término 4",
+    "Término 5",
+    "Término 6",
+    "Término 7",
+    "Término 8",
+    "Término 9",
+    "Término 10"
+  ],
+  "painPoints": [
+    "Frustración real o dolor que vive el cliente en este nicho 1",
+    "Dolor 2",
+    "Dolor 3",
+    "Dolor 4"
+  ],
+  "commonMistakes": [
+    "Error común de los clientes que contratan este servicio 1",
+    "Error 2",
+    "Error 3"
+  ],
+  "uniqueAngles": [
+    "Ángulo de venta diferenciador 1",
+    "Ángulo 2",
+    "Ángulo 3"
+  ],
+  "recommendedHooks": [
+    "Pregunta de shock para Slide 1",
+    "Gancho de error costoso para Slide 1",
+    "Gancho de quiebre de mito/creencia para Slide 1"
+  ],
+  "brandTone": "Tono recomendado (ej: Corporativo y analítico / Cercano y empático / Directo y retador)"
+}
+`;
+
+      const response = await executeWithFallback((ai, modelName) =>
+        ai.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+            systemInstruction: MARKETING_PSYCHOLOGY_FRAMEWORK,
+            temperature: 0.6,
+          },
+        })
+      );
+
+      const parsed = JSON.parse(response.text || "{}");
+      res.json({ success: true, data: parsed });
+    } catch (err: any) {
+      console.error("Error generating niche knowledge:", err);
+      res.status(500).json({ error: err.message || "Error al generar conocimiento del nicho" });
+    }
+  });
+
+  // 3.5 Rewrite Individual Slide with AI (Shorter, more provocative, add data/jargon, etc.)
+  app.post("/api/rewrite-slide", async (req, res) => {
+    try {
+      const {
+        slide,
+        instruction = "make_shorter",
+        customPrompt = "",
+        brief = "",
+        targetAudience = "",
+        technicalTerms = [],
+        language = "es"
+      } = req.body;
+
+      if (!slide) {
+        return res.status(400).json({ error: "Slide no proporcionado" });
+      }
+
+      const langName = language === "pt" ? "Portugués (Brasil - pt-BR)" : language === "en" ? "English (US - en-US)" : "Español (es)";
+      const termsList = Array.isArray(technicalTerms) ? technicalTerms.join(", ") : "";
+
+      let instructionDirective = "";
+      switch (instruction) {
+        case "make_shorter":
+          instructionDirective = "Haz el texto más conciso, directo al grano y de lectura ultra-rápida (menos palabras, máxima claridad).";
+          break;
+        case "more_provocative":
+          instructionDirective = "Haz el gancho y el texto mucho más provocador, disruptivo, de quiebre de creencias y de alto impacto emocional.";
+          break;
+        case "add_technical_data":
+          instructionDirective = `Añade datos concretos, estadísticas o vocabulario técnico especializado del sector (${termsList || 'métricas del nicho'}) para proyectar autoridad senior.`;
+          break;
+        case "reflexive_question":
+          instructionDirective = "Reformula el título y el enfoque como una pregunta reflexiva que haga que el lector se sienta inmediatamente aludido.";
+          break;
+        case "storytelling":
+          instructionDirective = "Aplica una estructura de micro-storytelling (situación real, conflicto o revelación) con empatía y cercanía.";
+          break;
+        case "actionable_steps":
+          instructionDirective = "Estructura el contenido en viñetas o pasos ultra-accionables (1, 2, 3) que el lector pueda aplicar de inmediato.";
+          break;
+        case "custom":
+          instructionDirective = `Aplica exactamente esta instrucción del usuario: "${customPrompt}"`;
+          break;
+        default:
+          instructionDirective = "Mejora la redacción para que sea más persuasiva y de alto impacto.";
+      }
+
+      const prompt = `
+Actúa como Director Creativo y Copywriter de Élite para Redes Sociales.
+Re-escribe y optimiza esta DIAPOSITIVA ESPECÍFICA siguiendo el objetivo solicitado.
+
+IDIOMA: ${langName}
+INSTRUCCIÓN ESPECÍFICA:
+${instructionDirective}
+
+CONTEXTO GENERAL DEL CARRUSEL:
+${brief || "Carrusel de marketing de alta conversión"}
+
+PÚBLICO OBJETIVO:
+${targetAudience || "Público profesional o clientes ideales"}
+
+${termsList ? `VOCABULARIO TÉCNICO DISPONIBLE:
+${termsList}` : ""}
+
+DIAPOSITIVA ORIGINAL:
+${JSON.stringify(slide, null, 2)}
+
+REGLAS:
+1. Conserva la misma estructura básica (badge, subtag, title, body, cta, bullets si aplica, comparison si aplica, stat si aplica, quote si aplica, ctaFinal si aplica) pero con textos totalmente renovados, más potentes y magnéticos.
+2. Mantén los títulos concisos y con impacto visual.
+3. Devuelve EXCLUSIVAMENTE un JSON con la estructura actualizada de la diapositiva:
+{
+  "badge": "...",
+  "subtag": "...",
+  "title": "...",
+  "body": "...",
+  "cta": "...",
+  "bullets": [...],
+  "comparison": { ... }, // si la diapositiva original lo tenía
+  "stat": { ... }, // si la diapositiva original lo tenía
+  "quote": { ... }, // si la diapositiva original lo tenía
+  "ctaFinal": { ... } // si la diapositiva original lo tenía
+}
+`;
+
+      const response = await executeWithFallback((ai, modelName) =>
+        ai.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+            systemInstruction: MARKETING_PSYCHOLOGY_FRAMEWORK,
+            temperature: 0.7,
+          },
+        })
+      );
+
+      const parsed = JSON.parse(response.text || "{}");
+      res.json({ success: true, data: parsed });
+    } catch (err: any) {
+      console.error("Error rewriting slide:", err);
+      res.status(500).json({ error: err.message || "Error al re-escribir la diapositiva" });
+    }
+  });
+
   // 3. Generate 5-6 Scroll-Stopping Hook Variations for Slide 1
   app.post("/api/generate-hooks", async (req, res) => {
     try {
       const { brief, targetAudience, knowledgeBase, language = "es" } = req.body;
+      const targetLang = language === "pt" ? "Portugués (Brasil - pt-BR)" : language === "en" ? "English (US - en-US)" : "Español (es)";
 
       const prompt = `
 Genera 6 ganchos psicológicos alternativos de alto impacto para la DIAPOSITIVA 1 de un carrusel de redes sociales.
@@ -336,7 +535,7 @@ AUDIENCIA / CONTEXTO:
 ${targetAudience || ""}
 ${knowledgeBase || ""}
 
-IDIOMA: ${language === "pt" ? "Portugués (pt-BR)" : "Español (es)"}
+IDIOMA OBLIGATORIO: ${targetLang}
 
 Genera exactamente 6 tipos de ganchos con su estructura correspondiente:
 1. "pregunta_reflexiva": Pregunta que pone el dedo en la llaga o toca una frustración común.
@@ -379,6 +578,55 @@ Devuelve un JSON con:
     } catch (err: any) {
       console.error("Error generating hooks:", err);
       res.status(500).json({ error: err.message || "Error al generar ganchos" });
+    }
+  });
+
+  // 4. Translate Entire Carousel to Spanish, Portuguese or English
+  app.post("/api/translate-carousel", async (req, res) => {
+    try {
+      const { slides, postMeta, targetLanguage = "es" } = req.body;
+      const langName = targetLanguage === "pt" ? "Portugués (Brasil - pt-BR)" : targetLanguage === "en" ? "English (US - en-US)" : "Español (es)";
+
+      const prompt = `
+Actúa como Traductor Publicitario Experto y Copywriter de Redes Sociales.
+Traduce y adapta estratégicamente este carrusel completo de diapositivas al idioma: ${langName}.
+
+Mantén el gancho emocional, la fuerza persuasiva, el ritmo y el tono publicitario de cada diapositiva.
+Traduce todos los campos de texto: badge, subtag, title, body, cta, bullets, customTexts, comparison, stat, quote, ctaFinal, caption y hashtags.
+Conserva intactas las propiedades numéricas, IDs, imágenes, estilos y configuraciones de diseño.
+
+CARRUSEL ORIGINAL A TRADUCIR:
+${JSON.stringify({ slides, postMeta }, null, 2)}
+
+Devuelve EXCLUSIVAMENTE un JSON válido con la misma estructura:
+{
+  "slides": [
+    ... // array de slides con todos sus textos traducidos al ${langName}
+  ],
+  "post": {
+    "caption": "...", // post caption traducido al ${langName}
+    "hashtags": [...] // hashtags relevantes en minúsculas en el idioma ${langName}
+  }
+}
+`;
+
+      const response = await executeWithFallback((ai, modelName) =>
+        ai.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+            systemInstruction: MARKETING_PSYCHOLOGY_FRAMEWORK,
+            temperature: 0.3,
+          },
+        })
+      );
+
+      const parsed = JSON.parse(response.text || "{}");
+      res.json({ success: true, data: parsed });
+    } catch (err: any) {
+      console.error("Error translating carousel:", err);
+      res.status(500).json({ error: err.message || "Error al traducir carrusel" });
     }
   });
 

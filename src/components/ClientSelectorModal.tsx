@@ -15,7 +15,8 @@ import {
   ArrowRight,
   Upload,
   Image as ImageIcon,
-  AlertCircle
+  AlertCircle,
+  Tag
 } from 'lucide-react';
 import {
   AgencyClient,
@@ -69,6 +70,7 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
   const [newClientColor, setNewClientColor] = useState('#e11d48');
   const [newClientLogo, setNewClientLogo] = useState('');
   const [newClientKB, setNewClientKB] = useState('');
+  const [newClientTechnicalTerms, setNewClientTechnicalTerms] = useState('');
 
   useEffect(() => {
     if (isOpen) {
@@ -161,6 +163,10 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
     e.preventDefault();
     if (!newClientName.trim()) return;
 
+    const termsArray = newClientTechnicalTerms
+      ? newClientTechnicalTerms.split(/[,;\n]+/).map((t) => t.trim()).filter(Boolean)
+      : [];
+
     const newClient: AgencyClient = {
       id: `custom-client-${Date.now()}`,
       name: newClientName.trim(),
@@ -172,6 +178,7 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
       brand_color: newClientColor || '#e11d48',
       logo_url: newClientLogo,
       knowledge_base: newClientKB.trim(),
+      technical_terms: termsArray,
       topics: [
         `¿Por qué tu servicio es excelente pero tus ventas no despegan?`,
         `Los 3 errores más comunes en ${newClientBusiness || 'tu sector'}`,
@@ -513,6 +520,26 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
             </div>
 
             <div>
+              <label className="text-xs font-bold text-slate-300 block mb-1 flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-amber-400">
+                  <Tag className="w-3.5 h-3.5" />
+                  Vocabulario Técnico & Jerga del Sector (Separados por coma)
+                </span>
+                <span className="text-[10px] text-slate-400 font-normal">Opcional pero muy recomendado</span>
+              </label>
+              <input
+                type="text"
+                value={newClientTechnicalTerms}
+                onChange={(e) => setNewClientTechnicalTerms(e.target.value)}
+                placeholder="Ej: Pixel de Meta, ROAS, CPA, Landing Page, SEO On-Page, Lead Magnet, SKU..."
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-500"
+              />
+              <p className="text-[10px] text-slate-400 mt-1">
+                La IA usará estos términos en los títulos y bullets para sonar con alta autoridad y dominio del nicho.
+              </p>
+            </div>
+
+            <div>
               <label className="text-xs font-bold text-slate-300 block mb-1">
                 Contexto, Propuesta de Valor y Oferta (Para que la IA aprenda del cliente)
               </label>
@@ -732,6 +759,26 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
                       {activeClientPreview.target_audience || 'Dueños de negocios y clientes calificados del sector.'}
                     </p>
                   </div>
+
+                  {/* Technical Terms Tags */}
+                  {Array.isArray(activeClientPreview.technical_terms) && activeClientPreview.technical_terms.length > 0 && (
+                    <div className="space-y-1.5 bg-slate-950/70 p-3.5 rounded-2xl border border-amber-900/40">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                        <Tag className="w-3.5 h-3.5" />
+                        Jerga y Términos Técnicos ({activeClientPreview.technical_terms.length}):
+                      </span>
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {activeClientPreview.technical_terms.map((term, i) => (
+                          <span
+                            key={i}
+                            className="bg-amber-950/40 border border-amber-800/40 text-amber-200 text-[11px] px-2.5 py-0.5 rounded-lg"
+                          >
+                            {term}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Knowledge Base & Positioning */}
                   {activeClientPreview.knowledge_base && (

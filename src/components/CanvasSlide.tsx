@@ -22,7 +22,9 @@ import {
   Heart,
   X,
   Trash2,
-  Plus
+  Plus,
+  Move,
+  GripVertical
 } from 'lucide-react';
 
 interface CanvasSlideProps {
@@ -45,6 +47,8 @@ interface CanvasSlideProps {
   onUpdateStat?: (partial: Partial<BigStatData>) => void;
   onUpdateQuote?: (partial: Partial<QuoteData>) => void;
   onUpdateCtaFinal?: (partial: Partial<CtaFinalData>) => void;
+  onUpdateTextPos?: (key: string, pos: { left: number; top: number } | null) => void;
+  isExportMode?: boolean;
 }
 
 export const CanvasSlide: React.FC<CanvasSlideProps> = ({
@@ -67,6 +71,8 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
   onUpdateStat,
   onUpdateQuote,
   onUpdateCtaFinal,
+  onUpdateTextPos,
+  isExportMode = false,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -78,6 +84,75 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
     '1:1': 'aspect-square max-w-[450px]',
     '9:16': 'aspect-[9/16] max-w-[370px]',
     '16:9': 'aspect-[16/9] max-w-[550px]',
+  };
+
+  const startDrag = (key: string, e: React.PointerEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!containerRef.current || isExportMode) return;
+
+    const containerRect = containerRef.current.getBoundingClientRect();
+    const startX = e.clientX;
+    const startY = e.clientY;
+
+    const currentPos = slide.textPos?.[key] || {
+      left: Math.round(((e.clientX - containerRect.left) / containerRect.width) * 100),
+      top: Math.round(((e.clientY - containerRect.top) / containerRect.height) * 100),
+    };
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const deltaX = moveEvent.clientX - startX;
+      const deltaY = moveEvent.clientY - startY;
+
+      const deltaXPct = (deltaX / containerRect.width) * 100;
+      const deltaYPct = (deltaY / containerRect.height) * 100;
+
+      const newLeft = Math.max(5, Math.min(95, Math.round(currentPos.left + deltaXPct)));
+      const newTop = Math.max(5, Math.min(95, Math.round(currentPos.top + deltaYPct)));
+
+      onUpdateTextPos?.(key, { left: newLeft, top: newTop });
+    };
+
+    const handlePointerUp = () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+  };
+
+  const renderActiveControls = (key: string) => {
+    if (activeElementKey !== key || isExportMode) return null;
+    const hasPos = Boolean(slide.textPos && slide.textPos[key]);
+
+    return (
+      <div
+        className="no-export absolute -top-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 bg-slate-900/95 border border-rose-500 shadow-2xl px-2 py-0.5 rounded-full text-[10px] font-bold text-white select-none whitespace-nowrap"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div
+          onPointerDown={(e) => startDrag(key, e)}
+          className="flex items-center gap-1 cursor-grab active:cursor-grabbing text-rose-300 hover:text-white px-1 py-0.5 transition"
+          title="Mantén presionado y arrastra para mover este texto libremente por la diapositiva"
+        >
+          <Move className="w-3 h-3 text-rose-400" />
+          <span>Mover</span>
+        </div>
+        {hasPos && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onUpdateTextPos?.(key, null);
+            }}
+            className="text-[9px] bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white px-1.5 py-0.5 rounded border border-slate-700 transition"
+            title="Restablecer a posición por defecto"
+          >
+            Restablecer
+          </button>
+        )}
+      </div>
+    );
   };
 
   const getStyleFor = (key: string) => {
@@ -103,7 +178,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
          1.5px -1.5px 0 ${col},
         -1.5px  1.5px 0 ${col},
          1.5px  1.5px 0 ${col},
-         0px 2px 4px rgba(0,0,0,0.8)
+         0px 3px 8px rgba(0,0,0,0.95)
       `;
     }
 
@@ -111,7 +186,9 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
       styleObj.position = 'absolute';
       styleObj.left = `${pos.left}%`;
       styleObj.top = `${pos.top}%`;
-      styleObj.zIndex = 20;
+      styleObj.transform = 'translate(-50%, -50%)';
+      styleObj.zIndex = 30;
+      styleObj.width = styleObj.width || '85%';
     }
 
     return styleObj;
@@ -129,6 +206,8 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
   return (
     <div
       ref={containerRef}
+      id={isExportMode ? undefined : 'active-canvas-slide-container'}
+      data-slide-id={slide.id}
       className={`relative w-full ${aspectClassMap[aspectRatio] || aspectClassMap['4:5']} mx-auto rounded-2xl overflow-hidden shadow-2xl border border-slate-800 bg-slate-950 select-none transition-transform duration-150 flex flex-col justify-between`}
       style={{
         transform: `scale(${zoomLevel})`,
@@ -233,12 +312,11 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
         </div>
 
         <div className="flex items-center gap-1.5">
-          <span
-            className="text-white font-black text-[10px] px-2.5 py-0.5 rounded-full uppercase tracking-wider shadow-sm"
-            style={{ backgroundColor: primaryColor }}
-          >
-            SLIDE {slide.id}
-          </span>
+          {brand.handle && (
+            <span className="text-slate-400 font-medium text-[11px] tracking-wide">
+              {brand.handle.startsWith('@') ? brand.handle : `@${brand.handle}`}
+            </span>
+          )}
         </div>
       </div>
 
@@ -263,6 +341,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                 }}
                 style={getStyleFor('badge')}
               >
+                {renderActiveControls('badge')}
                 <span
                   contentEditable
                   suppressContentEditableWarning
@@ -278,7 +357,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                       e.stopPropagation();
                       onDeleteElement('badge');
                     }}
-                    className="absolute -top-2 -right-2 bg-rose-600 hover:bg-rose-500 text-white rounded-full p-0.5 shadow-md opacity-0 group-hover:opacity-100 transition"
+                    className="no-export absolute -top-2 -right-2 bg-rose-600 hover:bg-rose-500 text-white rounded-full p-0.5 shadow-md opacity-0 group-hover:opacity-100 transition"
                     title="Eliminar badge"
                   >
                     <X className="w-3 h-3" />
@@ -296,13 +375,15 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                   e.stopPropagation();
                   onSelectElement('subtag');
                 }}
+                style={getStyleFor('subtag')}
               >
+                {renderActiveControls('subtag')}
                 <p
                   contentEditable
                   suppressContentEditableWarning
                   onBlur={(e) => onUpdateField('subtag', e.currentTarget.innerText)}
                   className="font-bold text-xs sm:text-sm tracking-wide outline-none"
-                  style={{ color: primaryColor, ...getStyleFor('subtag') }}
+                  style={{ color: primaryColor }}
                 >
                   {slide.subtag}
                 </p>
@@ -312,7 +393,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                       e.stopPropagation();
                       onDeleteElement('subtag');
                     }}
-                    className="absolute top-1 right-1 bg-rose-600 hover:bg-rose-500 text-white rounded-full p-0.5 shadow-md opacity-0 group-hover:opacity-100 transition"
+                    className="no-export absolute top-1 right-1 bg-rose-600 hover:bg-rose-500 text-white rounded-full p-0.5 shadow-md opacity-0 group-hover:opacity-100 transition"
                     title="Eliminar subtítulo"
                   >
                     <X className="w-3 h-3" />
@@ -329,13 +410,14 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                 e.stopPropagation();
                 onSelectElement('title');
               }}
+              style={getStyleFor('title')}
             >
+              {renderActiveControls('title')}
               <h2
                 contentEditable
                 suppressContentEditableWarning
                 onBlur={(e) => onUpdateField('title', e.currentTarget.innerText)}
                 className="font-black text-lg sm:text-2xl text-white leading-tight uppercase outline-none drop-shadow-md"
-                style={getStyleFor('title')}
               >
                 {slide.title || 'ESCRIBE AQUÍ EL TÍTULO O GANCHO'}
               </h2>
@@ -350,13 +432,14 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                   e.stopPropagation();
                   onSelectElement('body');
                 }}
+                style={getStyleFor('body')}
               >
+                {renderActiveControls('body')}
                 <p
                   contentEditable
                   suppressContentEditableWarning
                   onBlur={(e) => onUpdateField('body', e.currentTarget.innerText)}
                   className="text-xs sm:text-sm text-slate-300 leading-relaxed outline-none"
-                  style={getStyleFor('body')}
                 >
                   {slide.body}
                 </p>
@@ -366,7 +449,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                       e.stopPropagation();
                       onDeleteElement('body');
                     }}
-                    className="absolute top-1 right-1 bg-rose-600 hover:bg-rose-500 text-white rounded-full p-0.5 shadow-md opacity-0 group-hover:opacity-100 transition"
+                    className="no-export absolute top-1 right-1 bg-rose-600 hover:bg-rose-500 text-white rounded-full p-0.5 shadow-md opacity-0 group-hover:opacity-100 transition"
                     title="Eliminar cuerpo de texto"
                   >
                     <X className="w-3 h-3" />
@@ -387,7 +470,9 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                       e.stopPropagation();
                       onSelectElement(`bullet-${idx}`);
                     }}
+                    style={getStyleFor(`bullet-${idx}`)}
                   >
+                    {renderActiveControls(`bullet-${idx}`)}
                     <span
                       className="font-bold text-sm leading-none"
                       style={{ color: primaryColor }}
@@ -399,7 +484,6 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                       suppressContentEditableWarning
                       onBlur={(e) => onUpdateBullet(idx, e.currentTarget.innerText)}
                       className="flex-1 outline-none"
-                      style={getStyleFor(`bullet-${idx}`)}
                     >
                       {bullet}
                     </span>
@@ -409,7 +493,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                           e.stopPropagation();
                           onDeleteBullet(idx);
                         }}
-                        className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-400 transition rounded"
+                        className="no-export opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-400 transition rounded"
                         title="Eliminar este punto"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -425,7 +509,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                       e.stopPropagation();
                       onAddBullet();
                     }}
-                    className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400 hover:text-rose-400 transition px-2 py-1"
+                    className="no-export flex items-center gap-1.5 text-[11px] font-bold text-slate-400 hover:text-rose-400 transition px-2 py-1"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>+ Añadir Punto a la Lista</span>
@@ -767,14 +851,15 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                   e.stopPropagation();
                   onSelectElement(custom.id);
                 }}
+                style={getStyleFor(custom.id)}
               >
+                {renderActiveControls(custom.id)}
                 <div
                   contentEditable
                   suppressContentEditableWarning
                   onBlur={(e) => onUpdateCustomText?.(custom.id, e.currentTarget.innerText)}
                   className="text-xs sm:text-sm text-slate-200 outline-none leading-relaxed"
                   style={{
-                    ...getStyleFor(custom.id),
                     color: custom.color || undefined,
                     fontSize: custom.fontSize ? `${custom.fontSize}px` : undefined,
                     textAlign: custom.align || 'left',
@@ -788,7 +873,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                       e.stopPropagation();
                       onDeleteCustomText(custom.id);
                     }}
-                    className="absolute -top-2 -right-2 bg-rose-600 hover:bg-rose-500 text-white rounded-full p-1 shadow-md opacity-0 group-hover:opacity-100 transition"
+                    className="no-export absolute -top-2 -right-2 bg-rose-600 hover:bg-rose-500 text-white rounded-full p-1 shadow-md opacity-0 group-hover:opacity-100 transition"
                     title="Eliminar capa de texto"
                   >
                     <X className="w-3 h-3" />
@@ -804,40 +889,43 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
       {/* Bottom Footer Bar (CTA & Web) */}
       <div className="relative z-10 w-full p-5 sm:p-6 pt-2 flex items-center justify-between gap-3 border-t border-slate-800/50 text-xs">
         <div
-          className={`cursor-pointer transition rounded-lg px-2 py-0.5 ${
+          className={`group relative cursor-pointer transition rounded-lg px-2 py-0.5 ${
             activeElementKey === 'cta' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/40'
           }`}
           onClick={(e) => {
             e.stopPropagation();
             onSelectElement('cta');
           }}
+          style={getStyleFor('cta')}
         >
+          {renderActiveControls('cta')}
           <span
             contentEditable
             suppressContentEditableWarning
             onBlur={(e) => onUpdateField('cta', e.currentTarget.innerText)}
             className="text-xs font-semibold text-slate-300 outline-none flex items-center gap-1.5"
-            style={getStyleFor('cta')}
           >
             {slide.cta || '👉 Desliza para ver más'}
           </span>
         </div>
 
         <div
-          className={`cursor-pointer transition rounded-lg px-2 py-0.5 ${
+          className={`group relative cursor-pointer transition rounded-lg px-2 py-0.5 ${
             activeElementKey === 'brandWeb' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/40'
           }`}
           onClick={(e) => {
             e.stopPropagation();
             onSelectElement('brandWeb');
           }}
+          style={getStyleFor('brandWeb')}
         >
+          {renderActiveControls('brandWeb')}
           <span
             contentEditable
             suppressContentEditableWarning
             onBlur={(e) => onUpdateBrand('web', e.currentTarget.innerText)}
             className="text-xs font-bold outline-none hover:underline"
-            style={{ color: primaryColor, ...getStyleFor('brandWeb') }}
+            style={{ color: primaryColor }}
           >
             {brand.web || (brand.handle ? `@${brand.handle.replace(/^@/, '')}` : 'lavisualmk.com')}
           </span>

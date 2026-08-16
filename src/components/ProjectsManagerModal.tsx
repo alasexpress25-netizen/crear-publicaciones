@@ -14,9 +14,35 @@ import {
   FileText,
   Clock,
   ArrowRight,
-  ExternalLink
+  ExternalLink,
+  Copy,
+  Users,
+  HardDrive,
+  FolderSync,
+  FolderCheck,
+  FolderOpen,
+  RefreshCw,
+  AlertCircle,
+  FileDown
 } from 'lucide-react';
 import { Slide, BrandInfo, CarouselPostMeta, AspectRatio, SavedCarouselProject } from '../types';
+import {
+  getAllProjectsDB,
+  saveProjectDB,
+  deleteProjectDB,
+  saveAllProjectsDB
+} from '../services/storageDb';
+import {
+  isFileSystemAccessSupported,
+  pickLocalFolder,
+  unlinkLocalFolder,
+  getLinkedFolderName,
+  getActiveDirectoryHandle,
+  restorePersistedDirectoryHandle,
+  saveProjectToDiskFolder,
+  readProjectsFromDiskFolder,
+  downloadSingleProjectFile
+} from '../services/localFolderSync';
 
 interface ProjectsManagerModalProps {
   isOpen: boolean;
@@ -30,8 +56,6 @@ interface ProjectsManagerModalProps {
   onLoadProject: (project: SavedCarouselProject) => void;
   onNewProject: () => void;
 }
-
-const LOCAL_STORAGE_PROJECTS_KEY = 'lavisualmk_saved_projects_v2';
 
 export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
   isOpen,
@@ -48,12 +72,26 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
   const [projects, setProjects] = useState<SavedCarouselProject[]>([]);
   const [newTitle, setNewTitle] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedClientFilter, setSelectedClientFilter] = useState<string>('all');
   const [activeProject, setActiveProject] = useState<SavedCarouselProject | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveDiskStatus, setSaveDiskStatus] = useState<string | null>(null);
+  const [linkedFolderName, setLinkedFolderName] = useState<string | null>(null);
+  const [isSyncingFolder, setIsSyncingFolder] = useState(false);
+  const [folderNotification, setFolderNotification] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
-      loadProjects();
+      loadProjectsFromStorage();
+      setLinkedFolderName(getLinkedFolderName());
+
+      // Intentar restaurar el handle persistido de la carpeta automáticamente
+      restorePersistedDirectoryHandle().then((res) => {
+        if (res) {
+          setLinkedFolderName(res.name);
+        }
+      });
+
       // Pre-fill title suggestion from slide 1 or brief
       const slide1 = currentSlides[0];
       const defaultTitle = slide1?.title || currentBrief?.slice(0, 40) || `Carrusel ${currentBrand.name || 'Proyecto'}`;
@@ -61,24 +99,77 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
     }
   }, [isOpen, currentSlides, currentBrief, currentBrand.name]);
 
-  const loadProjects = () => {
+  const loadProjectsFromStorage = async () => {
     try {
-      const saved = localStorage.getItem(LOCAL_STORAGE_PROJECTS_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          setProjects(parsed);
-          if (parsed.length > 0) setActiveProject(parsed[0]);
-          return;
-        }
+      const stored = await getAllProjectsDB();
+      setProjects(stored);
+      if (stored.length > 0) {
+        setActiveProject((prev) => {
+          if (prev && stored.some(p => p.id === prev.id)) return prev;
+          return stored[0];
+        });
+      } else {
+        setActiveProject(null);
       }
     } catch (e) {
       console.error(e);
     }
-    setProjects([]);
   };
 
-  const handleSaveCurrentProject = () => {
+  const handleLinkFolder = async () => {
+    try {
+      const res = await pickLocalFolder();
+      if (res) {
+        setLinkedFolderName(res.name);
+        setFolderNotification(`¡Carpeta "${res.name}" vinculada con éxito!`);
+        setTimeout(() => setFolderNotification(null), 4000);
+
+        // Scan folder for any existing carousels
+        await handleScanFolder(res.handle);
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || 'No se pudo vincular la carpeta.');
+    }
+  };
+
+  const handleUnlinkFolder = () => {
+    unlinkLocalFolder();
+    setLinkedFolderName(null);
+    setFolderNotification('Carpeta local desvinculada.');
+    setTimeout(() => setFolderNotification(null), 3000);
+  };
+
+  const handleScanFolder = async (handleOverride?: FileSystemDirectoryHandle) => {
+    const handle = handleOverride || getActiveDirectoryHandle();
+    if (!handle) {
+      handleLinkFolder();
+      return;
+    }
+
+    setIsSyncingFolder(true);
+    try {
+      const diskProjects = await readProjectsFromDiskFolder(handle);
+      if (diskProjects.length > 0) {
+        const merged = [...diskProjects, ...projects];
+        const unique = merged.filter((v, i, a) => a.findIndex(t => t.id === v.id) === i);
+        await saveAllProjectsDB(unique);
+        setProjects(unique);
+        setFolderNotification(`Se sincronizaron ${diskProjects.length} archivo(s) desde tu carpeta local.`);
+        setTimeout(() => setFolderNotification(null), 4000);
+      } else {
+        setFolderNotification('Carpeta vacía o sin archivos de carrusel reconocidos.');
+        setTimeout(() => setFolderNotification(null), 3000);
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert('Error leyendo los archivos de la carpeta vinculada.');
+    } finally {
+      setIsSyncingFolder(false);
+    }
+  };
+
+  const handleSaveCurrentProject = async () => {
     const titleToUse = newTitle.trim() || `Carrusel ${currentBrand.name || 'Sin título'}`;
     const newProj: SavedCarouselProject = {
       id: `proj-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
@@ -101,20 +192,62 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
       aspectRatio: currentAspectRatio,
     };
 
-    const updated = [newProj, ...projects];
+    // 1. Guardar en IndexedDB (Almacenamiento Ilimitado de Disco)
+    await saveProjectDB(newProj);
+    const updated = [newProj, ...projects.filter(p => p.id !== newProj.id)];
     setProjects(updated);
     setActiveProject(newProj);
-    localStorage.setItem(LOCAL_STORAGE_PROJECTS_KEY, JSON.stringify(updated));
     setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 2000);
+
+    // 2. Si hay carpeta vinculada, escribir archivo físico en disco
+    const dirHandle = getActiveDirectoryHandle();
+    if (dirHandle) {
+      try {
+        const savedFileName = await saveProjectToDiskFolder(dirHandle, newProj);
+        setSaveDiskStatus(`Guardado en tu carpeta "${dirHandle.name}": ${savedFileName}`);
+        setTimeout(() => setSaveDiskStatus(null), 5000);
+      } catch (err) {
+        console.warn('No se pudo guardar automáticamente en la carpeta física:', err);
+      }
+    }
+
+    setTimeout(() => setSaveSuccess(false), 2500);
   };
 
-  const handleDeleteProject = (id: string, e: React.MouseEvent) => {
+  const handleDuplicateProject = async (project: SavedCarouselProject, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const cloned: SavedCarouselProject = {
+      ...JSON.parse(JSON.stringify(project)),
+      id: `proj-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      title: `${project.title} (Copia)`,
+      createdAt: new Date().toLocaleDateString('es-ES', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      }),
+      updatedAt: new Date().toISOString(),
+    };
+
+    await saveProjectDB(cloned);
+    const updated = [cloned, ...projects];
+    setProjects(updated);
+    setActiveProject(cloned);
+
+    // Guardar también en carpeta de disco si está vinculada
+    const dirHandle = getActiveDirectoryHandle();
+    if (dirHandle) {
+      saveProjectToDiskFolder(dirHandle, cloned).catch(console.warn);
+    }
+  };
+
+  const handleDeleteProject = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm('¿Deseas eliminar este carrusel guardado?')) {
+    if (confirm('¿Deseas eliminar este carrusel guardado de tu biblioteca?')) {
+      await deleteProjectDB(id);
       const updated = projects.filter((p) => p.id !== id);
       setProjects(updated);
-      localStorage.setItem(LOCAL_STORAGE_PROJECTS_KEY, JSON.stringify(updated));
       if (activeProject?.id === id) {
         setActiveProject(updated[0] || null);
       }
@@ -135,16 +268,20 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       try {
         const parsed = JSON.parse(ev.target?.result as string);
         if (Array.isArray(parsed)) {
           const merged = [...parsed, ...projects];
-          // deduplicate by ID
           const unique = merged.filter((v, i, a) => a.findIndex(t => t.id === v.id) === i);
+          await saveAllProjectsDB(unique);
           setProjects(unique);
-          localStorage.setItem(LOCAL_STORAGE_PROJECTS_KEY, JSON.stringify(unique));
-          alert(`¡${parsed.length} carruseles importados correctamente!`);
+          alert(`¡${parsed.length} carruseles importados y guardados en tu disco!`);
+        } else if (parsed && parsed.slides) {
+          // Es un solo proyecto
+          await saveProjectDB(parsed);
+          await loadProjectsFromStorage();
+          alert('¡Proyecto importado correctamente a tu biblioteca!');
         }
       } catch (err) {
         alert('Archivo JSON no válido.');
@@ -155,18 +292,27 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
 
   if (!isOpen) return null;
 
+  // Extract unique client names for filter tags
+  const clientNames = Array.from(new Set(projects.map((p) => p.clientName || 'General'))).filter(Boolean);
+
   const filtered = projects.filter((p) => {
     const q = searchQuery.toLowerCase();
-    return (
+    const matchesSearch =
       p.title.toLowerCase().includes(q) ||
       p.clientName.toLowerCase().includes(q) ||
-      (p.brief && p.brief.toLowerCase().includes(q))
-    );
+      (p.brief && p.brief.toLowerCase().includes(q));
+
+    const matchesClient =
+      selectedClientFilter === 'all' || p.clientName === selectedClientFilter;
+
+    return matchesSearch && matchesClient;
   });
+
+  const fsSupported = isFileSystemAccessSupported();
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/85 backdrop-blur-md">
-      <div className="relative w-full max-w-4xl bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+      <div className="relative w-full max-w-5xl bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/90">
@@ -177,14 +323,18 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-base font-bold text-white">
-                  Proyectos & Carruseles Guardados
+                  Biblioteca & Almacenamiento en Disco
                 </h3>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-800/60 flex items-center gap-1">
+                  <HardDrive className="w-3 h-3" />
+                  IndexedDB Ilimitado
+                </span>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
-                  {projects.length} Guardados
+                  {projects.length} Carruseles
                 </span>
               </div>
               <p className="text-xs text-slate-400">
-                Guarda tus carruseles completos (diapositivas, fotos, copy del post, hashtags e indicaciones de IA)
+                Tus carruseles se almacenan en el motor de base de datos de tu disco rígido sin límites de tamaño
               </p>
             </div>
           </div>
@@ -196,7 +346,7 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
               title="Descargar copia de seguridad en JSON de todos tus proyectos"
             >
               <Download className="w-4 h-4 text-slate-300" />
-              <span className="hidden sm:inline">Backup</span>
+              <span className="hidden sm:inline">Backup Total</span>
             </button>
             <label
               className="p-2 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition text-xs font-semibold flex items-center gap-1.5 border border-slate-800 cursor-pointer"
@@ -214,6 +364,74 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Real Hard Drive Local Folder Integration Banner */}
+        <div className="px-6 py-2.5 bg-slate-950/90 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 rounded-lg bg-indigo-950/60 text-indigo-400 border border-indigo-800/40">
+              <FolderOpen className="w-4 h-4" />
+            </div>
+            <div>
+              {linkedFolderName ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-300 font-semibold">
+                    Carpeta Física de tu PC vinculada:
+                  </span>
+                  <span className="font-mono text-emerald-400 font-bold bg-emerald-950/60 px-2 py-0.5 rounded-lg border border-emerald-800/50 flex items-center gap-1">
+                    <FolderCheck className="w-3.5 h-3.5" />
+                    📁 {linkedFolderName}
+                  </span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-slate-300 font-medium">
+                    ¿Quieres sincronizar automáticamente con una carpeta en tu disco rígido (C:\, Documentos, etc.)?
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {linkedFolderName ? (
+              <>
+                <button
+                  onClick={() => handleScanFolder()}
+                  disabled={isSyncingFolder}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold transition border border-slate-700"
+                  title="Volver a escanear archivos en la carpeta de tu PC"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncingFolder ? 'animate-spin text-indigo-400' : ''}`} />
+                  <span>Sincronizar</span>
+                </button>
+                <button
+                  onClick={handleUnlinkFolder}
+                  className="px-2.5 py-1.5 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-950/30 transition text-[11px]"
+                  title="Desvincular carpeta de la sesión"
+                >
+                  Desvincular
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={handleLinkFolder}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-indigo-600/90 hover:bg-indigo-500 text-white font-bold transition shadow-sm border border-indigo-500/30"
+                title="Selecciona una carpeta de tu ordenador para guardar archivos .json reales"
+              >
+                <FolderSync className="w-3.5 h-3.5" />
+                <span>Vincular Carpeta de mi PC</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Notifications & Status */}
+        {(folderNotification || saveDiskStatus) && (
+          <div className="px-6 py-2 bg-emerald-950/40 border-b border-emerald-800/40 text-emerald-300 text-xs flex items-center gap-2 animate-in fade-in">
+            <Check className="w-3.5 h-3.5 shrink-0" />
+            <span>{folderNotification || saveDiskStatus}</span>
+          </div>
+        )}
 
         {/* Quick Save Current Carousel Bar */}
         <div className="p-4 bg-slate-950/80 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
@@ -234,7 +452,7 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
               className="flex items-center gap-2 bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-md shadow-rose-950/50 transition transform active:scale-95"
             >
               {saveSuccess ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
-              <span>{saveSuccess ? '¡Guardado con éxito!' : 'Guardar Carrusel Actual'}</span>
+              <span>{saveSuccess ? '¡Guardado en Disco!' : 'Guardar Carrusel Actual'}</span>
             </button>
 
             <button
@@ -258,7 +476,7 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
           
           {/* Left: Project List */}
           <div className="md:col-span-5 border-r border-slate-800 flex flex-col overflow-hidden bg-slate-900/40">
-            <div className="p-3 border-b border-slate-800">
+            <div className="p-3 border-b border-slate-800 space-y-2">
               <input
                 type="text"
                 value={searchQuery}
@@ -266,69 +484,109 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
                 placeholder="Buscar por título o cliente..."
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
               />
+
+              {/* Client Filter Tags */}
+              {clientNames.length > 0 && (
+                <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
+                  <button
+                    onClick={() => setSelectedClientFilter('all')}
+                    className={`px-2.5 py-0.5 rounded-lg text-[10px] font-bold transition shrink-0 ${
+                      selectedClientFilter === 'all'
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                    }`}
+                  >
+                    Todos ({projects.length})
+                  </button>
+                  {clientNames.map((cName) => {
+                    const count = projects.filter((p) => (p.clientName || 'General') === cName).length;
+                    return (
+                      <button
+                        key={cName}
+                        onClick={() => setSelectedClientFilter(cName)}
+                        className={`px-2.5 py-0.5 rounded-lg text-[10px] font-bold transition shrink-0 ${
+                          selectedClientFilter === cName
+                            ? 'bg-rose-600 text-white'
+                            : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                        }`}
+                      >
+                        {cName} ({count})
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             <div className="flex-1 overflow-y-auto p-3 space-y-2 scrollbar-thin">
               {filtered.length === 0 ? (
-                <div className="py-12 text-center text-slate-500 text-xs px-4">
-                  No hay carruseles guardados todavía. Usa el botón superior para guardar el carrusel en el que estás trabajando.
+                <div className="p-8 text-center text-slate-500 text-xs">
+                  {searchQuery ? 'No se encontraron proyectos con ese criterio.' : 'Aún no has guardado ningún carrusel.'}
                 </div>
               ) : (
                 filtered.map((proj) => {
                   const isSelected = activeProject?.id === proj.id;
-                  const slide1 = proj.slides[0];
-
                   return (
                     <div
                       key={proj.id}
                       onClick={() => setActiveProject(proj)}
-                      className={`p-3 rounded-2xl border transition flex items-center justify-between cursor-pointer group ${
+                      className={`p-3 rounded-2xl border transition cursor-pointer flex items-start justify-between gap-2 group ${
                         isSelected
-                          ? 'bg-indigo-950/40 border-indigo-500/70 shadow-md ring-1 ring-indigo-500/30'
-                          : 'bg-slate-950/70 border-slate-800 hover:border-slate-700 hover:bg-slate-800/50'
+                          ? 'border-indigo-500/80 bg-indigo-950/30 shadow-md ring-1 ring-indigo-500/30'
+                          : 'border-slate-800 bg-slate-950/60 hover:bg-slate-800/40 hover:border-slate-700'
                       }`}
                     >
-                      <div className="flex items-center gap-3 min-w-0">
-                        {slide1?.image ? (
-                          <img
-                            src={slide1.image}
-                            alt=""
-                            className="w-10 h-12 rounded-lg object-cover border border-slate-700 shrink-0"
-                          />
-                        ) : (
-                          <div
-                            className="w-10 h-12 rounded-lg flex items-center justify-center text-xs font-black text-white shrink-0 shadow-sm"
-                            style={{ backgroundColor: proj.brand.primaryColor || '#e11d48' }}
-                          >
-                            <Layers className="w-5 h-5" />
-                          </div>
-                        )}
-
-                        <div className="min-w-0">
-                          <h4 className="text-xs font-bold text-white truncate group-hover:text-indigo-400 transition">
-                            {proj.title}
-                          </h4>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <span className="text-[10px] text-rose-400 font-bold truncate max-w-[100px]">
-                              {proj.clientName}
-                            </span>
-                            <span className="text-[10px] text-slate-400">
-                              • {proj.slides.length} diap.
-                            </span>
-                          </div>
-                          <span className="text-[9px] text-slate-400 block mt-0.5">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-slate-800 text-rose-300 border border-slate-700">
+                            {proj.clientName || 'General'}
+                          </span>
+                          <span className="text-[10px] text-slate-500 flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
                             {proj.createdAt}
                           </span>
                         </div>
+
+                        <h4 className="text-xs font-bold text-white group-hover:text-indigo-300 transition truncate">
+                          {proj.title}
+                        </h4>
+
+                        <div className="flex items-center gap-3 mt-1.5 text-[10px] text-slate-400">
+                          <span className="flex items-center gap-1">
+                            <Layers className="w-3 h-3 text-slate-500" />
+                            {proj.slides.length} slides
+                          </span>
+                          <span>•</span>
+                          <span>{proj.aspectRatio || '4:5'}</span>
+                        </div>
                       </div>
 
-                      <button
-                        onClick={(e) => handleDeleteProject(proj.id, e)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 opacity-0 group-hover:opacity-100 transition shrink-0"
-                        title="Eliminar proyecto"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition shrink-0">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            downloadSingleProjectFile(proj);
+                          }}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-400 hover:bg-emerald-950/40 transition"
+                          title="Descargar archivo .json individual a tu PC"
+                        >
+                          <FileDown className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={(e) => handleDuplicateProject(proj, e)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-400 hover:bg-indigo-950/40 transition"
+                          title="Duplicar carrusel"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={(e) => handleDeleteProject(proj.id, e)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 transition"
+                          title="Eliminar de la biblioteca"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                   );
                 })
@@ -336,37 +594,59 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
             </div>
           </div>
 
-          {/* Right: Project Preview & Load */}
-          <div className="md:col-span-7 flex flex-col overflow-y-auto p-5 sm:p-6 bg-slate-900/90 scrollbar-thin">
+          {/* Right: Project Details & Preview */}
+          <div className="md:col-span-7 flex flex-col overflow-hidden bg-slate-900/80 p-5">
             {activeProject ? (
-              <div className="space-y-4">
+              <div className="flex-1 overflow-y-auto space-y-4 pr-1 scrollbar-thin">
                 
-                {/* Title & Load Action */}
-                <div className="flex items-start justify-between gap-3 pb-4 border-b border-slate-800">
+                {/* Active Project Card Header */}
+                <div className="flex items-start justify-between gap-3 pb-3 border-b border-slate-800">
                   <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-rose-400">
-                      Cliente: {activeProject.clientName} ({activeProject.brand.web || activeProject.brand.handle || 'web'})
-                    </span>
-                    <h3 className="text-base font-black text-white mt-0.5">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-xs font-bold text-indigo-400">
+                        {activeProject.clientName}
+                      </span>
+                      <span className="text-slate-600">•</span>
+                      <span className="text-xs text-slate-400">
+                        Creado: {activeProject.createdAt}
+                      </span>
+                    </div>
+                    <h3 className="text-base font-bold text-white">
                       {activeProject.title}
                     </h3>
-                    <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-2">
-                      <Calendar className="w-3 h-3 text-slate-400" />
-                      <span>Guardado el {activeProject.createdAt}</span>
-                      <span>• Formato: {activeProject.aspectRatio || '4:5'}</span>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Proporción: <span className="text-slate-200 font-mono">{activeProject.aspectRatio}</span> | {activeProject.slides.length} diapositivas
                     </p>
                   </div>
 
-                  <button
-                    onClick={() => {
-                      onLoadProject(activeProject);
-                      onClose();
-                    }}
-                    className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-rose-600 hover:from-indigo-500 hover:to-rose-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-lg shadow-indigo-950/50 transition transform active:scale-95 shrink-0"
-                  >
-                    <ArrowRight className="w-4 h-4" />
-                    <span>Abrir en el Editor</span>
-                  </button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => downloadSingleProjectFile(activeProject)}
+                      className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs px-3 py-2.5 rounded-xl border border-slate-700 transition"
+                      title="Descargar archivo individual .carousel.json a tu disco"
+                    >
+                      <FileDown className="w-4 h-4 text-emerald-400" />
+                      <span className="hidden sm:inline">Descargar .JSON</span>
+                    </button>
+                    <button
+                      onClick={() => handleDuplicateProject(activeProject)}
+                      className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs px-3 py-2.5 rounded-xl border border-slate-700 transition"
+                      title="Crear una copia de este proyecto"
+                    >
+                      <Copy className="w-4 h-4" />
+                      <span>Duplicar</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        onLoadProject(activeProject);
+                        onClose();
+                      }}
+                      className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-rose-600 hover:from-indigo-500 hover:to-rose-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-lg shadow-indigo-950/50 transition transform active:scale-95 shrink-0"
+                    >
+                      <ArrowRight className="w-4 h-4" />
+                      <span>Abrir en el Editor</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* Slides Thumbnail Preview Strip */}
@@ -442,7 +722,10 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
 
         {/* Footer */}
         <div className="px-6 py-3 border-t border-slate-800 bg-slate-900/90 flex items-center justify-between text-xs text-slate-400">
-          <span>Tus carruseles se guardan automáticamente y no se borran al cerrar el navegador.</span>
+          <span className="flex items-center gap-1.5">
+            <HardDrive className="w-3.5 h-3.5 text-emerald-400" />
+            Almacenamiento seguro en disco (IndexedDB) + soporte de archivos físicos en tiempo real.
+          </span>
           <button
             onClick={onClose}
             className="px-4 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold transition"

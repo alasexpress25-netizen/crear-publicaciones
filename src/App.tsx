@@ -19,6 +19,7 @@ import {
   DEFAULT_MARKETING_DOCUMENTS
 } from './data/marketingPlaybooks';
 import { AgencyClient, getFallbackAgencyClients } from './services/supabase';
+import { apiTranslateCarousel } from './services/api';
 import { Header } from './components/Header';
 import { CanvasSlide } from './components/CanvasSlide';
 import { SlideNavigation } from './components/SlideNavigation';
@@ -34,6 +35,7 @@ import { PostCaptionModal } from './components/PostCaptionModal';
 import { ExportModal } from './components/ExportModal';
 import { ClientSelectorModal } from './components/ClientSelectorModal';
 import { ProjectsManagerModal } from './components/ProjectsManagerModal';
+import { SlideAiRewriteModal } from './components/SlideAiRewriteModal';
 
 const LOCAL_STORAGE_SLIDES_KEY = 'lavisualmk_carousel_slides_v3';
 const LOCAL_STORAGE_BRAND_KEY = 'lavisualmk_carousel_brand_v3';
@@ -100,6 +102,8 @@ export default function App() {
   const [slideCount, setSlideCount] = useState<number>(4);
   const [objective, setObjective] = useState<string>('ventas');
   const [hookType, setHookType] = useState<string>('pregunta_reflexiva');
+  const [language, setLanguage] = useState<'es' | 'pt' | 'en'>('es');
+  const [isTranslating, setIsTranslating] = useState<boolean>(false);
 
   // Knowledge Base Documents
   const [documents, setDocuments] = useState<MarketingDocument[]>(() => {
@@ -132,6 +136,7 @@ export default function App() {
   const [isHookLabOpen, setIsHookLabOpen] = useState(false);
   const [isPostCaptionOpen, setIsPostCaptionOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
+  const [isSlideRewriteOpen, setIsSlideRewriteOpen] = useState(false);
 
   // Load Saved Project Handler
   const handleLoadSavedProject = (proj: SavedCarouselProject) => {
@@ -475,6 +480,47 @@ export default function App() {
     handleUpdateSlideField('contentAlign', align);
   };
 
+  const handleUpdateTextPos = (key: string, pos: { left: number; top: number } | null) => {
+    setSlides((prev) => {
+      const copy = [...prev];
+      if (!copy[currentIndex]) return prev;
+      const currentPos = { ...(copy[currentIndex].textPos || {}) };
+      if (pos === null) {
+        delete currentPos[key];
+      } else {
+        currentPos[key] = pos;
+      }
+      copy[currentIndex] = {
+        ...copy[currentIndex],
+        textPos: currentPos,
+      };
+      return copy;
+    });
+  };
+
+  const handleTranslateCarousel = async (targetLang: 'es' | 'pt' | 'en') => {
+    setIsTranslating(true);
+    setLanguage(targetLang);
+    try {
+      const translated = await apiTranslateCarousel({
+        slides,
+        targetLanguage: targetLang,
+        postMeta,
+      });
+      if (translated && translated.slides && translated.slides.length > 0) {
+        setSlides(translated.slides);
+        if (translated.post) {
+          setPostMeta(translated.post);
+        }
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert('Error al traducir el carrusel: ' + (err.message || 'Intente nuevamente.'));
+    } finally {
+      setIsTranslating(false);
+    }
+  };
+
   const handleAddSlide = () => {
     const primaryCol = brand.primaryColor || '#e11d48';
     const newSlide: Slide = {
@@ -530,7 +576,7 @@ export default function App() {
     }
   };
 
-  const handleApplyGeneratedCarousel = (newSlides: Slide[], newPostMeta?: CarouselPostMeta) => {
+  const handleApplyGeneratedCarousel = (newSlides: Slide[], newPostMeta?: CarouselPostMeta, _rationale?: string) => {
     if (newSlides && newSlides.length > 0) {
       const primaryCol = brand.primaryColor || '#e11d48';
       setSlides(newSlides.map((s, idx) => ({
@@ -586,6 +632,19 @@ export default function App() {
     setCurrentIndex(0);
   };
 
+  const handleApplyRewrittenSlide = (updatedSlideData: Partial<Slide>) => {
+    setSlides((prev) => {
+      const copy = [...prev];
+      if (copy[currentIndex]) {
+        copy[currentIndex] = {
+          ...copy[currentIndex],
+          ...updatedSlideData,
+        };
+      }
+      return copy;
+    });
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-rose-600 selection:text-white">
       
@@ -595,30 +654,33 @@ export default function App() {
         onUpdateBrand={handleUpdateBrand}
         aspectRatio={aspectRatio}
         onSelectAspect={setAspectRatio}
-        activeDocumentsCount={documents.length}
         selectedClientName={selectedClient?.name}
         selectedClientColor={selectedClient?.brand_color}
         onOpenClientSelector={() => setIsClientSelectorOpen(true)}
-        onOpenProjects={() => setIsProjectsOpen(true)}
-        onOpenKnowledgeBase={() => setIsKnowledgeOpen(true)}
-        onOpenHookLab={() => setIsHookLabOpen(true)}
-        onOpenPostCaption={() => setIsPostCaptionOpen(true)}
-        onOpenExport={() => setIsExportOpen(true)}
         onResetCarousel={handleResetCarousel}
       />
 
       {/* Main Workspace Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-6 pb-24 lg:pb-6 space-y-5">
+      <main className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-6 pb-28 sm:pb-24 space-y-5">
         
-        {isGridView ? (
+        {isGridView || mobileTab === 'grid' ? (
           /* Grid View Mode */
           <div className="space-y-4">
-            <div className="flex justify-end">
+            <div className="flex items-center justify-between bg-slate-900/60 p-3 rounded-2xl border border-slate-800">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-300">Vista Panorámica del Carrusel</span>
+                <span className="text-[10px] bg-rose-950/70 border border-rose-600/40 text-rose-300 px-2 py-0.5 rounded-full font-mono">
+                  {slides.length} diapositivas
+                </span>
+              </div>
               <button
-                onClick={() => setIsGridView(false)}
-                className="bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold px-4 py-2 rounded-xl transition"
+                onClick={() => {
+                  setIsGridView(false);
+                  setMobileTab('canvas');
+                }}
+                className="bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold px-4 py-1.5 rounded-xl transition shadow-md flex items-center gap-1.5"
               >
-                Volver a Edición Individual
+                <span>Volver al Lienzo</span>
               </button>
             </div>
             <GridOverview
@@ -629,14 +691,83 @@ export default function App() {
               onSelectSlide={(idx) => {
                 setCurrentIndex(idx);
                 setIsGridView(false);
+                setMobileTab('canvas');
               }}
             />
           </div>
+        ) : mobileTab === 'ai' ? (
+          /* Full AI Strategist View Mode */
+          <div className="w-full max-w-4xl mx-auto space-y-4">
+            <div className="flex items-center justify-between bg-slate-900/60 p-3 rounded-2xl border border-slate-800">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                <span className="text-xs font-bold text-slate-200">Estratega de Marketing con IA</span>
+              </div>
+              <button
+                onClick={() => setMobileTab('canvas')}
+                className="text-xs font-semibold text-rose-400 hover:text-rose-300 bg-rose-950/50 hover:bg-rose-900/60 border border-rose-600/30 px-3 py-1.5 rounded-xl transition"
+              >
+                Volver al Lienzo de Trabajo →
+              </button>
+            </div>
+            <AiPanel
+              brief={brief}
+              onChangeBrief={setBrief}
+              targetAudience={targetAudience}
+              onChangeTargetAudience={setTargetAudience}
+              visualStyle={visualStyle}
+              onChangeVisualStyle={setVisualStyle}
+              slideCount={slideCount}
+              onChangeSlideCount={setSlideCount}
+              objective={objective}
+              onChangeObjective={setObjective}
+              hookType={hookType}
+              onChangeHookType={setHookType}
+              brand={brand}
+              activeDocuments={documents}
+              selectedClient={selectedClient}
+              language={language}
+              onChangeLanguage={setLanguage}
+              postMeta={postMeta}
+              onOpenPostCaption={() => setIsPostCaptionOpen(true)}
+              onOpenClientSelector={() => setIsClientSelectorOpen(true)}
+              onOpenKnowledgeBase={() => setIsKnowledgeOpen(true)}
+              onOpenHookLab={() => setIsHookLabOpen(true)}
+              onApplyGeneratedCarousel={(newSlides, newPostMeta, rationale) => {
+                handleApplyGeneratedCarousel(newSlides, newPostMeta, rationale);
+                setMobileTab('canvas');
+              }}
+            />
+          </div>
+        ) : mobileTab === 'media' ? (
+          /* Full Media & Visuals View Mode */
+          <div className="w-full max-w-4xl mx-auto space-y-4">
+            <div className="flex items-center justify-between bg-slate-900/60 p-3 rounded-2xl border border-slate-800">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
+                <span className="text-xs font-bold text-slate-200">Galería de Fondos, Imágenes & Efectos</span>
+                <span className="text-[10px] text-slate-400">Diapositiva #{currentIndex + 1}</span>
+              </div>
+              <button
+                onClick={() => setMobileTab('canvas')}
+                className="text-xs font-semibold text-rose-400 hover:text-rose-300 bg-rose-950/50 hover:bg-rose-900/60 border border-rose-600/30 px-3 py-1.5 rounded-xl transition"
+              >
+                Volver al Lienzo de Trabajo →
+              </button>
+            </div>
+            <MediaPanel
+              slide={currentSlide}
+              brief={brief}
+              visualStyle={visualStyle}
+              aspectRatio={aspectRatio}
+              onUpdateSlide={handleUpdateSlidePartial}
+            />
+          </div>
         ) : (
-          /* Single Slide Editor Mode with Fixed Aspect Sidebar */
+          /* Complete Focused Slide Editor Mode (Full Comfort Workspace on PC & Mobile) */
           <div className="flex flex-col lg:flex-row items-start gap-4">
             
-            {/* Desktop Fixed Aspect Ratio Sidebar */}
+            {/* Desktop Fixed Aspect Ratio & Brand Sidebar */}
             <SidebarAspect
               aspectRatio={aspectRatio}
               onSelectAspect={setAspectRatio}
@@ -644,114 +775,71 @@ export default function App() {
               onUpdateBrand={handleUpdateBrand}
             />
 
-            {/* Main Center + Right Studio Workspace */}
-            <div className="flex-1 min-w-0 grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
+            {/* Main Full-Width Slide Studio Workspace */}
+            <div className="flex-1 min-w-0 w-full space-y-3.5 max-w-5xl mx-auto">
               
-              {/* Center Column: Canvas Preview & Quick Styling (7 Cols) */}
-              <div className={`xl:col-span-7 space-y-3.5 ${mobileTab === 'canvas' ? 'block' : 'hidden xl:block'}`}>
-                
-                {/* Text Style & Layout Templates Bar */}
-                <TextStyleBar
-                  activeKey={activeElementKey}
+              {/* Text Style Bar */}
+              <TextStyleBar
+                activeKey={activeElementKey}
+                slide={currentSlide}
+                brand={brand}
+                language={language}
+                onChangeLanguage={setLanguage}
+                onTranslateCarousel={handleTranslateCarousel}
+                isTranslating={isTranslating}
+                onUpdateStyle={handleUpdateTextStyle}
+                onResetStyle={handleResetTextStyle}
+                onDeleteActiveElement={handleDeleteActiveElement}
+                onAddCustomText={handleAddCustomText}
+                onUpdateSlideOverlayType={handleUpdateSlideOverlayType}
+                onUpdateSlideAccentColor={handleUpdateSlideAccentColor}
+                onUpdateTextPos={handleUpdateTextPos}
+              />
+
+              {/* Main Interactive Canvas - Spacious and Centered */}
+              <div className="bg-slate-900/40 border border-slate-800/80 rounded-3xl p-3 sm:p-6 flex flex-col items-center justify-center min-h-[500px] shadow-2xl relative overflow-hidden">
+                <CanvasSlide
                   slide={currentSlide}
                   brand={brand}
-                  onUpdateStyle={handleUpdateTextStyle}
-                  onResetStyle={handleResetTextStyle}
-                  onDeleteActiveElement={handleDeleteActiveElement}
+                  aspectRatio={aspectRatio}
+                  zoomLevel={zoomLevel}
+                  activeElementKey={activeElementKey}
+                  onSelectElement={setActiveElementKey}
+                  onUpdateField={handleUpdateSlideField}
+                  onUpdateBullet={handleUpdateBullet}
+                  onDeleteBullet={handleDeleteBullet}
+                  onAddBullet={handleAddBullet}
+                  onUpdateBrand={handleUpdateBrand}
+                  onUpdateCustomText={handleUpdateCustomText}
+                  onDeleteCustomText={handleDeleteCustomText}
                   onAddCustomText={handleAddCustomText}
-                  onUpdateSlideContentAlign={handleUpdateSlideContentAlign}
-                  onUpdateSlideLayout={handleUpdateSlideLayout}
-                  onUpdateSlideOverlayType={handleUpdateSlideOverlayType}
-                  onUpdateSlideAccentColor={handleUpdateSlideAccentColor}
+                  onDeleteElement={handleDeleteActiveElement}
+                  onUpdateComparison={handleUpdateComparison}
+                  onUpdateStat={handleUpdateStat}
+                  onUpdateQuote={handleUpdateQuote}
+                  onUpdateCtaFinal={handleUpdateCtaFinal}
+                  onUpdateTextPos={handleUpdateTextPos}
                 />
-
-                {/* Main Interactive Canvas */}
-                <div className="bg-slate-900/40 border border-slate-800/80 rounded-3xl p-3 sm:p-5 flex flex-col items-center justify-center min-h-[480px] shadow-2xl relative overflow-hidden">
-                  <CanvasSlide
-                    slide={currentSlide}
-                    brand={brand}
-                    aspectRatio={aspectRatio}
-                    zoomLevel={zoomLevel}
-                    activeElementKey={activeElementKey}
-                    onSelectElement={setActiveElementKey}
-                    onUpdateField={handleUpdateSlideField}
-                    onUpdateBullet={handleUpdateBullet}
-                    onDeleteBullet={handleDeleteBullet}
-                    onAddBullet={handleAddBullet}
-                    onUpdateBrand={handleUpdateBrand}
-                    onUpdateCustomText={handleUpdateCustomText}
-                    onDeleteCustomText={handleDeleteCustomText}
-                    onAddCustomText={handleAddCustomText}
-                    onDeleteElement={handleDeleteActiveElement}
-                    onUpdateComparison={handleUpdateComparison}
-                    onUpdateStat={handleUpdateStat}
-                    onUpdateQuote={handleUpdateQuote}
-                    onUpdateCtaFinal={handleUpdateCtaFinal}
-                  />
-                </div>
-
-                {/* Slide Carousel Navigation Strip */}
-                <SlideNavigation
-                  slides={slides}
-                  currentIndex={currentIndex}
-                  isGridView={isGridView}
-                  onSelectSlide={setCurrentIndex}
-                  onPrev={() => setCurrentIndex((prev) => Math.max(0, prev - 1))}
-                  onNext={() => setCurrentIndex((prev) => Math.min(slides.length - 1, prev + 1))}
-                  onAddSlide={handleAddSlide}
-                  onDuplicateSlide={handleDuplicateSlide}
-                  onDeleteSlide={handleDeleteSlide}
-                  onToggleGridView={() => {
-                    setIsGridView(true);
-                    setMobileTab('grid');
-                  }}
-                />
-
               </div>
 
-              {/* Right Column: AI Strategist & Media Control Studio (5 Cols) */}
-              <div className="xl:col-span-5 space-y-5">
-                
-                {/* AI Strategist Generator Panel (Visible in 'ai' tab on mobile, always visible on XL) */}
-                <div className={`${mobileTab === 'ai' ? 'block' : 'hidden xl:block'}`}>
-                  <AiPanel
-                    brief={brief}
-                    onChangeBrief={setBrief}
-                    targetAudience={targetAudience}
-                    onChangeTargetAudience={setTargetAudience}
-                    visualStyle={visualStyle}
-                    onChangeVisualStyle={setVisualStyle}
-                    slideCount={slideCount}
-                    onChangeSlideCount={setSlideCount}
-                    objective={objective}
-                    onChangeObjective={setObjective}
-                    hookType={hookType}
-                    onChangeHookType={setHookType}
-                    brand={brand}
-                    activeDocuments={documents}
-                    selectedClient={selectedClient}
-                    onOpenClientSelector={() => setIsClientSelectorOpen(true)}
-                    onOpenKnowledgeBase={() => setIsKnowledgeOpen(true)}
-                    onOpenHookLab={() => setIsHookLabOpen(true)}
-                    onApplyGeneratedCarousel={(newSlides) => {
-                      handleApplyGeneratedCarousel(newSlides);
-                      setMobileTab('canvas');
-                    }}
-                  />
-                </div>
-
-                {/* Background Media & Visual Enhancer Panel (Visible in 'media' tab on mobile, always visible on XL) */}
-                <div className={`${mobileTab === 'media' ? 'block' : 'hidden xl:block'}`}>
-                  <MediaPanel
-                    slide={currentSlide}
-                    brief={brief}
-                    visualStyle={visualStyle}
-                    aspectRatio={aspectRatio}
-                    onUpdateSlide={handleUpdateSlidePartial}
-                  />
-                </div>
-
-              </div>
+              {/* Slide Carousel Navigation Strip */}
+              <SlideNavigation
+                slides={slides}
+                currentIndex={currentIndex}
+                isGridView={isGridView}
+                onSelectSlide={setCurrentIndex}
+                onPrev={() => setCurrentIndex((prev) => Math.max(0, prev - 1))}
+                onNext={() => setCurrentIndex((prev) => Math.min(slides.length - 1, prev + 1))}
+                onAddSlide={handleAddSlide}
+                onDuplicateSlide={handleDuplicateSlide}
+                onDeleteSlide={handleDeleteSlide}
+                onOpenAiRewriteSlide={() => setIsSlideRewriteOpen(true)}
+                onUpdateSlideLayout={handleUpdateSlideLayout}
+                onToggleGridView={() => {
+                  setIsGridView(true);
+                  setMobileTab('grid');
+                }}
+              />
 
             </div>
 
@@ -760,19 +848,20 @@ export default function App() {
 
       </main>
 
-      {/* Mobile Sticky Navigation Tab Bar */}
+      {/* Persistent Bottom Tab Bar (Available on PC & Mobile) */}
       <MobileTabBar
         activeTab={isGridView ? 'grid' : mobileTab}
         onChangeTab={(tab) => {
           if (tab === 'grid') {
             setIsGridView(true);
+            setMobileTab('grid');
           } else {
             setIsGridView(false);
             setMobileTab(tab);
           }
         }}
+        onOpenProjects={() => setIsProjectsOpen(true)}
         onOpenExport={() => setIsExportOpen(true)}
-        onOpenPostCaption={() => setIsPostCaptionOpen(true)}
       />
 
       {/* Strategic Modals */}
@@ -802,6 +891,7 @@ export default function App() {
         isOpen={isKnowledgeOpen}
         onClose={() => setIsKnowledgeOpen(false)}
         documents={documents}
+        language={language}
         onAddDocument={(doc) => setDocuments((prev) => [doc, ...prev])}
         onRemoveDocument={(id) => setDocuments((prev) => prev.filter((d) => d.id !== id))}
         onApplyAnalysisToBrief={handleApplyAnalysisToBrief}
@@ -822,6 +912,20 @@ export default function App() {
         onClose={() => setIsPostCaptionOpen(false)}
         postMeta={postMeta}
         onUpdatePostMeta={setPostMeta}
+      />
+
+      <SlideAiRewriteModal
+        isOpen={isSlideRewriteOpen}
+        onClose={() => setIsSlideRewriteOpen(false)}
+        slide={currentSlide}
+        slideIndex={currentIndex}
+        totalSlides={slides.length}
+        brand={brand}
+        brief={brief}
+        targetAudience={targetAudience}
+        technicalTerms={selectedClient?.technical_terms}
+        language={language}
+        onApplyRewrittenSlide={handleApplyRewrittenSlide}
       />
 
       <ExportModal

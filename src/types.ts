@@ -119,18 +119,20 @@ export interface BrandInfo {
   fontFamily?: string;
   clientId?: string;
   textStyle?: Record<string, TextStyleItem>;
+  technicalTerms?: string[];
 }
 
 export interface MarketingDocument {
   id: string;
   name: string;
-  type: 'document' | 'url' | 'notes';
+  type: 'document' | 'url' | 'notes' | 'niche_generator';
   url?: string;
   content: string;
   addedAt: string;
   summary?: string;
   extractedAngles?: string[];
   extractedPains?: string[];
+  technicalTerms?: string[];
 }
 
 export interface HookVariation {
@@ -156,6 +158,8 @@ export interface MarketingAnalysisResult {
   uniqueAngles: string[];
   recommendedHooks: string[];
   brandTone: string;
+  technicalTerms?: string[];
+  industryJargon?: string[];
 }
 
 export interface CarouselGenerationResponse {

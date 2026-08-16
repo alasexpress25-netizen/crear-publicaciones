@@ -67,6 +67,7 @@ export interface AgencyClient {
   pain_points?: string[];
   offers?: string[];
   knowledge_base?: string;
+  technical_terms?: string[];
   topics?: string[];
   created_at?: string;
   raw_data?: any;
@@ -340,6 +341,7 @@ export function getFallbackAgencyClients(): AgencyClient[] {
       brand_color: '#e11d48',
       logo_url: '',
       knowledge_base: 'Especialistas en embudos de ventas, carruseles de alta conversión, copywriting de respuesta directa y anuncios en Meta Ads. Transformamos seguidores pasivos en clientes que compran.',
+      technical_terms: ['Pixel de Meta', 'Landing Page', 'CTR', 'ROAS', 'CPA', 'SEO On-Page', 'Retargeting', 'Lead Magnet', 'Tasa de Conversión', 'Inbound'],
       topics: [
         '¿Por qué tu servicio es excelente pero tus ventas no despegan?',
         'Los 3 errores que comete el 90% al publicar en Instagram',
@@ -361,6 +363,7 @@ export function getFallbackAgencyClients(): AgencyClient[] {
       brand_color: '#0284c7',
       logo_url: '',
       knowledge_base: 'Tratamientos dentales sin dolor, tecnología 3D guiada, implantes en un solo día y ortodoncia invisible con alineadores transparentes. Facilidades de pago y diagnóstico inicial digital.',
+      technical_terms: ['Alineadores invisibles', 'Implante osteointegrado', 'Escaneo intraoral 3D', 'Carillas de porcelana', 'Periodoncia', 'Endodoncia rotatoria', 'Blanqueamiento LED'],
       topics: [
         '¿Miedo al dentista? Descubre cómo tratamos caries sin dolor en 20 minutos',
         'Alineadores invisibles vs brackets tradicionales: ¿cuál te conviene?',
@@ -382,6 +385,7 @@ export function getFallbackAgencyClients(): AgencyClient[] {
       brand_color: '#d97706',
       logo_url: '',
       knowledge_base: 'Asesoría integral en compra, venta y alquiler de inmuebles. Análisis de plusvalía, créditos hipotecarios y oportunidades de inversión en pozo con alta rentabilidad.',
+      technical_terms: ['Plusvalía', 'Inversión en Pozo / Preventa', 'Cap Rate', 'Crédito Hipotecario UVA', 'Rentabilidad Anual', 'Escrituración', 'Due Diligence Inmobiliario'],
       topics: [
         'Los 4 errores más costosos al comprar tu primera propiedad',
         'Invertir en pozo vs comprar terminado: la guía definitiva para no perder dinero',
@@ -403,6 +407,7 @@ export function getFallbackAgencyClients(): AgencyClient[] {
       brand_color: '#10b981',
       logo_url: '',
       knowledge_base: 'Planes de nutrición flexible sin eliminar carbohidratos, rutinas de 40 minutos en casa o gimnasio y seguimiento semanal por WhatsApp con métricas reales.',
+      technical_terms: ['Déficit Calórico', 'Macronutrientes (Macros)', 'Sobrecarga Progresiva', 'NEAT', 'Tasa Metabólica Basal', 'Composición Corporal', 'Periodización del Entrenamiento'],
       topics: [
         'Por qué hacer horas de cardio no te está haciendo quemar grasa abdominal',
         'La regla del 80/20 para comer lo que te gusta y seguir bajando de peso',

@@ -1,38 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Sparkles,
-  BookOpen,
-  Target,
-  MessageSquare,
-  Download,
   RotateCcw,
   Layers,
-  Eye,
-  SlidersHorizontal,
-  Share2,
+  Smartphone,
   Tv,
   Users,
-  Database,
-  Smartphone,
-  FolderArchive,
-  Save
 } from 'lucide-react';
-import { AspectRatio, BrandInfo, MarketingDocument } from '../types';
+import { AspectRatio, BrandInfo } from '../types';
 
 interface HeaderProps {
   brand: BrandInfo;
   onUpdateBrand: (field: keyof BrandInfo, value: any) => void;
   aspectRatio: AspectRatio;
   onSelectAspect: (aspect: AspectRatio) => void;
-  activeDocumentsCount: number;
   selectedClientName?: string;
   selectedClientColor?: string;
   onOpenClientSelector: () => void;
-  onOpenProjects: () => void;
-  onOpenKnowledgeBase: () => void;
-  onOpenHookLab: () => void;
-  onOpenPostCaption: () => void;
-  onOpenExport: () => void;
+  onOpenProjects?: () => void;
+  onOpenExport?: () => void;
   onResetCarousel: () => void;
 }
 
@@ -41,15 +26,9 @@ export const Header: React.FC<HeaderProps> = ({
   onUpdateBrand,
   aspectRatio,
   onSelectAspect,
-  activeDocumentsCount,
   selectedClientName,
   selectedClientColor,
   onOpenClientSelector,
-  onOpenProjects,
-  onOpenKnowledgeBase,
-  onOpenHookLab,
-  onOpenPostCaption,
-  onOpenExport,
   onResetCarousel,
 }) => {
   const [installPrompt, setInstallPrompt] = useState<any>(null);
@@ -168,52 +147,9 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         </div>
 
-        {/* Strategic Quick Tools */}
+        {/* Quick Tools */}
         <div className="flex items-center gap-2">
           
-          {/* Projects & Saved Carousels Button */}
-          <button
-            onClick={onOpenProjects}
-            className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700/80 hover:border-indigo-500/60 text-slate-200 text-xs font-bold px-3 py-1.5 rounded-xl transition shadow-sm group"
-            title="Mis Carruseles Guardados / Cargar o Guardar Proyecto"
-          >
-            <FolderArchive className="w-3.5 h-3.5 text-indigo-400 group-hover:scale-110 transition" />
-            <span className="hidden sm:inline">Proyectos</span>
-          </button>
-
-          {/* Docs & Training Button */}
-          <button
-            onClick={onOpenKnowledgeBase}
-            className="flex items-center gap-1.5 bg-indigo-950/60 hover:bg-indigo-900/70 border border-indigo-700/50 text-indigo-300 text-xs font-semibold px-3 py-1.5 rounded-xl transition shadow-sm"
-            title="Capacitar IA con Documentos o Páginas Web"
-          >
-            <BookOpen className="w-3.5 h-3.5 text-indigo-400" />
-            <span className="hidden sm:inline">Capacitar IA</span>
-            <span className="bg-indigo-600 text-white text-[10px] font-black px-1.5 py-0.2 rounded-full">
-              {activeDocumentsCount}
-            </span>
-          </button>
-
-          {/* Hook Lab Button */}
-          <button
-            onClick={onOpenHookLab}
-            className="flex items-center gap-1.5 bg-rose-950/60 hover:bg-rose-900/70 border border-rose-700/50 text-rose-300 text-xs font-semibold px-3 py-1.5 rounded-xl transition shadow-sm"
-            title="Laboratorio de Ganchos para Slide 1"
-          >
-            <Target className="w-3.5 h-3.5 text-rose-400" />
-            <span className="hidden sm:inline">Lab de Ganchos</span>
-          </button>
-
-          {/* Post Caption Button */}
-          <button
-            onClick={onOpenPostCaption}
-            className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-200 text-xs font-semibold px-3 py-1.5 rounded-xl transition"
-            title="Ver o editar el texto del post y hashtags"
-          >
-            <MessageSquare className="w-3.5 h-3.5 text-slate-400" />
-            <span className="hidden md:inline">Copy Post</span>
-          </button>
-
           {/* PWA Install Button (When not yet running in standalone) */}
           {!isInstalled && (
             <button
@@ -225,16 +161,6 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="hidden lg:inline">Instalar App</span>
             </button>
           )}
-
-          {/* Export Modal Button */}
-          <button
-            onClick={onOpenExport}
-            className="flex items-center gap-1.5 bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white text-xs font-bold px-3.5 py-1.5 rounded-xl shadow-lg shadow-rose-950/50 transition"
-            title="Descargar ZIP o PNG"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>Exportar</span>
-          </button>
 
           {/* Reset Carousel */}
           <button

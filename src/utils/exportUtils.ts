@@ -1,4 +1,5 @@
 import JSZip from 'jszip';
+import { toBlob, toPng } from 'html-to-image';
 import { Slide, BrandInfo } from '../types';
 
 export function getExportFilePrefix(brandName: string): string {
@@ -32,7 +33,31 @@ export function formatAllSlidesForCanva(slides: Slide[], brand: BrandInfo): stri
   return slides.map((s, idx) => formatSlideTextForCanva(s, brand, idx, slides.length)).join('\n');
 }
 
-// Render a slide element directly to an HTML Canvas (2D) for high-res PNG export
+/**
+ * Capture an actual DOM slide element directly so all fonts, shadows, colors,
+ * drag coordinates and layout templates match the editor with 100% pixel fidelity.
+ */
+export async function captureSlideDomToBlob(element: HTMLElement, scale: number = 2): Promise<Blob> {
+  const blob = await toBlob(element, {
+    pixelRatio: scale,
+    cacheBust: true,
+    skipFonts: true,
+    fontEmbedCSS: '',
+    filter: (node) => {
+      if (node instanceof HTMLElement) {
+        if (node.classList.contains('no-export') || node.getAttribute('data-no-export') === 'true') {
+          return false;
+        }
+      }
+      return true;
+    }
+  });
+
+  if (!blob) throw new Error('No se pudo generar la imagen de la diapositiva.');
+  return blob;
+}
+
+// Render a slide element directly to an HTML Canvas (2D) fallback
 export async function renderSlideToCanvas(
   slide: Slide,
   brand: BrandInfo,
@@ -55,6 +80,7 @@ export async function renderSlideToCanvas(
 
   const width = canvas.width;
   const height = canvas.height;
+  const primaryColor = slide.accentColor || brand.primaryColor || '#e11d48';
 
   // 1. Draw Background Image
   if (slide.image) {
@@ -131,7 +157,7 @@ export async function renderSlideToCanvas(
     ctx.fillRect(0, 0, width, height);
   }
 
-  // 3. Render Top Brand Bar & Slide Number
+  // 3. Render Top Brand Bar (NO SLIDE NUMBER)
   const padX = width * 0.08;
   const padY = height * 0.06;
 
@@ -145,12 +171,6 @@ export async function renderSlideToCanvas(
     ctx.fillText(brand.name.toUpperCase(), padX, padY);
   }
 
-  // Slide Counter Tag
-  ctx.textAlign = 'right';
-  ctx.fillStyle = '#e11d48';
-  const slideNumText = `SLIDE ${slide.id}`;
-  ctx.fillText(slideNumText, width - padX, padY);
-
   // 4. Render Main Content (Badge, Subtag, Title, Body, Bullets)
   let currentY = height * 0.28;
 
@@ -161,7 +181,7 @@ export async function renderSlideToCanvas(
     const badgeWidth = ctx.measureText(badgeText).width + 30;
     const badgeHeight = Math.round(width * 0.05);
 
-    ctx.fillStyle = 'rgba(225, 29, 72, 0.9)';
+    ctx.fillStyle = primaryColor;
     ctx.beginPath();
     ctx.roundRect(padX, currentY - badgeHeight / 2, badgeWidth, badgeHeight, 8);
     ctx.fill();
@@ -175,8 +195,9 @@ export async function renderSlideToCanvas(
 
   // Subtag
   if (slide.subtag) {
-    ctx.font = `600 ${Math.round(width * 0.032)}px 'Inter', sans-serif`;
-    ctx.fillStyle = '#f43f5e';
+    const subtagStyle = slide.textStyle?.subtag || {};
+    ctx.font = `600 ${Math.round(width * 0.032)}px ${subtagStyle.fontFamily || "'Inter', sans-serif"}`;
+    ctx.fillStyle = subtagStyle.color || primaryColor;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText(slide.subtag, padX, currentY);
@@ -185,55 +206,61 @@ export async function renderSlideToCanvas(
 
   // Title / Hook
   if (slide.title) {
-    ctx.font = `900 ${Math.round(width * 0.058)}px 'Montserrat', sans-serif`;
-    ctx.fillStyle = '#ffffff';
-    ctx.textAlign = 'left';
+    const titleStyle = slide.textStyle?.title || {};
+    const fontSize = titleStyle.fontSize ? Math.round(titleStyle.fontSize * (scale * 0.9)) : Math.round(width * 0.058);
+    ctx.font = `900 ${fontSize}px ${titleStyle.fontFamily || "'Montserrat', sans-serif"}`;
+    ctx.fillStyle = titleStyle.color || '#ffffff';
+    ctx.textAlign = titleStyle.align || 'left';
     ctx.textBaseline = 'top';
 
     const maxTitleWidth = width - padX * 2;
     const words = slide.title.split(' ');
     let line = '';
-    const titleLineHeight = Math.round(width * 0.075);
+    const titleLineHeight = Math.round(fontSize * 1.25);
+    const alignX = titleStyle.align === 'center' ? width / 2 : titleStyle.align === 'right' ? width - padX : padX;
 
     for (let i = 0; i < words.length; i++) {
       const testLine = line + words[i] + ' ';
       const metrics = ctx.measureText(testLine);
       if (metrics.width > maxTitleWidth && i > 0) {
-        ctx.fillText(line.trim(), padX, currentY);
+        ctx.fillText(line.trim(), alignX, currentY);
         line = words[i] + ' ';
         currentY += titleLineHeight;
       } else {
         line = testLine;
       }
     }
-    ctx.fillText(line.trim(), padX, currentY);
+    ctx.fillText(line.trim(), alignX, currentY);
     currentY += titleLineHeight + 20;
   }
 
   // Body
   if (slide.body) {
-    ctx.font = `400 ${Math.round(width * 0.034)}px 'Inter', sans-serif`;
-    ctx.fillStyle = '#cbd5e1';
-    ctx.textAlign = 'left';
+    const bodyStyle = slide.textStyle?.body || {};
+    const fontSize = bodyStyle.fontSize ? Math.round(bodyStyle.fontSize * (scale * 0.9)) : Math.round(width * 0.034);
+    ctx.font = `400 ${fontSize}px ${bodyStyle.fontFamily || "'Inter', sans-serif"}`;
+    ctx.fillStyle = bodyStyle.color || '#cbd5e1';
+    ctx.textAlign = bodyStyle.align || 'left';
     ctx.textBaseline = 'top';
 
     const maxBodyWidth = width - padX * 2;
     const bodyWords = slide.body.split(' ');
     let bodyLine = '';
-    const bodyLineHeight = Math.round(width * 0.05);
+    const bodyLineHeight = Math.round(fontSize * 1.35);
+    const alignX = bodyStyle.align === 'center' ? width / 2 : bodyStyle.align === 'right' ? width - padX : padX;
 
     for (let i = 0; i < bodyWords.length; i++) {
       const testLine = bodyLine + bodyWords[i] + ' ';
       const metrics = ctx.measureText(testLine);
       if (metrics.width > maxBodyWidth && i > 0) {
-        ctx.fillText(bodyLine.trim(), padX, currentY);
+        ctx.fillText(bodyLine.trim(), alignX, currentY);
         bodyLine = bodyWords[i] + ' ';
         currentY += bodyLineHeight;
       } else {
         bodyLine = testLine;
       }
     }
-    ctx.fillText(bodyLine.trim(), padX, currentY);
+    ctx.fillText(bodyLine.trim(), alignX, currentY);
     currentY += bodyLineHeight + 25;
   }
 
@@ -252,7 +279,7 @@ export async function renderSlideToCanvas(
       ctx.stroke();
 
       // Dot
-      ctx.fillStyle = '#f43f5e';
+      ctx.fillStyle = primaryColor;
       ctx.font = `bold ${Math.round(width * 0.036)}px 'Inter', sans-serif`;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
@@ -290,7 +317,7 @@ export async function renderSlideToCanvas(
   // Web Watermark
   if (brand.web) {
     ctx.font = `bold ${Math.round(width * 0.03)}px 'Montserrat', sans-serif`;
-    ctx.fillStyle = '#f43f5e';
+    ctx.fillStyle = primaryColor;
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
     ctx.fillText(brand.web, width - padX, footerY);

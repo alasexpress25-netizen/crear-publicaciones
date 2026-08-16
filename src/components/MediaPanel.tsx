@@ -17,7 +17,12 @@ import {
   AlertCircle,
   Play,
   Layers,
-  Radio
+  Radio,
+  Youtube,
+  Download,
+  Terminal,
+  FileCode,
+  HelpCircle
 } from 'lucide-react';
 import { Slide, AspectRatio } from '../types';
 import { CURATED_STOCK_PHOTOS } from '../data/marketingPlaybooks';
@@ -34,6 +39,7 @@ interface MediaPanelProps {
 // Default Pixabay demo/public key fallback
 const DEFAULT_PIXABAY_KEY = '48866504-20b1dbd83f36a58bc283f5c71';
 const PIXABAY_STORAGE_KEY = 'lavisualmk_pixabay_api_key';
+const YT2MP3_LOCAL_SERVER = 'http://localhost:5057';
 
 export const MediaPanel: React.FC<MediaPanelProps> = ({
   slide,
@@ -66,8 +72,12 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
   const [isSearchingPixabay, setIsSearchingPixabay] = useState(false);
   const [pixabayError, setPixabayError] = useState<string | null>(null);
 
-  // Music State
+  // Music & YouTube MP3 State
   const [audioUrlInput, setAudioUrlInput] = useState(slide.musicUrl || '');
+  const [youtubeUrl, setYoutubeUrl] = useState('');
+  const [isConvertingYt, setIsConvertingYt] = useState(false);
+  const [ytConvertStatus, setYtConvertStatus] = useState<{ type: 'idle' | 'loading' | 'success' | 'error'; message: string } | null>(null);
+  const [showYtServerHelp, setShowYtServerHelp] = useState(false);
   const [audioWarning, setAudioWarning] = useState<string | null>(null);
 
   const isVideo = slide.mediaType === 'video';
@@ -198,6 +208,74 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
     };
     reader.readAsDataURL(file);
     e.target.value = '';
+  };
+
+  // Convert YouTube to MP3 via local Python server (yt2mp3_server.py)
+  const handleYoutubeToMp3 = async () => {
+    const url = youtubeUrl.trim();
+    if (!url) {
+      setYtConvertStatus({
+        type: 'error',
+        message: 'Por favor ingresa primero un enlace de YouTube válido.',
+      });
+      return;
+    }
+
+    setIsConvertingYt(true);
+    setYtConvertStatus({
+      type: 'loading',
+      message: 'Conectando con el servidor local yt2mp3_server.py y extrayendo audio...',
+    });
+
+    try {
+      const res = await fetch(`${YT2MP3_LOCAL_SERVER}/convert`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || `Error del servidor local (Código ${res.status})`);
+      }
+
+      const blob = await res.blob();
+      const contentDisposition = res.headers.get('Content-Disposition') || '';
+      const fileNameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
+      const fileName = fileNameMatch ? fileNameMatch[1] : `youtube_audio_${Date.now()}.mp3`;
+
+      // Read audio blob as Data URL for slide persistence
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const dataUrl = e.target?.result as string;
+        onUpdateSlide({
+          includeMusic: true,
+          musicUrl: dataUrl,
+          musicName: fileName,
+        });
+        setYtConvertStatus({
+          type: 'success',
+          message: `✓ "${fileName}" descargado y cargado en tu carrusel con éxito.`,
+        });
+        setYoutubeUrl('');
+      };
+      reader.onerror = () => {
+        setYtConvertStatus({
+          type: 'error',
+          message: 'Se descargó el archivo pero ocurrió un error al cargarlo en la aplicación.',
+        });
+      };
+      reader.readAsDataURL(blob);
+
+    } catch (err: any) {
+      console.error(err);
+      setYtConvertStatus({
+        type: 'error',
+        message: `✗ ${err.message || 'No se pudo conectar'}. ¿Está corriendo yt2mp3_server.py en tu PC (http://localhost:5057)?`,
+      });
+    } finally {
+      setIsConvertingYt(false);
+    }
   };
 
   // Enhance Image Prompt with AI Art Director
@@ -639,7 +717,7 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
                   Incluir Música de Fondo
                 </span>
                 <span className="text-[10px] text-slate-400">
-                  Se incluirá la pista de audio real en la exportación ZIP
+                  Se empaquetará el archivo .mp3 real dentro de la exportación ZIP
                 </span>
               </div>
             </div>
@@ -662,7 +740,108 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
             </div>
           )}
 
-          {/* Upload MP3 button */}
+          {/* Section: YouTube to MP3 Converter */}
+          <div className="p-3 bg-gradient-to-br from-red-950/30 to-slate-900 border border-red-900/40 rounded-xl space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-red-400">
+                <Youtube className="w-4 h-4" />
+                <span>Descargar MP3 desde YouTube</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowYtServerHelp(!showYtServerHelp)}
+                className="text-[11px] text-slate-400 hover:text-white flex items-center gap-1 transition"
+                title="Ver cómo funciona el servidor local Python"
+              >
+                <HelpCircle className="w-3.5 h-3.5 text-red-400" />
+                <span>¿Cómo funciona?</span>
+              </button>
+            </div>
+
+            <p className="text-[11px] text-slate-400">
+              Pega un enlace de YouTube para extraer su audio en MP3 mediante tu servidor local de Python.
+            </p>
+
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <input
+                  type="url"
+                  placeholder="https://www.youtube.com/watch?v=..."
+                  value={youtubeUrl}
+                  onChange={(e) => setYoutubeUrl(e.target.value)}
+                  disabled={isConvertingYt}
+                  className="w-full bg-slate-900/90 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-red-500 disabled:opacity-50"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleYoutubeToMp3}
+                disabled={isConvertingYt || !youtubeUrl.trim()}
+                className="bg-red-600 hover:bg-red-500 disabled:bg-slate-800 disabled:text-slate-600 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1.5 transition shrink-0"
+              >
+                {isConvertingYt ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Extrayendo...</span>
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Convertir</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* YouTube Convert Status */}
+            {ytConvertStatus && (
+              <div
+                className={`p-2.5 rounded-xl text-[11px] flex items-start gap-2 ${
+                  ytConvertStatus.type === 'loading'
+                    ? 'bg-blue-950/40 border border-blue-800/50 text-blue-300'
+                    : ytConvertStatus.type === 'success'
+                    ? 'bg-emerald-950/40 border border-emerald-800/50 text-emerald-300'
+                    : 'bg-red-950/40 border border-red-800/50 text-red-300'
+                }`}
+              >
+                {ytConvertStatus.type === 'loading' && <RefreshCw className="w-3.5 h-3.5 shrink-0 mt-0.5 animate-spin text-blue-400" />}
+                {ytConvertStatus.type === 'success' && <Check className="w-3.5 h-3.5 shrink-0 mt-0.5 text-emerald-400" />}
+                {ytConvertStatus.type === 'error' && <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-red-400" />}
+                <span className="flex-1">{ytConvertStatus.message}</span>
+              </div>
+            )}
+
+            {/* YouTube Server Help Modal / Drawer */}
+            {showYtServerHelp && (
+              <div className="p-3 bg-slate-900 border border-slate-700/80 rounded-xl space-y-2 text-[11px] text-slate-300">
+                <div className="flex items-center justify-between font-bold text-white">
+                  <span className="flex items-center gap-1.5">
+                    <Terminal className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Servidor Python Local (Puerto 5057)</span>
+                  </span>
+                  <a
+                    href="/yt2mp3_server.py"
+                    download="yt2mp3_server.py"
+                    className="flex items-center gap-1 text-[10px] bg-slate-800 hover:bg-slate-700 text-emerald-400 px-2 py-1 rounded-lg border border-slate-700 transition"
+                  >
+                    <Download className="w-3 h-3" />
+                    <span>Descargar yt2mp3_server.py</span>
+                  </a>
+                </div>
+                <p className="text-slate-400">
+                  Para convertir videos de YouTube a MP3 directamente en tu máquina:
+                </p>
+                <div className="bg-slate-950 p-2 rounded-lg font-mono text-[10px] text-slate-300 space-y-1 border border-slate-800">
+                  <div className="text-slate-500"># 1. Instalar dependencias en terminal:</div>
+                  <div className="text-emerald-400">pip install flask flask-cors yt-dlp</div>
+                  <div className="text-slate-500 pt-1"># 2. Iniciar el servidor local:</div>
+                  <div className="text-emerald-400">python yt2mp3_server.py</div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Section: Upload Local Audio or Paste MP3 URL */}
           <div className="space-y-2">
             <label className="flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 border border-slate-700/80 rounded-xl p-3 text-xs text-white font-bold cursor-pointer transition">
               <Upload className="w-4 h-4 text-emerald-400" />
@@ -679,12 +858,13 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
             <div className="flex items-center gap-2">
               <input
                 type="url"
-                placeholder="O pega una URL directa de audio (MP3)..."
+                placeholder="O pega una URL directa de audio (.mp3)..."
                 value={audioUrlInput}
                 onChange={(e) => setAudioUrlInput(e.target.value)}
                 className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
               />
               <button
+                type="button"
                 onClick={() =>
                   onUpdateSlide({
                     includeMusic: true,
@@ -744,6 +924,7 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
                   <span>{slide.musicName || 'Pista de Audio Cargada'}</span>
                 </span>
                 <button
+                  type="button"
                   onClick={() =>
                     onUpdateSlide({
                       includeMusic: false,

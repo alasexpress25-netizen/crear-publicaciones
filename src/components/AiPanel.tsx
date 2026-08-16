@@ -11,9 +11,16 @@ import {
   Zap,
   HelpCircle,
   Flame,
-  Users
+  Users,
+  Languages,
+  Tag,
+  MessageSquare,
+  Copy,
+  Check,
+  Hash,
+  ExternalLink
 } from 'lucide-react';
-import { MarketingDocument, BrandInfo } from '../types';
+import { MarketingDocument, BrandInfo, CarouselPostMeta } from '../types';
 import { AgencyClient } from '../services/supabase';
 import { apiGenerateCarousel } from '../services/api';
 
@@ -33,6 +40,10 @@ interface AiPanelProps {
   brand: BrandInfo;
   activeDocuments: MarketingDocument[];
   selectedClient?: AgencyClient | null;
+  language: 'es' | 'pt' | 'en';
+  onChangeLanguage: (lang: 'es' | 'pt' | 'en') => void;
+  postMeta?: CarouselPostMeta;
+  onOpenPostCaption?: () => void;
   onOpenClientSelector?: () => void;
   onOpenKnowledgeBase: () => void;
   onOpenHookLab: () => void;
@@ -71,6 +82,10 @@ export const AiPanel: React.FC<AiPanelProps> = ({
   brand,
   activeDocuments,
   selectedClient,
+  language,
+  onChangeLanguage,
+  postMeta,
+  onOpenPostCaption,
   onOpenClientSelector,
   onOpenKnowledgeBase,
   onOpenHookLab,
@@ -78,9 +93,22 @@ export const AiPanel: React.FC<AiPanelProps> = ({
 }) => {
   const [isDictating, setIsDictating] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [copiedPost, setCopiedPost] = useState(false);
   const [generationRationale, setGenerationRationale] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const recognitionRef = React.useRef<any>(null);
+
+  const handleCopyFullPost = async () => {
+    if (!postMeta?.caption) return;
+    const fullText = `${postMeta.caption}\n\n${(postMeta.hashtags || []).map((h) => `#${h.replace(/^#/, '')}`).join(' ')}`.trim();
+    try {
+      await navigator.clipboard.writeText(fullText);
+      setCopiedPost(true);
+      setTimeout(() => setCopiedPost(false), 2000);
+    } catch {
+      alert('Texto copiado al portapapeles.');
+    }
+  };
 
   // Voice dictation handling using SpeechRecognition API
   const handleToggleDictation = () => {
@@ -99,7 +127,7 @@ export const AiPanel: React.FC<AiPanelProps> = ({
     try {
       const recognition = new SpeechRecognition();
       recognitionRef.current = recognition;
-      recognition.lang = 'es-ES';
+      recognition.lang = language === 'pt' ? 'pt-BR' : language === 'en' ? 'en-US' : 'es-ES';
       recognition.continuous = true;
       recognition.interimResults = true;
       
@@ -155,6 +183,11 @@ export const AiPanel: React.FC<AiPanelProps> = ({
         .map((d) => `Documento [${d.name}]: ${d.summary || d.content.slice(0, 1500)}`)
         .join('\n\n');
 
+      // Gather technical terms from active client and active documents
+      const clientTerms = selectedClient?.technical_terms || [];
+      const docTerms = activeDocuments.flatMap((d) => d.technicalTerms || []);
+      const combinedTerms = Array.from(new Set([...clientTerms, ...docTerms]));
+
       const response = await apiGenerateCarousel({
         brief: textToUse,
         slideCount,
@@ -162,7 +195,9 @@ export const AiPanel: React.FC<AiPanelProps> = ({
         hookType,
         targetAudience,
         knowledgeBase: knowledgeContext,
+        technicalTerms: combinedTerms,
         brand,
+        language,
       });
 
       if (response.slides && response.slides.length > 0) {
@@ -211,11 +246,11 @@ export const AiPanel: React.FC<AiPanelProps> = ({
 
           <button
             onClick={onOpenKnowledgeBase}
-            className="flex items-center gap-1 bg-indigo-950/70 hover:bg-indigo-900/80 border border-indigo-700/50 text-indigo-300 px-2.5 py-1 rounded-xl text-xs font-semibold transition"
+            className="flex items-center gap-1.5 bg-indigo-950/70 hover:bg-indigo-900/80 border border-indigo-700/50 text-indigo-300 px-2.5 py-1 rounded-xl text-xs font-semibold transition"
             title="Ver o agregar documentos de marketing y URLs para entrenar la IA"
           >
             <BookOpen className="w-3.5 h-3.5 text-indigo-400" />
-            <span>Docs ({activeDocuments.length})</span>
+            <span>Capacitar IA ({activeDocuments.length})</span>
           </button>
         </div>
       </div>
@@ -252,6 +287,28 @@ export const AiPanel: React.FC<AiPanelProps> = ({
               </button>
             ))}
           </div>
+
+          {/* Active Technical Terms Pills if present */}
+          {selectedClient?.technical_terms && selectedClient.technical_terms.length > 0 && (
+            <div className="pt-2 border-t border-slate-800/70 flex items-center gap-1.5 flex-wrap">
+              <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1">
+                <Tag className="w-3 h-3" /> Jerga activa:
+              </span>
+              {selectedClient.technical_terms.slice(0, 5).map((term, i) => (
+                <span
+                  key={i}
+                  className="bg-amber-950/50 border border-amber-800/40 text-amber-200 text-[10px] px-2 py-0.5 rounded-md"
+                >
+                  {term}
+                </span>
+              ))}
+              {selectedClient.technical_terms.length > 5 && (
+                <span className="text-[10px] text-slate-500">
+                  +{selectedClient.technical_terms.length - 5} más
+                </span>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -322,10 +379,13 @@ export const AiPanel: React.FC<AiPanelProps> = ({
           <div className="flex items-center justify-between">
             <label className="text-xs font-bold text-slate-300">Gancho Slide 1:</label>
             <button
+              type="button"
               onClick={onOpenHookLab}
-              className="text-[10px] text-rose-400 hover:text-rose-300 font-bold underline"
+              className="flex items-center gap-1 bg-rose-950/60 hover:bg-rose-900/80 border border-rose-700/50 text-rose-300 hover:text-white px-2.5 py-0.5 rounded-xl text-xs font-semibold transition shadow-sm"
+              title="Laboratorio de Ganchos para Slide 1"
             >
-              Lab Ganchos
+              <Target className="w-3.5 h-3.5 text-rose-400" />
+              <span>Lab de Ganchos</span>
             </button>
           </div>
           <select
@@ -381,6 +441,55 @@ export const AiPanel: React.FC<AiPanelProps> = ({
         </div>
       </div>
 
+      {/* Language Selector Selector Box */}
+      <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-3 space-y-1.5">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+            <Languages className="w-3.5 h-3.5 text-rose-400" />
+            <span>Idioma de Publicación:</span>
+          </label>
+          <span className="text-[10px] text-slate-500">Textos generados en este idioma</span>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          <button
+            type="button"
+            onClick={() => onChangeLanguage('es')}
+            className={`py-2 px-2.5 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+              language === 'es'
+                ? 'bg-rose-950/70 border-rose-500 text-white shadow-md'
+                : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <span className="text-sm">🇪🇸</span>
+            <span>Español</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onChangeLanguage('pt')}
+            className={`py-2 px-2.5 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+              language === 'pt'
+                ? 'bg-rose-950/70 border-rose-500 text-white shadow-md'
+                : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <span className="text-sm">🇧🇷</span>
+            <span>Português</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onChangeLanguage('en')}
+            className={`py-2 px-2.5 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+              language === 'en'
+                ? 'bg-rose-950/70 border-rose-500 text-white shadow-md'
+                : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <span className="text-sm">🇺🇸</span>
+            <span>English</span>
+          </button>
+        </div>
+      </div>
+
       {/* Main Action Button */}
       <button
         onClick={() => handleGenerate()}
@@ -410,6 +519,70 @@ export const AiPanel: React.FC<AiPanelProps> = ({
           <p className="text-slate-300 text-[11px] leading-relaxed">
             {generationRationale}
           </p>
+        </div>
+      )}
+
+      {/* Social Media Post & Hashtags Card (Copywriting) */}
+      {postMeta && (
+        <div className="bg-slate-950/90 border border-slate-800/90 rounded-2xl p-3.5 space-y-2.5 shadow-lg">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <MessageSquare className="w-4 h-4 text-rose-400" />
+              <span className="text-xs font-bold text-white uppercase tracking-wider">
+                Texto del Post & Hashtags
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={handleCopyFullPost}
+                className="flex items-center gap-1 bg-rose-950/70 hover:bg-rose-900 border border-rose-700/60 text-rose-300 hover:text-white px-2.5 py-1 rounded-xl text-xs font-bold transition shadow-sm"
+                title="Copiar texto y hashtags al portapapeles"
+              >
+                {copiedPost ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    <span className="text-emerald-300">¡Copiado!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Copy Post</span>
+                  </>
+                )}
+              </button>
+              {onOpenPostCaption && (
+                <button
+                  type="button"
+                  onClick={onOpenPostCaption}
+                  className="p-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg text-xs transition"
+                  title="Abrir editor completo del post"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Caption preview snippet */}
+          <div className="bg-slate-900/90 border border-slate-800/80 rounded-xl p-2.5 text-xs text-slate-200 leading-relaxed font-sans whitespace-pre-wrap max-h-36 overflow-y-auto custom-scrollbar">
+            {postMeta.caption || 'Genera un carrusel para redactar automáticamente el texto del post.'}
+          </div>
+
+          {/* Hashtags display */}
+          {postMeta.hashtags && postMeta.hashtags.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 items-center pt-1 border-t border-slate-800/60">
+              <Hash className="w-3 h-3 text-rose-400 shrink-0" />
+              {postMeta.hashtags.map((tag, i) => (
+                <span
+                  key={i}
+                  className="text-[10px] font-semibold bg-rose-950/40 border border-rose-800/30 text-rose-300 px-2 py-0.5 rounded-lg"
+                >
+                  #{tag.replace(/^#/, '')}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
