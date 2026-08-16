@@ -93,17 +93,8 @@ export default function App() {
     };
   });
 
-  // Carousel Slides State
-  const [slides, setSlides] = useState<Slide[]>(() => {
-    try {
-      const saved = localStorage.getItem(LOCAL_STORAGE_SLIDES_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {}
-    return INITIAL_DEFAULT_SLIDES;
-  });
+  // Carousel Slides State - Always fresh blank project on app open
+  const [slides, setSlides] = useState<Slide[]>(INITIAL_DEFAULT_SLIDES);
 
   const [currentIndex, setCurrentIndex] = useState<number>(0);
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('4:5');
@@ -138,7 +129,7 @@ export default function App() {
   });
   const [isTranslating, setIsTranslating] = useState<boolean>(false);
 
-  // Reconcile languages and restore active workspace from IndexedDB on startup
+  // Reconcile languages from IndexedDB on startup
   useEffect(() => {
     initClientLanguagesFromDB().then((mapping) => {
       if (selectedClient) {
@@ -147,20 +138,6 @@ export default function App() {
           setLanguage(custom);
           setSelectedClient((prev) => prev ? { ...prev, language: custom } : prev);
         }
-      }
-    }).catch(console.warn);
-
-    // Cargar automáticamente la mesa de trabajo completa con imágenes reales desde IndexedDB
-    getActiveWorkspaceDB().then((active) => {
-      if (active && active.slides && active.slides.length > 0) {
-        setSlides(active.slides);
-        if (active.brand) setBrand(active.brand);
-        if (active.brief) setBrief(active.brief);
-        if (active.targetAudience) setTargetAudience(active.targetAudience);
-        if (active.postMeta) setPostMeta(active.postMeta);
-        if (active.aspectRatio) setAspectRatio(active.aspectRatio);
-        if (active.documents && active.documents.length > 0) setDocuments(active.documents);
-        if (active.selectedClient) setSelectedClient(active.selectedClient);
       }
     }).catch(console.warn);
   }, []);
@@ -191,7 +168,7 @@ export default function App() {
 
   // Modals state
   const [isClientSelectorOpen, setIsClientSelectorOpen] = useState(false);
-  const [isProjectsOpen, setIsProjectsOpen] = useState(false);
+  const [isProjectsOpen, setIsProjectsOpen] = useState(true);
   const [isKnowledgeOpen, setIsKnowledgeOpen] = useState(false);
   const [isHookLabOpen, setIsHookLabOpen] = useState(false);
   const [isPostCaptionOpen, setIsPostCaptionOpen] = useState(false);

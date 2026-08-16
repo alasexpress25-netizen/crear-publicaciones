@@ -24,8 +24,6 @@ interface HeaderProps {
   onTranslateCarousel?: (targetLang: 'es' | 'pt' | 'en') => void;
   isTranslating?: boolean;
   onOpenClientSelector: () => void;
-  onOpenProjects?: () => void;
-  onOpenExport?: () => void;
   onResetCarousel: () => void;
 }
 
