@@ -137,12 +137,74 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
     return false;
   };
 
+  const getBadgeStyle = (key: string = 'badge'): React.CSSProperties => {
+    const custom = (slide.textStyle && slide.textStyle[key]) || (brand.textStyle && brand.textStyle[key]);
+    const bg = (custom?.transparentBox || custom?.backgroundColor === 'transparent')
+      ? 'transparent'
+      : (custom?.backgroundColor || primaryColor);
+
+    const style: React.CSSProperties = {
+      backgroundColor: bg,
+    };
+
+    if (custom?.outline) {
+      const outCol = custom.outlineColor || '#000000';
+      const outW = custom.outlineWidth || 2;
+      style.border = `${outW}px solid ${outCol}`;
+      style.borderColor = outCol;
+      style.borderWidth = `${outW}px`;
+      style.borderStyle = 'solid';
+    }
+
+    if (custom?.shadow) {
+      const shCol = custom.shadowColor || '#000000';
+      const shType = custom.shadowType || 'soft';
+      if (shType === 'soft') style.boxShadow = `0px 6px 16px ${shCol}, 0px 2px 6px ${shCol}`;
+      else if (shType === 'subtle') style.boxShadow = `0px 3px 8px ${shCol}cc`;
+      else if (shType === 'hard') style.boxShadow = `3.5px 3.5px 0px ${shCol}`;
+      else if (shType === 'glow') style.boxShadow = `0px 0px 10px ${shCol}, 0px 0px 24px ${shCol}`;
+    }
+
+    return style;
+  };
+
   const getBadgeBg = (key: string = 'badge') => {
     const custom = slide.textStyle?.[key];
     if (custom?.transparentBox || custom?.backgroundColor === 'transparent') {
       return 'transparent';
     }
     return custom?.backgroundColor || primaryColor;
+  };
+
+  const getCtaPillStyle = (): React.CSSProperties => {
+    const custom = (slide.textStyle && slide.textStyle['cta-pill']) || (brand.textStyle && brand.textStyle['cta-pill']);
+    const bg = (custom?.transparentBox || custom?.backgroundColor === 'transparent')
+      ? 'transparent'
+      : (custom?.backgroundColor || primaryColor);
+
+    const style: React.CSSProperties = {
+      backgroundColor: bg,
+    };
+
+    if (custom?.outline) {
+      const outCol = custom.outlineColor || '#000000';
+      const outW = custom.outlineWidth || 2;
+      style.border = `${outW}px solid ${outCol}`;
+      style.borderColor = outCol;
+      style.borderWidth = `${outW}px`;
+      style.borderStyle = 'solid';
+    }
+
+    if (custom?.shadow) {
+      const shCol = custom.shadowColor || '#000000';
+      const shType = custom.shadowType || 'soft';
+      if (shType === 'soft') style.boxShadow = `0px 6px 16px ${shCol}, 0px 2px 6px ${shCol}`;
+      else if (shType === 'subtle') style.boxShadow = `0px 3px 8px ${shCol}cc`;
+      else if (shType === 'hard') style.boxShadow = `3.5px 3.5px 0px ${shCol}`;
+      else if (shType === 'glow') style.boxShadow = `0px 0px 10px ${shCol}, 0px 0px 24px ${shCol}`;
+    }
+
+    return style;
   };
 
   const getCtaPillBg = () => {
@@ -225,6 +287,12 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
     const pos = slide.textPos && slide.textPos[key];
     const def = getDefaultsForElement(key, primaryColor);
 
+    const isContainer =
+      key.includes('-card') ||
+      key.includes('-box') ||
+      key.includes('-container') ||
+      key.includes('grid');
+
     const styleObj: React.CSSProperties = {
       ...def,
       ...baseStyle,
@@ -242,63 +310,87 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
     if (custom.fontFamily) styleObj.fontFamily = custom.fontFamily;
     if (custom.fontWeight) styleObj.fontWeight = custom.fontWeight;
     if (custom.fontStyle) styleObj.fontStyle = custom.fontStyle;
-    if (custom.width) styleObj.width = `${custom.width}px`;
+    if (custom.width !== undefined && custom.width !== null) {
+      styleObj.width = typeof custom.width === 'number' && custom.width <= 100 ? `${custom.width}%` : `${custom.width}px`;
+      styleObj.maxWidth = '100%';
+    }
     if (custom.letterSpacing) styleObj.letterSpacing = custom.letterSpacing;
     if (custom.textTransform) styleObj.textTransform = custom.textTransform;
 
     if (custom.backgroundColor !== undefined) {
       styleObj.backgroundColor = custom.backgroundColor;
       if (custom.backgroundColor === 'transparent') {
-        styleObj.borderColor = 'transparent';
+        if (!custom.outline) {
+          styleObj.borderColor = 'transparent';
+        }
       } else {
         styleObj.borderRadius = styleObj.borderRadius || '10px';
       }
     } else if (custom.transparentBox) {
       styleObj.backgroundColor = 'transparent';
-      styleObj.borderColor = 'transparent';
+      if (!custom.outline) {
+        styleObj.borderColor = 'transparent';
+      }
     }
 
     const shadowParts: string[] = [];
 
-    // 1. Contorno de texto (Stroke / Outline)
+    // 1. Contorno (Stroke para texto y Borde físico para cajas/recuadros/elementos)
     if (custom.outline) {
       const outCol = custom.outlineColor || '#000000';
       const outW = custom.outlineWidth || 2;
       const isTransparentColor = custom.color === 'transparent' || styleObj.color === 'transparent';
       
-      if (!isTransparentColor) {
-        shadowParts.push(
-          `-${outW}px -${outW}px 0 ${outCol}`,
-          `0px -${outW}px 0 ${outCol}`,
-          `${outW}px -${outW}px 0 ${outCol}`,
-          `-${outW}px 0px 0 ${outCol}`,
-          `${outW}px 0px 0 ${outCol}`,
-          `-${outW}px ${outW}px 0 ${outCol}`,
-          `0px ${outW}px 0 ${outCol}`,
-          `${outW}px ${outW}px 0 ${outCol}`
-        );
+      // Aplicar borde físico visible a cajas, recuadros, o cualquier elemento seleccionado
+      styleObj.border = `${outW}px solid ${outCol}`;
+      styleObj.borderColor = outCol;
+      styleObj.borderWidth = `${outW}px`;
+      styleObj.borderStyle = 'solid';
+
+      // Si NO es un contenedor padre grande (para evitar que todo el texto interno herede stroke accidentalmente)
+      if (!isContainer) {
+        if (!isTransparentColor) {
+          shadowParts.push(
+            `-${outW}px -${outW}px 0 ${outCol}`,
+            `0px -${outW}px 0 ${outCol}`,
+            `${outW}px -${outW}px 0 ${outCol}`,
+            `-${outW}px 0px 0 ${outCol}`,
+            `${outW}px 0px 0 ${outCol}`,
+            `-${outW}px ${outW}px 0 ${outCol}`,
+            `0px ${outW}px 0 ${outCol}`,
+            `${outW}px ${outW}px 0 ${outCol}`
+          );
+        }
+        (styleObj as any).WebkitTextStroke = `${Math.max(1, outW * 0.8)}px ${outCol}`;
+        (styleObj as any).paintOrder = 'stroke fill';
       }
-      (styleObj as any).WebkitTextStroke = `${Math.max(1, outW * 0.8)}px ${outCol}`;
-      (styleObj as any).paintOrder = 'stroke fill';
     }
 
-    // 2. Sombra de texto (Drop Shadow)
+    // 2. Sombra de texto o caja (Drop Shadow / Box Shadow)
     if (custom.shadow) {
       const shCol = custom.shadowColor || '#000000';
       const shType = custom.shadowType || 'soft';
       
-      if (shType === 'soft') {
-        // Sombra difusa y envolvente para legibilidad
-        shadowParts.push(`0px 6px 16px ${shCol}`, `0px 2px 6px ${shCol}`);
-      } else if (shType === 'subtle') {
-        // Sombra sutil y elegante
-        shadowParts.push(`0px 3px 8px ${shCol}cc`);
-      } else if (shType === 'hard') {
-        // Sombra recta / sólida 3D retro
-        shadowParts.push(`3.5px 3.5px 0px ${shCol}`);
-      } else if (shType === 'glow') {
-        // Resplandor / Neón difuso
-        shadowParts.push(`0px 0px 10px ${shCol}`, `0px 0px 24px ${shCol}`);
+      if (isContainer || (custom.backgroundColor && custom.backgroundColor !== 'transparent')) {
+        if (shType === 'soft') {
+          styleObj.boxShadow = `0px 6px 16px ${shCol}, 0px 2px 6px ${shCol}`;
+        } else if (shType === 'subtle') {
+          styleObj.boxShadow = `0px 3px 8px ${shCol}cc`;
+        } else if (shType === 'hard') {
+          styleObj.boxShadow = `3.5px 3.5px 0px ${shCol}`;
+        } else if (shType === 'glow') {
+          styleObj.boxShadow = `0px 0px 10px ${shCol}, 0px 0px 24px ${shCol}`;
+        }
+      } else {
+        if (shType === 'soft') {
+          shadowParts.push(`0px 6px 16px ${shCol}`, `0px 2px 6px ${shCol}`);
+        } else if (shType === 'subtle') {
+          shadowParts.push(`0px 3px 8px ${shCol}cc`);
+        } else if (shType === 'hard') {
+          shadowParts.push(`3.5px 3.5px 0px ${shCol}`);
+        } else if (shType === 'glow') {
+          shadowParts.push(`0px 0px 10px ${shCol}`, `0px 0px 24px ${shCol}`);
+        }
       }
     }
 
@@ -528,7 +620,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                   suppressContentEditableWarning
                   onBlur={(e) => onUpdateField('badge', e.currentTarget.innerText)}
                   className="px-3 py-1 rounded-md inline-block outline-none shadow-md"
-                  style={{ backgroundColor: getBadgeBg('badge') }}
+                  style={getBadgeStyle('badge')}
                 >
                   {slide.badge}
                 </span>
@@ -743,7 +835,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                     suppressContentEditableWarning
                     onBlur={(e) => onUpdateField('badge', e.currentTarget.innerText)}
                     className="px-2.5 py-0.5 rounded uppercase tracking-wider inline-block outline-none"
-                    style={{ backgroundColor: primaryColor }}
+                    style={getBadgeStyle('badge')}
                   >
                     {slide.badge}
                   </span>
@@ -1153,7 +1245,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                   suppressContentEditableWarning
                   onBlur={(e) => onUpdateField('badge', e.currentTarget.innerText)}
                   className="px-3 py-1 rounded uppercase tracking-wider inline-block shadow outline-none"
-                  style={{ backgroundColor: getBadgeBg('badge') }}
+                  style={getBadgeStyle('badge')}
                 >
                   {slide.badge || loc.stat.badge}
                 </span>
@@ -1282,7 +1374,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                     suppressContentEditableWarning
                     onBlur={(e) => onUpdateField('badge', e.currentTarget.innerText)}
                     className="px-2.5 py-0.5 rounded uppercase tracking-wider inline-block outline-none"
-                    style={{ backgroundColor: primaryColor }}
+                    style={getBadgeStyle('badge')}
                   >
                     {slide.badge || loc.checklist.badge}
                   </span>
@@ -1437,7 +1529,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                     suppressContentEditableWarning
                     onBlur={(e) => onUpdateField('badge', e.currentTarget.innerText)}
                     className="px-3 py-1 rounded-full uppercase tracking-wider inline-block shadow-sm outline-none"
-                    style={{ backgroundColor: getBadgeBg('badge') }}
+                    style={getBadgeStyle('badge')}
                   >
                     {slide.badge || loc.ctaFinal.badge}
                   </span>
@@ -1524,7 +1616,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                 {renderActiveControls('cta-pill')}
                 <div
                   className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl shadow-lg"
-                  style={{ backgroundColor: getCtaPillBg() }}
+                  style={getCtaPillStyle()}
                 >
                   <MessageCircle className="w-4 h-4 shrink-0" />
                   <span
