@@ -94,12 +94,23 @@ const getElementLabel = (key: string): string => {
 };
 
 const getDefaultSizeForKey = (key: string): number => {
-  if (key === 'stat-number') return 56;
-  if (key === 'title' || key === 'cta-headline') return 24;
-  if (key === 'quote-text') return 20;
-  if (key === 'subtag' || key === 'comp-leftTitle' || key === 'comp-rightTitle' || key === 'stat-label') return 14;
-  if (key === 'badge' || key === 'comp-leftTag' || key === 'comp-rightTag' || key === 'quote-role') return 10;
+  if (key === 'stat-number') return 60;
+  if (key === 'title' || key === 'cta-headline') return 22;
+  if (key === 'quote-text') return 18;
+  if (key === 'subtag' || key === 'comp-leftTitle' || key === 'comp-rightTitle' || key === 'stat-label' || key === 'body') return 13;
+  if (key === 'cta' || key === 'cta-pill' || key === 'stat-subtext' || key === 'cta-subheadline' || key.startsWith('bullet-')) return 12;
+  if (key === 'comp-leftText' || key === 'comp-rightText' || key === 'quote-role' || key === 'brandWeb') return 11;
+  if (key === 'badge' || key === 'comp-leftTag' || key === 'comp-rightTag') return 10;
   return 13;
+};
+
+const getDefaultColorForKey = (key: string, primaryColor: string): string => {
+  if (key === 'subtag' || key === 'stat-number' || key === 'brandWeb') return primaryColor;
+  if (key === 'quote-role') return '#fb7185';
+  if (key === 'comp-leftTag') return '#f87171';
+  if (key === 'comp-rightTag') return '#34d399';
+  if (key === 'body' || key === 'stat-subtext' || key === 'comp-leftText' || key === 'comp-rightText' || key === 'cta' || key === 'cta-subheadline') return '#cbd5e1';
+  return '#ffffff';
 };
 
 export const TextStyleBar: React.FC<TextStyleBarProps> = ({
@@ -313,23 +324,33 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
           </div>
 
           {/* Color Presets */}
-          <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-lg px-1.5 py-1 shrink-0">
-            {PRESET_COLORS.slice(0, 5).map((c) => (
-              <button
-                key={c}
-                onClick={() => onUpdateStyle(activeKey, { color: c })}
-                className="w-3.5 h-3.5 rounded-full border border-slate-700 hover:scale-110 transition"
-                style={{ backgroundColor: c }}
-                title={c}
-              />
-            ))}
-            <input
-              type="color"
-              onChange={(e) => onUpdateStyle(activeKey, { color: e.target.value })}
-              className="w-4 h-4 rounded cursor-pointer bg-transparent border-0 ml-0.5"
-              title="Color personalizado"
-            />
-          </div>
+          {(() => {
+            const currentColor = (activeKey === 'brandName' || activeKey === 'brandWeb'
+              ? brand.textStyle?.[activeKey]?.color
+              : slide.textStyle?.[activeKey]?.color) || getDefaultColorForKey(activeKey, primaryColor);
+            return (
+              <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-lg px-1.5 py-1 shrink-0">
+                {PRESET_COLORS.slice(0, 5).map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => onUpdateStyle(activeKey, { color: c })}
+                    className={`w-3.5 h-3.5 rounded-full border transition ${
+                      currentColor.toLowerCase() === c.toLowerCase() ? 'ring-2 ring-rose-500 scale-110 border-white' : 'border-slate-700 hover:scale-110'
+                    }`}
+                    style={{ backgroundColor: c }}
+                    title={c}
+                  />
+                ))}
+                <input
+                  type="color"
+                  value={currentColor.startsWith('#') && currentColor.length === 7 ? currentColor : '#ffffff'}
+                  onChange={(e) => onUpdateStyle(activeKey, { color: e.target.value })}
+                  className="w-4 h-4 rounded cursor-pointer bg-transparent border-0 ml-0.5"
+                  title="Color personalizado"
+                />
+              </div>
+            );
+          })()}
 
           {/* Alignment */}
           <div className="flex items-center gap-0.5 bg-slate-950 border border-slate-800 rounded-lg p-0.5 shrink-0">

@@ -159,12 +159,48 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
     );
   };
 
+  const getDefaultsForElement = (key: string, pColor: string): React.CSSProperties => {
+    if (key === 'brandName') return { color: '#e2e8f0', fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em' };
+    if (key === 'brandWeb') return { color: pColor, fontSize: '11px', fontWeight: 'bold' };
+    if (key === 'badge') return { color: '#ffffff', fontSize: '10px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em' };
+    if (key === 'subtag') return { color: pColor, fontSize: '13px', fontWeight: 'bold' };
+    if (key === 'title') return { color: '#ffffff', fontSize: '22px', fontWeight: 900, textTransform: 'uppercase', lineHeight: 1.25 };
+    if (key === 'body') return { color: '#cbd5e1', fontSize: '13px', lineHeight: 1.6 };
+    if (key.startsWith('bullet-')) return { color: '#e2e8f0', fontSize: '12px', lineHeight: 1.5 };
+    if (key === 'cta') return { color: '#cbd5e1', fontSize: '12px', fontWeight: 600 };
+    
+    if (key === 'quote-text') return { color: '#ffffff', fontSize: '18px', fontWeight: 'bold', fontStyle: 'italic', lineHeight: 1.5 };
+    if (key === 'quote-author') return { color: '#ffffff', fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em' };
+    if (key === 'quote-role') return { color: '#fb7185', fontSize: '11px', fontWeight: 600 };
+
+    if (key === 'stat-number') return { color: pColor, fontSize: '60px', fontWeight: 900, lineHeight: 1 };
+    if (key === 'stat-label') return { color: '#ffffff', fontSize: '13px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em' };
+    if (key === 'stat-subtext') return { color: '#cbd5e1', fontSize: '12px', lineHeight: 1.5 };
+
+    if (key === 'comp-leftTag') return { color: '#f87171', fontSize: '11px', fontWeight: 900, textTransform: 'uppercase' };
+    if (key === 'comp-leftTitle') return { color: '#ffffff', fontSize: '13px', fontWeight: 'bold', lineHeight: 1.3 };
+    if (key === 'comp-leftText') return { color: '#cbd5e1', fontSize: '11px', lineHeight: 1.4 };
+    if (key === 'comp-rightTag') return { color: '#34d399', fontSize: '11px', fontWeight: 900, textTransform: 'uppercase' };
+    if (key === 'comp-rightTitle') return { color: '#ffffff', fontSize: '13px', fontWeight: 'bold', lineHeight: 1.3 };
+    if (key === 'comp-rightText') return { color: '#cbd5e1', fontSize: '11px', lineHeight: 1.4 };
+
+    if (key === 'cta-headline') return { color: '#ffffff', fontSize: '22px', fontWeight: 900, textTransform: 'uppercase', lineHeight: 1.25 };
+    if (key === 'cta-subheadline') return { color: '#cbd5e1', fontSize: '12px', lineHeight: 1.5 };
+    if (key === 'cta-pill') return { color: '#ffffff', fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em' };
+
+    return { color: '#ffffff', fontSize: '13px' };
+  };
+
   const getStyleFor = (key: string, baseStyle?: React.CSSProperties) => {
     const customTextLayer = slide.customTexts?.find((c) => c.id === key);
     const custom = (slide.textStyle && slide.textStyle[key]) || (brand.textStyle && brand.textStyle[key]) || {};
     const pos = slide.textPos && slide.textPos[key];
+    const def = getDefaultsForElement(key, primaryColor);
 
-    const styleObj: React.CSSProperties = { ...baseStyle };
+    const styleObj: React.CSSProperties = {
+      ...def,
+      ...baseStyle,
+    };
 
     const fontSize = custom.fontSize || customTextLayer?.fontSize;
     if (fontSize) styleObj.fontSize = `${fontSize}px`;
@@ -315,7 +351,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
             contentEditable
             suppressContentEditableWarning
             onBlur={(e) => onUpdateBrand('name', e.currentTarget.innerText)}
-            className="text-xs font-bold text-slate-200 uppercase tracking-wider outline-none"
+            className="outline-none"
             style={getStyleFor('brandName')}
           >
             {brand.name || 'LA VISUAL MK'}
@@ -357,7 +393,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                   contentEditable
                   suppressContentEditableWarning
                   onBlur={(e) => onUpdateField('badge', e.currentTarget.innerText)}
-                  className="text-white font-black text-[10px] sm:text-[11px] px-3 py-1 rounded-md uppercase tracking-wider inline-block outline-none shadow-md"
+                  className="px-3 py-1 rounded-md inline-block outline-none shadow-md"
                   style={{ backgroundColor: primaryColor }}
                 >
                   {slide.badge}
@@ -393,8 +429,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                   contentEditable
                   suppressContentEditableWarning
                   onBlur={(e) => onUpdateField('subtag', e.currentTarget.innerText)}
-                  className="font-bold text-xs sm:text-sm tracking-wide outline-none"
-                  style={{ color: primaryColor }}
+                  className="outline-none"
                 >
                   {slide.subtag}
                 </p>
@@ -428,7 +463,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                 contentEditable
                 suppressContentEditableWarning
                 onBlur={(e) => onUpdateField('title', e.currentTarget.innerText)}
-                className="font-black text-lg sm:text-2xl text-white leading-tight uppercase outline-none drop-shadow-md"
+                className="outline-none drop-shadow-md"
               >
                 {slide.title || 'ESCRIBE AQUÍ EL TÍTULO O GANCHO'}
               </h2>
@@ -450,7 +485,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                   contentEditable
                   suppressContentEditableWarning
                   onBlur={(e) => onUpdateField('body', e.currentTarget.innerText)}
-                  className="text-xs sm:text-sm text-slate-300 leading-relaxed outline-none"
+                  className="outline-none"
                 >
                   {slide.body}
                 </p>
@@ -474,7 +509,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                 {slide.bullets.map((bullet, idx) => (
                   <div
                     key={idx}
-                    className={`group relative flex items-center gap-2.5 bg-slate-900/80 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-200 cursor-pointer shadow-sm transition ${
+                    className={`group relative flex items-center gap-2.5 bg-slate-900/80 border border-slate-800 rounded-xl px-3.5 py-2 cursor-pointer shadow-sm transition ${
                       activeElementKey === `bullet-${idx}` ? 'ring-2 ring-rose-500' : 'hover:border-slate-700'
                     }`}
                     onClick={(e) => {
@@ -485,7 +520,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                   >
                     {renderActiveControls(`bullet-${idx}`)}
                     <span
-                      className="font-bold text-sm leading-none"
+                      className="font-bold text-sm leading-none shrink-0"
                       style={{ color: primaryColor }}
                     >
                       •
@@ -532,6 +567,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
         )}
 
         {/* ==================================================================== */}
+        {/* ==================================================================== */}
         {/* LAYOUT 2: SPLIT COMPARISON (Antes vs Después / Error vs Solución) */}
         {/* ==================================================================== */}
         {layout === 'split_comparison' && (
@@ -553,7 +589,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                     contentEditable
                     suppressContentEditableWarning
                     onBlur={(e) => onUpdateField('badge', e.currentTarget.innerText)}
-                    className="text-white font-black text-[9px] px-2.5 py-0.5 rounded uppercase tracking-wider inline-block outline-none"
+                    className="px-2.5 py-0.5 rounded uppercase tracking-wider inline-block outline-none"
                     style={{ backgroundColor: primaryColor }}
                   >
                     {slide.badge}
@@ -575,7 +611,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                   contentEditable
                   suppressContentEditableWarning
                   onBlur={(e) => onUpdateField('title', e.currentTarget.innerText)}
-                  className="font-black text-base sm:text-xl text-white leading-tight uppercase outline-none"
+                  className="outline-none"
                 >
                   {slide.title || loc.comparison.title}
                 </h2>
@@ -586,7 +622,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
               {/* Left Column (Mistake / Before) */}
               <div className="bg-red-950/40 border border-red-800/50 rounded-2xl p-3 space-y-1.5 text-left relative">
                 <div
-                  className={`group relative inline-flex items-center gap-1.5 text-red-400 font-black text-[11px] uppercase cursor-pointer rounded p-0.5 ${
+                  className={`group relative inline-flex items-center gap-1.5 cursor-pointer rounded p-0.5 ${
                     activeElementKey === 'comp-leftTag' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
                   }`}
                   onClick={(e) => {
@@ -622,7 +658,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                     contentEditable
                     suppressContentEditableWarning
                     onBlur={(e) => onUpdateComparison?.({ leftTitle: e.currentTarget.innerText })}
-                    className="text-xs font-bold text-white leading-snug outline-none"
+                    className="outline-none"
                   >
                     {slide.comparison?.leftTitle || loc.comparison.leftTitle}
                   </h4>
@@ -643,7 +679,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                     contentEditable
                     suppressContentEditableWarning
                     onBlur={(e) => onUpdateComparison?.({ leftText: e.currentTarget.innerText })}
-                    className="text-[11px] text-slate-300 leading-relaxed outline-none"
+                    className="outline-none"
                   >
                     {slide.comparison?.leftText || loc.comparison.leftText}
                   </p>
@@ -653,7 +689,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
               {/* Right Column (Solution / After) */}
               <div className="bg-emerald-950/40 border border-emerald-700/60 rounded-2xl p-3 space-y-1.5 text-left relative">
                 <div
-                  className={`group relative inline-flex items-center gap-1.5 text-emerald-400 font-black text-[11px] uppercase cursor-pointer rounded p-0.5 ${
+                  className={`group relative inline-flex items-center gap-1.5 cursor-pointer rounded p-0.5 ${
                     activeElementKey === 'comp-rightTag' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
                   }`}
                   onClick={(e) => {
@@ -689,7 +725,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                     contentEditable
                     suppressContentEditableWarning
                     onBlur={(e) => onUpdateComparison?.({ rightTitle: e.currentTarget.innerText })}
-                    className="text-xs font-bold text-white leading-snug outline-none"
+                    className="outline-none"
                   >
                     {slide.comparison?.rightTitle || loc.comparison.rightTitle}
                   </h4>
@@ -710,7 +746,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                     contentEditable
                     suppressContentEditableWarning
                     onBlur={(e) => onUpdateComparison?.({ rightText: e.currentTarget.innerText })}
-                    className="text-[11px] text-slate-300 leading-relaxed outline-none"
+                    className="outline-none"
                   >
                     {slide.comparison?.rightText || loc.comparison.rightText}
                   </p>
@@ -734,7 +770,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                   contentEditable
                   suppressContentEditableWarning
                   onBlur={(e) => onUpdateField('body', e.currentTarget.innerText)}
-                  className="text-xs text-center text-slate-300 leading-relaxed outline-none"
+                  className="outline-none"
                 >
                   {slide.body}
                 </p>
@@ -743,6 +779,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
           </div>
         )}
 
+        {/* ==================================================================== */}
         {/* ==================================================================== */}
         {/* LAYOUT 3: QUOTE / TESTIMONIAL (Cita de Autoridad) */}
         {/* ==================================================================== */}
@@ -777,7 +814,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                   const val = e.currentTarget.innerText.replace(/^["“”]/, '').replace(/["“”]$/, '');
                   onUpdateQuote?.({ quoteText: val });
                 }}
-                className="text-base sm:text-xl font-bold text-white italic leading-relaxed outline-none font-serif"
+                className="outline-none font-serif"
               >
                 "{slide.quote?.quoteText || slide.body || loc.quote.quoteText}"
               </p>
@@ -799,7 +836,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                   contentEditable
                   suppressContentEditableWarning
                   onBlur={(e) => onUpdateQuote?.({ authorName: e.currentTarget.innerText })}
-                  className="text-xs font-black text-white uppercase tracking-wider outline-none"
+                  className="outline-none"
                 >
                   {slide.quote?.authorName || brand.name || 'LA VISUAL MK'}
                 </h4>
@@ -820,7 +857,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                   contentEditable
                   suppressContentEditableWarning
                   onBlur={(e) => onUpdateQuote?.({ authorRole: e.currentTarget.innerText })}
-                  className="text-[11px] font-semibold text-rose-400 outline-none"
+                  className="outline-none"
                 >
                   {slide.quote?.authorRole || loc.quote.authorRole}
                 </p>
@@ -850,7 +887,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                   contentEditable
                   suppressContentEditableWarning
                   onBlur={(e) => onUpdateField('badge', e.currentTarget.innerText)}
-                  className="text-white font-black text-[9px] px-3 py-1 rounded uppercase tracking-wider inline-block shadow outline-none"
+                  className="px-3 py-1 rounded uppercase tracking-wider inline-block shadow outline-none"
                   style={{ backgroundColor: primaryColor }}
                 >
                   {slide.badge || loc.stat.badge}
@@ -874,10 +911,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                   contentEditable
                   suppressContentEditableWarning
                   onBlur={(e) => onUpdateStat?.({ statNumber: e.currentTarget.innerText })}
-                  className="text-5xl sm:text-7xl font-black text-white tracking-tight outline-none block drop-shadow-lg"
-                  style={{
-                    color: primaryColor,
-                  }}
+                  className="tracking-tight outline-none block drop-shadow-lg"
                 >
                   {slide.stat?.statNumber || loc.stat.statNumber}
                 </span>
@@ -898,7 +932,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                   contentEditable
                   suppressContentEditableWarning
                   onBlur={(e) => onUpdateStat?.({ statLabel: e.currentTarget.innerText })}
-                  className="text-xs sm:text-sm font-black text-white uppercase tracking-widest outline-none"
+                  className="outline-none"
                 >
                   {slide.stat?.statLabel || slide.title || loc.stat.statLabel}
                 </p>
@@ -921,7 +955,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                   contentEditable
                   suppressContentEditableWarning
                   onBlur={(e) => onUpdateStat?.({ statSubtext: e.currentTarget.innerText })}
-                  className="text-xs text-slate-300 leading-relaxed outline-none"
+                  className="outline-none"
                 >
                   {slide.stat?.statSubtext || slide.body || loc.stat.statSubtext}
                 </p>
@@ -952,7 +986,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                     contentEditable
                     suppressContentEditableWarning
                     onBlur={(e) => onUpdateField('badge', e.currentTarget.innerText)}
-                    className="text-white font-black text-[9px] px-2.5 py-0.5 rounded uppercase tracking-wider inline-block outline-none"
+                    className="px-2.5 py-0.5 rounded uppercase tracking-wider inline-block outline-none"
                     style={{ backgroundColor: primaryColor }}
                   >
                     {slide.badge || loc.checklist.badge}
@@ -974,7 +1008,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                   contentEditable
                   suppressContentEditableWarning
                   onBlur={(e) => onUpdateField('title', e.currentTarget.innerText)}
-                  className="font-black text-base sm:text-xl text-white leading-tight uppercase outline-none"
+                  className="outline-none"
                 >
                   {slide.title || loc.checklist.title}
                 </h2>
@@ -988,7 +1022,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
               ).map((bullet, idx, arr) => (
                 <div
                   key={idx}
-                  className={`group relative flex items-start gap-3 bg-slate-900/85 border border-slate-800 rounded-2xl p-3 text-xs text-slate-200 shadow-sm cursor-pointer transition ${
+                  className={`group relative flex items-start gap-3 bg-slate-900/85 border border-slate-800 rounded-2xl p-3 shadow-sm cursor-pointer transition ${
                     activeElementKey === `bullet-${idx}` ? 'ring-2 ring-rose-500 bg-slate-900' : 'hover:border-slate-700'
                   }`}
                   onClick={(e) => {
@@ -1089,7 +1123,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                     contentEditable
                     suppressContentEditableWarning
                     onBlur={(e) => onUpdateField('badge', e.currentTarget.innerText)}
-                    className="text-white font-black text-[9px] px-3 py-1 rounded-full uppercase tracking-wider inline-block shadow-sm outline-none"
+                    className="px-3 py-1 rounded-full uppercase tracking-wider inline-block shadow-sm outline-none"
                     style={{ backgroundColor: primaryColor }}
                   >
                     {slide.badge || loc.ctaFinal.badge}
@@ -1114,7 +1148,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                   contentEditable
                   suppressContentEditableWarning
                   onBlur={(e) => onUpdateCtaFinal?.({ headline: e.currentTarget.innerText })}
-                  className="font-black text-lg sm:text-2xl text-white leading-tight uppercase outline-none"
+                  className="outline-none"
                 >
                   {slide.ctaFinal?.headline || slide.title || loc.ctaFinal.headline}
                 </h2>
@@ -1139,7 +1173,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                   contentEditable
                   suppressContentEditableWarning
                   onBlur={(e) => onUpdateCtaFinal?.({ subheadline: e.currentTarget.innerText })}
-                  className="text-xs text-slate-300 leading-relaxed outline-none"
+                  className="outline-none"
                 >
                   {slide.ctaFinal?.subheadline || slide.body || loc.ctaFinal.subheadline}
                 </p>
@@ -1158,10 +1192,10 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
               >
                 {renderActiveControls('cta-pill')}
                 <div
-                  className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-white text-xs font-black uppercase tracking-wider shadow-lg"
+                  className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl shadow-lg"
                   style={{ backgroundColor: primaryColor }}
                 >
-                  <MessageCircle className="w-4 h-4" />
+                  <MessageCircle className="w-4 h-4 shrink-0" />
                   <span
                     contentEditable
                     suppressContentEditableWarning
@@ -1236,7 +1270,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
             contentEditable
             suppressContentEditableWarning
             onBlur={(e) => onUpdateField('cta', e.currentTarget.innerText)}
-            className="text-xs font-semibold text-slate-300 outline-none flex items-center gap-1.5"
+            className="outline-none flex items-center gap-1.5"
           >
             {slide.cta || loc.standard.cta}
           </span>
@@ -1257,8 +1291,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
             contentEditable
             suppressContentEditableWarning
             onBlur={(e) => onUpdateBrand('web', e.currentTarget.innerText)}
-            className="text-xs font-bold outline-none hover:underline"
-            style={{ color: primaryColor }}
+            className="outline-none hover:underline"
           >
             {brand.web || (brand.handle ? `@${brand.handle.replace(/^@/, '')}` : 'lavisualmk.com')}
           </span>
