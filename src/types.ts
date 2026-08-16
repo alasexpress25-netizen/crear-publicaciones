@@ -18,6 +18,10 @@ export interface TextStyleItem {
   color?: string;
   outline?: boolean;
   outlineColor?: string;
+  outlineWidth?: number;
+  shadow?: boolean;
+  shadowColor?: string;
+  shadowType?: 'soft' | 'subtle' | 'hard' | 'glow';
   fontFamily?: string;
   fontWeight?: string;
   fontStyle?: string;

@@ -219,15 +219,48 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
     if (custom.letterSpacing) styleObj.letterSpacing = custom.letterSpacing;
     if (custom.textTransform) styleObj.textTransform = custom.textTransform;
 
+    const shadowParts: string[] = [];
+
+    // 1. Contorno de texto (Stroke / Outline)
     if (custom.outline) {
-      const col = custom.outlineColor || '#000000';
-      styleObj.textShadow = `
-        -1.5px -1.5px 0 ${col},
-         1.5px -1.5px 0 ${col},
-        -1.5px  1.5px 0 ${col},
-         1.5px  1.5px 0 ${col},
-         0px 3px 8px rgba(0,0,0,0.95)
-      `;
+      const outCol = custom.outlineColor || '#000000';
+      const outW = custom.outlineWidth || 2;
+      shadowParts.push(
+        `-${outW}px -${outW}px 0 ${outCol}`,
+        `0px -${outW}px 0 ${outCol}`,
+        `${outW}px -${outW}px 0 ${outCol}`,
+        `-${outW}px 0px 0 ${outCol}`,
+        `${outW}px 0px 0 ${outCol}`,
+        `-${outW}px ${outW}px 0 ${outCol}`,
+        `0px ${outW}px 0 ${outCol}`,
+        `${outW}px ${outW}px 0 ${outCol}`
+      );
+      (styleObj as any).WebkitTextStroke = `${Math.max(1, outW * 0.8)}px ${outCol}`;
+      (styleObj as any).paintOrder = 'stroke fill';
+    }
+
+    // 2. Sombra de texto (Drop Shadow)
+    if (custom.shadow) {
+      const shCol = custom.shadowColor || '#000000';
+      const shType = custom.shadowType || 'soft';
+      
+      if (shType === 'soft') {
+        // Sombra difusa y envolvente para legibilidad
+        shadowParts.push(`0px 6px 16px ${shCol}`, `0px 2px 6px ${shCol}`);
+      } else if (shType === 'subtle') {
+        // Sombra sutil y elegante
+        shadowParts.push(`0px 3px 8px ${shCol}cc`);
+      } else if (shType === 'hard') {
+        // Sombra recta / sólida 3D retro
+        shadowParts.push(`3.5px 3.5px 0px ${shCol}`);
+      } else if (shType === 'glow') {
+        // Resplandor / Neón difuso
+        shadowParts.push(`0px 0px 10px ${shCol}`, `0px 0px 24px ${shCol}`);
+      }
+    }
+
+    if (shadowParts.length > 0) {
+      styleObj.textShadow = shadowParts.join(', ');
     }
 
     if (pos) {

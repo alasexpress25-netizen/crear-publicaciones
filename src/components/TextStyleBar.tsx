@@ -1,14 +1,13 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Type,
   AlignLeft,
   AlignCenter,
   AlignRight,
   Sun,
+  Square,
   Maximize2,
   Minimize2,
-  RotateCcw,
-  Trash2,
   Plus,
   ChevronLeft,
   ChevronRight,
@@ -21,7 +20,8 @@ import {
   Italic,
   Sparkles,
   Languages,
-  Loader2
+  Loader2,
+  X,
 } from 'lucide-react';
 import { Slide, BrandInfo, TextStyleItem, SlideLayoutTemplate } from '../types';
 
@@ -34,7 +34,7 @@ interface TextStyleBarProps {
   onTranslateCarousel?: (lang: 'es' | 'pt' | 'en') => void;
   isTranslating?: boolean;
   onUpdateStyle: (key: string, style: Partial<TextStyleItem>) => void;
-  onResetStyle: (key: string) => void;
+  onResetStyle?: (key: string) => void;
   onDeleteActiveElement?: (key: string) => void;
   onAddCustomText?: (type?: 'heading' | 'body' | 'badge') => void;
   onUpdateSlideOverlayType?: (type: 'gradient' | 'solid' | 'card' | 'cinematic') => void;
@@ -55,44 +55,6 @@ const PRESET_COLORS = [
   '#a855f7',
   '#0f172a',
 ];
-
-const ELEMENT_LABELS: Record<string, string> = {
-  badge: 'Insignia / Badge',
-  subtag: 'Subtítulo',
-  title: 'Título Principal',
-  body: 'Cuerpo de Texto',
-  cta: 'Llamado a la Acción',
-  brandName: 'Nombre de Marca',
-  brandHandle: 'Usuario Instagram / Handle (@)',
-  brandWeb: 'Sitio Web / Watermark',
-  'quote-text': 'Cita / Testimonio',
-  'quote-author': 'Autor de la Cita',
-  'quote-role': 'Cargo / Rol del Autor',
-  'stat-number': 'Métrica / Gran Número',
-  'stat-label': 'Etiqueta de Métrica',
-  'stat-subtext': 'Explicación de Métrica',
-  'comp-leftTag': 'Etiqueta Antes / Error',
-  'comp-leftTitle': 'Título Antes / Error',
-  'comp-leftText': 'Texto Antes / Error',
-  'comp-rightTag': 'Etiqueta Después / Solución',
-  'comp-rightTitle': 'Título Después / Solución',
-  'comp-rightText': 'Texto Después / Solución',
-  'cta-headline': 'Titular Final (CTA)',
-  'cta-subheadline': 'Subtítulo Final (CTA)',
-  'cta-pill': 'Botón de Acción (CTA)',
-};
-
-const getElementLabel = (key: string): string => {
-  if (ELEMENT_LABELS[key]) return ELEMENT_LABELS[key];
-  if (key.startsWith('bullet-')) {
-    const num = parseInt(key.replace('bullet-', ''), 10) + 1;
-    return `Punto / Paso #${num}`;
-  }
-  if (key.startsWith('custom-')) {
-    return 'Texto Personalizado';
-  }
-  return key;
-};
 
 const isBrandKey = (key: string) => key === 'brandName' || key === 'brandWeb' || key === 'brandHandle';
 
@@ -126,151 +88,175 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
   onTranslateCarousel,
   isTranslating = false,
   onUpdateStyle,
-  onResetStyle,
-  onDeleteActiveElement,
   onAddCustomText,
   onUpdateSlideOverlayType,
   onUpdateSlideAccentColor,
   onUpdateTextPos,
 }) => {
   const primaryColor = slide.accentColor || brand.primaryColor || '#e11d48';
+  const [openSubmenu, setOpenSubmenu] = useState<'outline' | 'shadow' | null>(null);
+
+  const currentItemStyle = activeKey
+    ? isBrandKey(activeKey)
+      ? brand.textStyle?.[activeKey]
+      : slide.textStyle?.[activeKey]
+    : undefined;
+
+  const isOutlineActive = Boolean(currentItemStyle?.outline);
+  const currentOutlineColor = currentItemStyle?.outlineColor || '#000000';
+  const currentOutlineWidth = currentItemStyle?.outlineWidth || 2;
+
+  const isShadowActive = Boolean(currentItemStyle?.shadow);
+  const currentShadowColor = currentItemStyle?.shadowColor || '#000000';
+  const currentShadowType = currentItemStyle?.shadowType || 'soft';
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-2.5 sm:p-3 shadow-xl space-y-2.5">
       
       {/* ========================================================================= */}
-      {/* BARRA SUPERIOR: AÑADIR TEXTOS + SOMBREADO/FONDO + COLOR DE ACENTO */}
+      {/* FILA 1: AÑADIR TEXTOS (+ Texto, Titular, Badge) + MOVER + ACENTO + IDIOMA */}
       {/* ========================================================================= */}
-      <div className="flex flex-wrap items-center justify-between gap-2.5 text-xs">
+      <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 text-xs whitespace-nowrap">
         
         {/* Añadir Textos (+ Texto, Titular, Badge) */}
-        <div className="flex items-center gap-1.5">
-          <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
-            <button
-              onClick={() => onAddCustomText?.('body')}
-              className="flex items-center gap-1 bg-rose-600 hover:bg-rose-500 text-white px-2.5 py-1 rounded-lg text-xs font-bold transition shadow-sm"
-              title="Añadir un bloque de párrafo de texto libre"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>+ Texto</span>
-            </button>
-            <button
-              onClick={() => onAddCustomText?.('heading')}
-              className="flex items-center gap-1 hover:bg-slate-800 text-slate-300 px-2 py-1 rounded-lg text-xs font-medium transition"
-              title="Añadir un nuevo titular"
-            >
-              <Heading className="w-3.5 h-3.5 text-rose-400" />
-              <span>Titular</span>
-            </button>
-            <button
-              onClick={() => onAddCustomText?.('badge')}
-              className="flex items-center gap-1 hover:bg-slate-800 text-slate-300 px-2 py-1 rounded-lg text-xs font-medium transition"
-              title="Añadir una etiqueta destacada"
-            >
-              <Tag className="w-3.5 h-3.5 text-amber-400" />
-              <span>Badge</span>
-            </button>
-          </div>
+        <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 shrink-0">
+          <button
+            onClick={() => onAddCustomText?.('body')}
+            className="flex items-center gap-1 bg-rose-600 hover:bg-rose-500 text-white px-2.5 py-1 rounded-lg text-xs font-bold transition shadow-sm shrink-0"
+            title="Añadir un bloque de párrafo de texto libre"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>+ Texto</span>
+          </button>
+          <button
+            onClick={() => onAddCustomText?.('heading')}
+            className="flex items-center gap-1 hover:bg-slate-800 text-slate-300 px-2 py-1 rounded-lg text-xs font-medium transition shrink-0"
+            title="Añadir un nuevo titular"
+          >
+            <Heading className="w-3.5 h-3.5 text-rose-400" />
+            <span>Titular</span>
+          </button>
+          <button
+            onClick={() => onAddCustomText?.('badge')}
+            className="flex items-center gap-1 hover:bg-slate-800 text-slate-300 px-2 py-1 rounded-lg text-xs font-medium transition shrink-0"
+            title="Añadir una etiqueta destacada"
+          >
+            <Tag className="w-3.5 h-3.5 text-amber-400" />
+            <span>Badge</span>
+          </button>
         </div>
 
-        {/* Controles de Fondo, Acento e Idioma */}
-        <div className="flex items-center gap-2">
-          
-          {/* Overlay / Fondo */}
-          <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
-            <span className="text-[11px] font-bold text-slate-400 px-1 hidden sm:inline">Fondo:</span>
+        {/* Posición / Mover texto libre */}
+        {activeKey && (
+          <div className="flex items-center gap-0.5 bg-slate-950 border border-slate-800 rounded-xl px-2 py-1 text-slate-300 shrink-0 shadow-sm">
+            <Move className="w-3.5 h-3.5 text-rose-400 mr-1" />
+            <span className="text-[11px] font-bold text-slate-400 mr-0.5">Mover:</span>
             <button
-              onClick={() => onUpdateSlideOverlayType?.('gradient')}
-              className={`px-2.5 py-0.5 rounded-lg font-semibold transition ${
-                (slide.overlayType || 'gradient') === 'gradient' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-white'
-              }`}
-              title="Sombreado degradado"
+              onClick={() => {
+                const currentPos = slide.textPos?.[activeKey] || { left: 50, top: 50 };
+                onUpdateTextPos?.(activeKey, { left: currentPos.left, top: Math.max(5, currentPos.top - 3) });
+              }}
+              className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition"
+              title="Mover arriba"
             >
-              Degradado
+              <ChevronUp className="w-3.5 h-3.5" />
             </button>
             <button
-              onClick={() => onUpdateSlideOverlayType?.('solid')}
-              className={`px-2.5 py-0.5 rounded-lg font-semibold transition ${
-                slide.overlayType === 'solid' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-white'
-              }`}
-              title="Fondo sólido"
+              onClick={() => {
+                const currentPos = slide.textPos?.[activeKey] || { left: 50, top: 50 };
+                onUpdateTextPos?.(activeKey, { left: currentPos.left, top: Math.min(95, currentPos.top + 3) });
+              }}
+              className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition"
+              title="Mover abajo"
             >
-              Sólido
+              <ChevronDown className="w-3.5 h-3.5" />
             </button>
             <button
-              onClick={() => onUpdateSlideOverlayType?.('card')}
-              className={`px-2.5 py-0.5 rounded-lg font-semibold transition ${
-                slide.overlayType === 'card' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-white'
-              }`}
-              title="Efecto tarjeta Glassmorphism"
+              onClick={() => {
+                const currentPos = slide.textPos?.[activeKey] || { left: 50, top: 50 };
+                onUpdateTextPos?.(activeKey, { left: Math.max(5, currentPos.left - 3), top: currentPos.top });
+              }}
+              className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition"
+              title="Mover izquierda"
             >
-              Tarjeta
+              <ChevronLeft className="w-3.5 h-3.5" />
             </button>
-          </div>
-
-          {/* Accent Color Dot & Picker */}
-          <div className="flex items-center gap-1.5 bg-slate-950 px-2 py-1 rounded-xl border border-slate-800">
-            <span className="text-[11px] font-bold text-slate-400 hidden sm:inline">Acento:</span>
-            <input
-              type="color"
-              value={primaryColor}
-              onChange={(e) => onUpdateSlideAccentColor?.(e.target.value)}
-              className="w-4 h-4 rounded cursor-pointer bg-transparent border-0"
-              title="Color de acento de la diapositiva"
-            />
-          </div>
-
-          {/* Compact Google-Style Language Selector & Translator */}
-          {onChangeLanguage && (
-            <div className="flex items-center gap-1 bg-slate-950 px-2 py-1 rounded-xl border border-slate-800 text-xs">
-              <Languages className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-              <select
-                value={language || 'es'}
-                onChange={(e) => onChangeLanguage(e.target.value as any)}
-                className="bg-transparent text-slate-200 font-bold text-xs focus:outline-none cursor-pointer pr-0.5"
-                title="Seleccionar idioma"
+            <button
+              onClick={() => {
+                const currentPos = slide.textPos?.[activeKey] || { left: 50, top: 50 };
+                onUpdateTextPos?.(activeKey, { left: Math.min(95, currentPos.left + 3), top: currentPos.top });
+              }}
+              className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition"
+              title="Mover derecha"
+            >
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+            {slide.textPos?.[activeKey] && (
+              <button
+                onClick={() => onUpdateTextPos?.(activeKey, null)}
+                className="text-[9px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded font-bold ml-0.5 transition"
+                title="Restablecer posición por defecto"
               >
-                <option value="es" className="bg-slate-900 text-white">ES</option>
-                <option value="pt" className="bg-slate-900 text-white">PT</option>
-                <option value="en" className="bg-slate-900 text-white">EN</option>
-              </select>
+                Reset
+              </button>
+            )}
+          </div>
+        )}
 
-              {onTranslateCarousel && (
-                <button
-                  onClick={() => onTranslateCarousel(language || 'es')}
-                  disabled={isTranslating}
-                  className="p-1 hover:bg-slate-800 rounded text-rose-400 hover:text-rose-300 transition"
-                  title={`Traducir carrusel a ${language === 'pt' ? 'Portugués' : language === 'en' ? 'Inglés' : 'Español'}`}
-                >
-                  {isTranslating ? (
-                    <Loader2 className="w-3 h-3 animate-spin text-rose-400" />
-                  ) : (
-                    <Sparkles className="w-3 h-3 text-rose-400" />
-                  )}
-                </button>
-              )}
-            </div>
-          )}
-
+        {/* Accent Color Dot & Picker (Acento a continuación de Mover) */}
+        <div className="flex items-center gap-1.5 bg-slate-950 px-2 py-1 rounded-xl border border-slate-800 shrink-0">
+          <span className="text-[11px] font-bold text-slate-400">Acento:</span>
+          <input
+            type="color"
+            value={primaryColor}
+            onChange={(e) => onUpdateSlideAccentColor?.(e.target.value)}
+            className="w-4 h-4 rounded cursor-pointer bg-transparent border-0"
+            title="Color de acento de la diapositiva"
+          />
         </div>
+
+        {/* Selector de Idioma y Traductor (A continuación de Acento) */}
+        {onChangeLanguage && (
+          <div className="flex items-center gap-1 bg-slate-950 px-2 py-1 rounded-xl border border-slate-800 text-xs shrink-0">
+            <Languages className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+            <select
+              value={language || 'es'}
+              onChange={(e) => onChangeLanguage(e.target.value as any)}
+              className="bg-transparent text-slate-200 font-bold text-xs focus:outline-none cursor-pointer pr-0.5"
+              title="Seleccionar idioma"
+            >
+              <option value="es" className="bg-slate-900 text-white">ES</option>
+              <option value="pt" className="bg-slate-900 text-white">PT</option>
+              <option value="en" className="bg-slate-900 text-white">EN</option>
+            </select>
+
+            {onTranslateCarousel && (
+              <button
+                onClick={() => onTranslateCarousel(language || 'es')}
+                disabled={isTranslating}
+                className="p-1 hover:bg-slate-800 rounded text-rose-400 hover:text-rose-300 transition"
+                title={`Traducir carrusel a ${language === 'pt' ? 'Portugués' : language === 'en' ? 'Inglés' : 'Español'}`}
+              >
+                {isTranslating ? (
+                  <Loader2 className="w-3 h-3 animate-spin text-rose-400" />
+                ) : (
+                  <Sparkles className="w-3 h-3 text-rose-400" />
+                )}
+              </button>
+            )}
+          </div>
+        )}
 
       </div>
 
       {/* ========================================================================= */}
-      {/* BARRA CONTEXTUAL: EDICIÓN DEL ELEMENTO SELECCIONADO (O GUÍA DE USO) */}
+      {/* FILA 2: FORMATO DEL TEXTO SELECCIONADO (CON BARRA DESLIZADORA PARA MÓVIL) */}
       {/* ========================================================================= */}
       {activeKey ? (
-        <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar pb-1 pt-1.5 border-t border-slate-800/80 bg-slate-950/60 p-2 rounded-xl text-xs">
-          
-          {/* Target Element Name */}
-          <div className="flex items-center gap-1.5 pr-2 border-r border-slate-800 shrink-0">
-            <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
-            <span className="font-bold text-rose-400 text-xs truncate max-w-[125px]">
-              {getElementLabel(activeKey)}
-            </span>
-          </div>
+        <div className="space-y-2">
+          <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar pb-1 pt-1.5 border-t border-slate-800/80 bg-slate-950/60 p-2 rounded-xl text-xs whitespace-nowrap">
 
-          {/* Font Family */}
+          {/* Tipografía / Font Family */}
           <select
             value={
               (isBrandKey(activeKey)
@@ -294,7 +280,7 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
             </optgroup>
           </select>
 
-          {/* Font Size Stepper */}
+          {/* Tamaño / Font Size Stepper */}
           <div className="flex items-center gap-0.5 bg-slate-950 border border-slate-800 rounded-lg p-0.5 shrink-0">
             <button
               onClick={() => {
@@ -356,7 +342,7 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
             );
           })()}
 
-          {/* Alignment */}
+          {/* Alineación / Alignment */}
           <div className="flex items-center gap-0.5 bg-slate-950 border border-slate-800 rounded-lg p-0.5 shrink-0">
             <button
               onClick={() => onUpdateStyle(activeKey, { align: 'left' })}
@@ -381,7 +367,7 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
             </button>
           </div>
 
-          {/* Bold / Italic */}
+          {/* Negrita / Cursiva */}
           <div className="flex items-center gap-0.5 bg-slate-950 border border-slate-800 rounded-lg p-0.5 shrink-0">
             <button
               onClick={() => {
@@ -409,103 +395,244 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
             </button>
           </div>
 
-          {/* Outline / Sombra */}
+          {/* Contorno (Borde de texto) */}
           <button
-            onClick={() => {
-              const cur = (isBrandKey(activeKey)
-                ? brand.textStyle?.[activeKey]?.outline
-                : slide.textStyle?.[activeKey]?.outline);
-              onUpdateStyle(activeKey, { outline: !cur, outlineColor: '#000000' });
-            }}
-            className="flex items-center gap-1 bg-slate-950 border border-slate-800 hover:bg-slate-800 px-2 py-1 rounded-lg text-slate-300 transition shrink-0"
-            title="Sombra de texto"
+            onClick={() => setOpenSubmenu((prev) => (prev === 'outline' ? null : 'outline'))}
+            className={`flex items-center gap-1 border px-2 py-1 rounded-lg text-xs font-semibold transition shrink-0 ${
+              isOutlineActive
+                ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300'
+                : openSubmenu === 'outline'
+                ? 'bg-slate-800 border-slate-600 text-white'
+                : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white'
+            }`}
+            title="Personalizar contorno (borde de texto)"
+          >
+            <Square className="w-3 h-3 text-emerald-400" />
+            <span className="hidden sm:inline">Contorno</span>
+            {isOutlineActive && (
+              <span
+                className="w-2 h-2 rounded-full border border-slate-900 ml-0.5"
+                style={{ backgroundColor: currentOutlineColor }}
+              />
+            )}
+          </button>
+
+          {/* Sombra de texto */}
+          <button
+            onClick={() => setOpenSubmenu((prev) => (prev === 'shadow' ? null : 'shadow'))}
+            className={`flex items-center gap-1 border px-2 py-1 rounded-lg text-xs font-semibold transition shrink-0 ${
+              isShadowActive
+                ? 'bg-amber-950/80 border-amber-500 text-amber-300'
+                : openSubmenu === 'shadow'
+                ? 'bg-slate-800 border-slate-600 text-white'
+                : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white'
+            }`}
+            title="Personalizar sombra de texto (difusa, recta, neón, etc.)"
           >
             <Sun className="w-3 h-3 text-amber-400" />
             <span className="hidden sm:inline">Sombra</span>
-          </button>
-
-          {/* Posición / Nudge libre (Mover con precisión) */}
-          <div className="flex items-center gap-0.5 bg-slate-950 border border-slate-800 rounded-lg px-1.5 py-0.5 text-slate-300 shrink-0">
-            <Move className="w-3 h-3 text-rose-400 mr-0.5" />
-            <button
-              onClick={() => {
-                const currentPos = slide.textPos?.[activeKey] || { left: 50, top: 50 };
-                onUpdateTextPos?.(activeKey, { left: currentPos.left, top: Math.max(5, currentPos.top - 3) });
-              }}
-              className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white"
-              title="Mover arriba"
-            >
-              <ChevronUp className="w-3 h-3" />
-            </button>
-            <button
-              onClick={() => {
-                const currentPos = slide.textPos?.[activeKey] || { left: 50, top: 50 };
-                onUpdateTextPos?.(activeKey, { left: currentPos.left, top: Math.min(95, currentPos.top + 3) });
-              }}
-              className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white"
-              title="Mover abajo"
-            >
-              <ChevronDown className="w-3 h-3" />
-            </button>
-            <button
-              onClick={() => {
-                const currentPos = slide.textPos?.[activeKey] || { left: 50, top: 50 };
-                onUpdateTextPos?.(activeKey, { left: Math.max(5, currentPos.left - 3), top: currentPos.top });
-              }}
-              className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white"
-              title="Mover izquierda"
-            >
-              <ChevronLeft className="w-3 h-3" />
-            </button>
-            <button
-              onClick={() => {
-                const currentPos = slide.textPos?.[activeKey] || { left: 50, top: 50 };
-                onUpdateTextPos?.(activeKey, { left: Math.min(95, currentPos.left + 3), top: currentPos.top });
-              }}
-              className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white"
-              title="Mover derecha"
-            >
-              <ChevronRight className="w-3 h-3" />
-            </button>
-            {slide.textPos?.[activeKey] && (
-              <button
-                onClick={() => onUpdateTextPos?.(activeKey, null)}
-                className="text-[9px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-1 py-0.5 rounded ml-0.5"
-                title="Restablecer posición al centro"
-              >
-                Reset
-              </button>
+            {isShadowActive && (
+              <span
+                className="w-2 h-2 rounded-full border border-slate-900 ml-0.5"
+                style={{ backgroundColor: currentShadowColor }}
+              />
             )}
-          </div>
-
-          {/* Delete Element Button */}
-          {onDeleteActiveElement && (
-            <button
-              onClick={() => onDeleteActiveElement(activeKey)}
-              className="flex items-center gap-1 bg-rose-950 hover:bg-rose-900 border border-rose-800 text-rose-300 hover:text-white px-2 py-1 rounded-lg text-xs font-semibold transition shrink-0 ml-auto"
-              title="Eliminar este texto de la diapositiva"
-            >
-              <Trash2 className="w-3 h-3 text-rose-400" />
-              <span>Eliminar</span>
-            </button>
-          )}
-
-          {/* Reset */}
-          <button
-            onClick={() => onResetStyle(activeKey)}
-            className="p-1 text-slate-500 hover:text-rose-400 transition shrink-0"
-            title="Restablecer formato por defecto"
-          >
-            <RotateCcw className="w-3 h-3" />
           </button>
+
+        </div>
+
+        {/* ========================================================================= */}
+        {/* PANEL EXPANDIBLE DE CONTORNO (STROKE) */}
+        {/* ========================================================================= */}
+        {openSubmenu === 'outline' && (
+          <div className="bg-slate-950/95 border border-emerald-500/40 rounded-xl p-3 shadow-2xl space-y-2.5">
+            <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+              <div className="flex items-center gap-2">
+                <Square className="w-4 h-4 text-emerald-400" />
+                <span className="text-xs font-bold text-white">Contorno de Texto (Borde / Trazo)</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    onUpdateStyle(activeKey, {
+                      outline: !isOutlineActive,
+                      outlineColor: currentOutlineColor,
+                      outlineWidth: currentOutlineWidth,
+                    });
+                  }}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+                    isOutlineActive
+                      ? 'bg-emerald-600 text-white hover:bg-emerald-500'
+                      : 'bg-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {isOutlineActive ? 'Activo' : 'Desactivado'}
+                </button>
+                <button
+                  onClick={() => setOpenSubmenu(null)}
+                  className="p-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition"
+                  title="Cerrar panel"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-0.5">
+              {/* Grosor de Contorno */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold text-slate-400">Grosor del Contorno:</label>
+                <div className="flex items-center gap-1.5">
+                  {[1, 2, 3, 4, 6].map((w) => (
+                    <button
+                      key={w}
+                      onClick={() => onUpdateStyle(activeKey, { outline: true, outlineWidth: w })}
+                      className={`flex-1 py-1 px-1.5 rounded-lg text-xs font-bold transition border ${
+                        currentOutlineWidth === w && isOutlineActive
+                          ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300'
+                          : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {w}px
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Color del Contorno */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold text-slate-400">Color del Contorno:</label>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {['#000000', '#ffffff', primaryColor, '#ef4444', '#f59e0b', '#38bdf8', '#10b981', '#a855f7'].map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => onUpdateStyle(activeKey, { outline: true, outlineColor: c })}
+                      className={`w-6 h-6 rounded-full border-2 transition transform hover:scale-110 ${
+                        currentOutlineColor === c && isOutlineActive
+                          ? 'border-emerald-400 ring-2 ring-emerald-500/50 scale-110'
+                          : 'border-slate-700'
+                      }`}
+                      style={{ backgroundColor: c }}
+                      title={`Color contorno: ${c}`}
+                    />
+                  ))}
+                  <label className="relative flex items-center justify-center w-6 h-6 rounded-full bg-slate-900 border border-slate-700 cursor-pointer hover:border-slate-500 transition" title="Selector de color de contorno personalizado">
+                    <input
+                      type="color"
+                      value={currentOutlineColor.startsWith('#') ? currentOutlineColor : '#000000'}
+                      onChange={(e) => onUpdateStyle(activeKey, { outline: true, outlineColor: e.target.value })}
+                      className="opacity-0 absolute inset-0 w-full h-full cursor-pointer"
+                    />
+                    <span className="text-[10px] font-black text-slate-300">+</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* PANEL EXPANDIBLE DE SOMBRA (DROP SHADOW) */}
+        {/* ========================================================================= */}
+        {openSubmenu === 'shadow' && (
+          <div className="bg-slate-950/95 border border-amber-500/40 rounded-xl p-3 shadow-2xl space-y-2.5">
+            <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+              <div className="flex items-center gap-2">
+                <Sun className="w-4 h-4 text-amber-400" />
+                <span className="text-xs font-bold text-white">Sombra de Texto (Efecto de Profundidad)</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    onUpdateStyle(activeKey, {
+                      shadow: !isShadowActive,
+                      shadowColor: currentShadowColor,
+                      shadowType: currentShadowType,
+                    });
+                  }}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+                    isShadowActive
+                      ? 'bg-amber-600 text-white hover:bg-amber-500'
+                      : 'bg-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {isShadowActive ? 'Activa' : 'Desactivada'}
+                </button>
+                <button
+                  onClick={() => setOpenSubmenu(null)}
+                  className="p-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition"
+                  title="Cerrar panel"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-0.5">
+              {/* Estilo / Tipo de Sombra */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold text-slate-400">Tipo de Sombra:</label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {[
+                    { id: 'soft', label: 'Difusa (Suave)' },
+                    { id: 'subtle', label: 'Sutil (Tenue)' },
+                    { id: 'hard', label: 'Recta / 3D' },
+                    { id: 'glow', label: 'Neón / Glow' },
+                  ].map((type) => (
+                    <button
+                      key={type.id}
+                      onClick={() => onUpdateStyle(activeKey, { shadow: true, shadowType: type.id as any })}
+                      className={`py-1.5 px-2 rounded-lg text-xs font-medium transition text-left border ${
+                        currentShadowType === type.id && isShadowActive
+                          ? 'bg-amber-950/80 border-amber-500 text-amber-300 font-bold'
+                          : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {type.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Color de la Sombra */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold text-slate-400">Color de la Sombra:</label>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {['#000000', primaryColor, '#ffffff', '#f43f5e', '#38bdf8', '#fbbf24', '#8b5cf6', '#10b981'].map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => onUpdateStyle(activeKey, { shadow: true, shadowColor: c })}
+                      className={`w-6 h-6 rounded-full border-2 transition transform hover:scale-110 ${
+                        currentShadowColor === c && isShadowActive
+                          ? 'border-amber-400 ring-2 ring-amber-500/50 scale-110'
+                          : 'border-slate-700'
+                      }`}
+                      style={{ backgroundColor: c }}
+                      title={`Color sombra: ${c}`}
+                    />
+                  ))}
+                  <label className="relative flex items-center justify-center w-6 h-6 rounded-full bg-slate-900 border border-slate-700 cursor-pointer hover:border-slate-500 transition" title="Selector de color de sombra personalizado">
+                    <input
+                      type="color"
+                      value={currentShadowColor.startsWith('#') ? currentShadowColor : '#000000'}
+                      onChange={(e) => onUpdateStyle(activeKey, { shadow: true, shadowColor: e.target.value })}
+                      className="opacity-0 absolute inset-0 w-full h-full cursor-pointer"
+                    />
+                    <span className="text-[10px] font-black text-slate-300">+</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         </div>
       ) : (
-        <div className="flex items-center justify-between text-xs text-slate-400 pt-1.5 border-t border-slate-800/60 px-1">
-          <span className="flex items-center gap-1.5">
+        <div className="flex items-center justify-between text-xs text-slate-400 pt-1.5 border-t border-slate-800/60 px-1 overflow-x-auto custom-scrollbar whitespace-nowrap">
+          <span className="flex items-center gap-1.5 shrink-0">
             <Type className="w-3.5 h-3.5 text-rose-500" />
             <span>Haz clic sobre cualquier título o texto en la diapositiva para personalizarlo, o usa <strong>+ Texto</strong> arriba.</span>
           </span>
-          <span className="text-[10px] text-slate-500 font-mono hidden sm:inline">
+          <span className="text-[10px] text-slate-500 font-mono hidden sm:inline shrink-0 ml-2">
             Tip: Puedes arrastrar y mover libremente los textos sobre el lienzo
           </span>
         </div>
