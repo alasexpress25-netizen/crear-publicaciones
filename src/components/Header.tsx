@@ -15,6 +15,7 @@ interface HeaderProps {
   onSelectAspect: (aspect: AspectRatio) => void;
   selectedClientName?: string;
   selectedClientColor?: string;
+  language?: 'es' | 'pt' | 'en';
   onOpenClientSelector: () => void;
   onOpenProjects?: () => void;
   onOpenExport?: () => void;
@@ -28,6 +29,7 @@ export const Header: React.FC<HeaderProps> = ({
   onSelectAspect,
   selectedClientName,
   selectedClientColor,
+  language = 'es',
   onOpenClientSelector,
   onResetCarousel,
 }) => {
@@ -90,7 +92,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={onOpenClientSelector}
             className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 border border-slate-700/70 hover:border-rose-500/50 rounded-xl px-3 py-1.5 transition ml-2 shadow-sm group"
-            title="Cambiar cliente de la agencia conectado a Supabase"
+            title="Cambiar cliente de la agencia conectado a Supabase e idioma"
           >
             <div
               className="w-4 h-4 rounded-full flex items-center justify-center text-[9px] text-white font-black"
@@ -99,9 +101,14 @@ export const Header: React.FC<HeaderProps> = ({
               {selectedClientName ? selectedClientName.charAt(0).toUpperCase() : 'C'}
             </div>
             <div className="text-left">
-              <span className="text-[9px] text-slate-400 block uppercase font-bold leading-none">
-                Cliente Supabase
-              </span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[9px] text-slate-400 block uppercase font-bold leading-none">
+                  Cliente Supabase
+                </span>
+                <span className="text-[9px] bg-slate-950 px-1 py-0.2 rounded text-slate-300 font-bold border border-slate-800">
+                  {language === 'pt' ? '🇧🇷 PT' : language === 'en' ? '🇺🇸 EN' : '🇪🇸 ES'}
+                </span>
+              </div>
               <span className="text-xs font-bold text-white group-hover:text-rose-400 transition truncate max-w-[120px] block">
                 {selectedClientName || brand.name || 'Seleccionar...'}
               </span>

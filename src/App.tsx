@@ -21,6 +21,13 @@ import {
 import { applyLayoutTemplateToSlide, getTemplateLocalization } from './data/templateLocalizations';
 import { AgencyClient, getFallbackAgencyClients } from './services/supabase';
 import { findLogoForClient } from './services/clientLogosStorage';
+import {
+  getClientLanguage,
+  saveClientLanguage,
+  getStoredAppLanguage,
+  setStoredAppLanguage,
+  initClientLanguagesFromDB,
+} from './services/clientLanguageStorage';
 import { apiTranslateCarousel } from './services/api';
 import { Header } from './components/Header';
 import { CanvasSlide } from './components/CanvasSlide';
@@ -48,12 +55,20 @@ const LOCAL_STORAGE_CLIENT_KEY = 'lavisualmk_carousel_client_v3';
 export default function App() {
   // Agency Client State (Supabase connected)
   const [selectedClient, setSelectedClient] = useState<AgencyClient | null>(() => {
+    let client: AgencyClient | null = null;
     try {
       const saved = localStorage.getItem(LOCAL_STORAGE_CLIENT_KEY);
-      if (saved) return JSON.parse(saved);
+      if (saved) client = JSON.parse(saved);
     } catch {}
-    const fallbacks = getFallbackAgencyClients();
-    return fallbacks[0] || null;
+    if (!client) {
+      const fallbacks = getFallbackAgencyClients();
+      client = fallbacks[0] || null;
+    }
+    if (client) {
+      const resolvedLang = getClientLanguage(client.id, client.name, client.language || 'es');
+      return { ...client, language: resolvedLang };
+    }
+    return null;
   });
 
   // Brand State
@@ -104,8 +119,31 @@ export default function App() {
   const [slideCount, setSlideCount] = useState<number>(4);
   const [objective, setObjective] = useState<string>('ventas');
   const [hookType, setHookType] = useState<string>('pregunta_reflexiva');
-  const [language, setLanguage] = useState<'es' | 'pt' | 'en'>('es');
+  const [language, setLanguage] = useState<'es' | 'pt' | 'en'>(() => {
+    let client: AgencyClient | null = null;
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_CLIENT_KEY);
+      if (saved) client = JSON.parse(saved);
+    } catch {}
+    if (client) {
+      return getClientLanguage(client.id, client.name, client.language || 'es');
+    }
+    return getStoredAppLanguage('es');
+  });
   const [isTranslating, setIsTranslating] = useState<boolean>(false);
+
+  // Reconcile languages from IndexedDB on startup
+  useEffect(() => {
+    initClientLanguagesFromDB().then((mapping) => {
+      if (selectedClient) {
+        const custom = mapping[selectedClient.id] || (selectedClient.name ? mapping[selectedClient.name.toLowerCase().trim()] : null);
+        if (custom && custom !== language) {
+          setLanguage(custom);
+          setSelectedClient((prev) => prev ? { ...prev, language: custom } : prev);
+        }
+      }
+    }).catch(console.warn);
+  }, []);
 
   // Knowledge Base Documents
   const [documents, setDocuments] = useState<MarketingDocument[]>(() => {
@@ -175,7 +213,10 @@ export default function App() {
 
   // Client Selection Handler (from Supabase)
   const handleSelectClient = (client: AgencyClient, context?: any) => {
-    setSelectedClient(client);
+    const resolvedLang = getClientLanguage(client.id, client.name, client.language || 'es');
+    const updatedClient = { ...client, language: resolvedLang };
+    setSelectedClient(updatedClient);
+    saveClientLanguage(client.id, client.name, resolvedLang);
 
     // Update Brand Info
     const primaryCol = client.brand_color || '#e11d48';
@@ -191,12 +232,11 @@ export default function App() {
     }));
 
     // Update Language automatically from client profile
-    if (client.language) {
-      const previousLang = language;
-      setLanguage(client.language);
-      if (client.language !== previousLang) {
-        handleTranslateCarousel(client.language);
-      }
+    const previousLang = language;
+    setLanguage(resolvedLang);
+    setStoredAppLanguage(resolvedLang);
+    if (resolvedLang !== previousLang) {
+      handleTranslateCarousel(resolvedLang);
     }
 
     // Update Brief & Audience
@@ -520,6 +560,11 @@ export default function App() {
   const handleTranslateCarousel = async (targetLang: 'es' | 'pt' | 'en') => {
     setIsTranslating(true);
     setLanguage(targetLang);
+    setStoredAppLanguage(targetLang);
+    if (selectedClient) {
+      saveClientLanguage(selectedClient.id, selectedClient.name, targetLang);
+      setSelectedClient((prev) => (prev ? { ...prev, language: targetLang } : prev));
+    }
     try {
       const translated = await apiTranslateCarousel({
         slides,
@@ -676,6 +721,7 @@ export default function App() {
         onSelectAspect={setAspectRatio}
         selectedClientName={selectedClient?.name}
         selectedClientColor={selectedClient?.brand_color}
+        language={language}
         onOpenClientSelector={() => setIsClientSelectorOpen(true)}
         onResetCarousel={handleResetCarousel}
       />

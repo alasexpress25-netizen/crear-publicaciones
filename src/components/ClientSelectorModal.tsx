@@ -40,6 +40,13 @@ import {
   removeClientLogoMapping,
   ClientLogoAsset
 } from '../services/clientLogosStorage';
+import {
+  getClientLanguage,
+  saveClientLanguage,
+  initClientLanguagesFromDB,
+  getLocalStorageStats,
+  LocalStorageStats,
+} from '../services/clientLanguageStorage';
 
 interface ClientSelectorModalProps {
   isOpen: boolean;
@@ -72,6 +79,8 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
   const [isTesting, setIsTesting] = useState(false);
   const [configSaved, setConfigSaved] = useState(false);
   const [activeClientPreview, setActiveClientPreview] = useState<AgencyClient | null>(null);
+  const [storageStats, setStorageStats] = useState<LocalStorageStats | null>(null);
+  const [languageFeedback, setLanguageFeedback] = useState<string | null>(null);
 
   // New Client Form Modal State
   const [isCreatingClient, setIsCreatingClient] = useState(false);
@@ -92,6 +101,7 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
       setSupabaseUrl(cfg.url);
       setSupabaseKey(cfg.key);
       setSupabaseTable(cfg.table || 'socialbot_clients');
+      setStorageStats(getLocalStorageStats());
       loadClients();
     }
   }, [isOpen]);
@@ -128,9 +138,10 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
   const loadClients = async () => {
     setIsLoading(true);
     try {
-      // 1. Fetch logos saved locally in IndexedDB / LocalStorage
+      // 1. Fetch logos saved locally in IndexedDB / LocalStorage and sync saved client languages
       let storedLogos: ClientLogoAsset[] = [];
       try {
+        await initClientLanguagesFromDB();
         storedLogos = await getAllClientLogosDB();
         setSavedLogos(storedLogos);
       } catch {}
@@ -149,18 +160,21 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
       // Deduplicate safely by ID
       const uniqueClients = combined.filter((v, i, a) => a.findIndex((t) => t.id === v.id) === i);
 
-      // 4. Enrich every client with stored logos
+      // 4. Enrich every client with stored logos AND stored language preference
       const enrichedClients = uniqueClients.map((client) => {
         const mappedLogo = findLogoForClient(client.id, client.name, storedLogos);
         const activeBrandLogo = (brand.clientId === client.id || (brand.name && client.name && brand.name.toLowerCase() === client.name.toLowerCase())) ? brand.logo : '';
         const finalLogo = mappedLogo || client.logo_url || activeBrandLogo || '';
+        const resolvedLanguage = getClientLanguage(client.id, client.name, client.language || 'es');
         return {
           ...client,
           logo_url: finalLogo,
+          language: resolvedLanguage,
         };
       });
 
       setClients(enrichedClients);
+      setStorageStats(getLocalStorageStats());
 
       if (selectedClientId) {
         const found = enrichedClients.find((c) => c.id === selectedClientId);
@@ -185,12 +199,15 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
     if (!client) return;
     setIsLoading(true);
     try {
+      const resolvedLang = getClientLanguage(client.id, client.name, client.language || 'es');
+      const clientWithLang = { ...client, language: resolvedLang };
       const context = await fetchClientContext(client.id);
-      onSelectClient(client, context);
+      onSelectClient(clientWithLang, context);
       onClose();
     } catch (err) {
       console.warn('Fallback selecting client without full context', err);
-      onSelectClient(client);
+      const resolvedLang = getClientLanguage(client.id, client.name, client.language || 'es');
+      onSelectClient({ ...client, language: resolvedLang });
       onClose();
     } finally {
       setIsLoading(false);
@@ -227,6 +244,9 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
       offers: [newClientBusiness.trim() || 'Servicios principales'],
     };
 
+    // Save client language preference persistently
+    saveClientLanguage(newClient.id, newClient.name, newClientLanguage || 'es');
+
     if (newClientLogo) {
       saveClientLogoDB({
         id: `logo-${Date.now()}`,
@@ -253,6 +273,7 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
     setClients((prev) => [newClient, ...prev]);
     setActiveClientPreview(newClient);
     setIsCreatingClient(false);
+    setStorageStats(getLocalStorageStats());
     
     // Auto-select newly created client
     handleChooseClient(newClient);
@@ -330,10 +351,22 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
     } catch {}
   };
 
-  const handleUpdateClientLanguage = (client: AgencyClient, lang: 'es' | 'pt' | 'en') => {
+  const handleUpdateClientLanguage = async (client: AgencyClient, lang: 'es' | 'pt' | 'en') => {
     const updated = { ...client, language: lang };
     setActiveClientPreview(updated);
     setClients((prev) => prev.map((c) => (c.id === client.id ? updated : c)));
+
+    // Save language to persistent store (LocalStorage + IndexedDB backup)
+    await saveClientLanguage(client.id, client.name, lang);
+
+    // Show visual toast feedback
+    setLanguageFeedback(lang === 'pt' ? 'Idioma guardado: Português' : lang === 'en' ? 'Language saved: English' : 'Idioma guardado: Español');
+    setTimeout(() => setLanguageFeedback(null), 2500);
+
+    // If this client is currently active in the workspace, notify brand & app
+    if (selectedClientId === client.id || brand.clientId === client.id || (brand.name && client.name && brand.name.toLowerCase() === client.name.toLowerCase())) {
+      onUpdateBrand('language' as any, lang);
+    }
 
     try {
       const saved = localStorage.getItem(LOCAL_STORAGE_CUSTOM_CLIENTS);
@@ -343,6 +376,7 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
         localStorage.setItem(LOCAL_STORAGE_CUSTOM_CLIENTS, JSON.stringify(updatedList));
       }
     } catch {}
+    setStorageStats(getLocalStorageStats());
   };
 
   const handleRemoveClientLogo = (client: AgencyClient) => {
@@ -1005,41 +1039,48 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
                   </div>
 
                   {/* Client Language Selector */}
-                  <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-2.5">
-                      <Languages className="w-4 h-4 text-indigo-400" />
-                      <div>
-                        <span className="text-xs font-bold text-slate-200 block">
-                          Idioma Predeterminado de la Marca
-                        </span>
-                        <span className="text-[10px] text-slate-400 block">
-                          La IA redactará carruseles y copys en este idioma al seleccionarlo
-                        </span>
+                  <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5">
+                        <Languages className="w-4 h-4 text-indigo-400" />
+                        <div>
+                          <span className="text-xs font-bold text-slate-200 block flex items-center gap-2">
+                            <span>Idioma Predeterminado de la Marca</span>
+                            {languageFeedback && (
+                              <span className="text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-700/60 px-2 py-0.5 rounded-md animate-in fade-in duration-200 font-normal">
+                                ✓ {languageFeedback}
+                              </span>
+                            )}
+                          </span>
+                          <span className="text-[10px] text-slate-400 block">
+                            Guardado automático en LocalStorage + sincronizado con IndexedDB
+                          </span>
+                        </div>
                       </div>
-                    </div>
 
-                    <div className="flex items-center gap-1.5 bg-slate-900 p-1 rounded-xl border border-slate-800">
-                      {[
-                        { code: 'es', label: '🇪🇸 Español' },
-                        { code: 'pt', label: '🇧🇷 Português' },
-                        { code: 'en', label: '🇺🇸 English' },
-                      ].map(({ code, label }) => {
-                        const isCurrent = (activeClientPreview.language || 'es') === code;
-                        return (
-                          <button
-                            key={code}
-                            type="button"
-                            onClick={() => handleUpdateClientLanguage(activeClientPreview, code as 'es' | 'pt' | 'en')}
-                            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
-                              isCurrent
-                                ? 'bg-indigo-600 text-white shadow-sm'
-                                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-                            }`}
-                          >
-                            {label}
-                          </button>
-                        );
-                      })}
+                      <div className="flex items-center gap-1.5 bg-slate-900 p-1 rounded-xl border border-slate-800">
+                        {[
+                          { code: 'es', label: '🇪🇸 Español' },
+                          { code: 'pt', label: '🇧🇷 Português' },
+                          { code: 'en', label: '🇺🇸 English' },
+                        ].map(({ code, label }) => {
+                          const isCurrent = (activeClientPreview.language || 'es') === code;
+                          return (
+                            <button
+                              key={code}
+                              type="button"
+                              onClick={() => handleUpdateClientLanguage(activeClientPreview, code as 'es' | 'pt' | 'en')}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+                                isCurrent
+                                  ? 'bg-indigo-600 text-white shadow-sm'
+                                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
 
@@ -1136,10 +1177,19 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
         )}
 
         {/* Modal Footer */}
-        <div className="px-5 sm:px-6 py-3 border-t border-slate-800 bg-slate-900/95 flex items-center justify-between text-xs text-slate-400">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-500" />
-            <span>{safeClients.length} clientes disponibles</span>
+        <div className="px-5 sm:px-6 py-3 border-t border-slate-800 bg-slate-900/95 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+              <span>{safeClients.length} clientes disponibles</span>
+            </div>
+            {storageStats && (
+              <span className="text-[11px] bg-slate-950 border border-slate-800 text-slate-400 px-2 py-0.5 rounded-lg hidden sm:inline-flex items-center gap-1">
+                <span>Memoria Local:</span>
+                <strong className="text-emerald-400">{storageStats.usedKB} KB</strong>
+                <span>/ {storageStats.maxMB} MB (Espacio libre: &gt;99%)</span>
+              </span>
+            )}
           </div>
           <button
             onClick={onClose}
