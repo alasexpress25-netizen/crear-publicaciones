@@ -61,6 +61,16 @@ const PRESET_COLORS = [
 
 const isBrandKey = (key: string) => key === 'brandName' || key === 'brandWeb' || key === 'brandHandle';
 
+const isContainerKey = (key: string | null) => {
+  if (!key) return false;
+  return (
+    key.includes('-card') ||
+    key.includes('-box') ||
+    key.includes('-container') ||
+    key.includes('grid')
+  );
+};
+
 const getDefaultSizeForKey = (key: string): number => {
   if (key === 'stat-number') return 60;
   if (key === 'title' || key === 'cta-headline') return 22;
@@ -101,6 +111,9 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
   const primaryColor = slide.accentColor || brand.primaryColor || '#e11d48';
   const [openSubmenu, setOpenSubmenu] = useState<'outline' | 'shadow' | null>(null);
   const [colorTargetMode, setColorTargetMode] = useState<'text' | 'fill'>('text');
+  const [outlineTab, setOutlineTab] = useState<'text' | 'box'>('text');
+
+  const isContainer = isContainerKey(activeKey);
 
   const currentItemStyle = activeKey
     ? isBrandKey(activeKey)
@@ -111,6 +124,18 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
   const isOutlineActive = Boolean(currentItemStyle?.outline);
   const currentOutlineColor = currentItemStyle?.outlineColor || '#000000';
   const currentOutlineWidth = currentItemStyle?.outlineWidth || 2;
+
+  const isBoxBorderActive = Boolean(
+    currentItemStyle?.boxBorder || (isContainer && currentItemStyle?.outline)
+  );
+  const currentBoxBorderColor =
+    currentItemStyle?.boxBorderColor ||
+    (isContainer ? currentItemStyle?.outlineColor : undefined) ||
+    '#000000';
+  const currentBoxBorderWidth =
+    currentItemStyle?.boxBorderWidth ||
+    (isContainer ? currentItemStyle?.outlineWidth : undefined) ||
+    2;
 
   const isShadowActive = Boolean(currentItemStyle?.shadow);
   const currentShadowColor = currentItemStyle?.shadowColor || '#000000';
@@ -626,24 +651,31 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
             </button>
           </div>
 
-          {/* Contorno (Borde de texto) */}
+          {/* Contorno (Borde de texto / Borde de marco) */}
           <button
-            onClick={() => setOpenSubmenu((prev) => (prev === 'outline' ? null : 'outline'))}
+            onClick={() => {
+              setOpenSubmenu((prev) => (prev === 'outline' ? null : 'outline'));
+              if (isContainer) {
+                setOutlineTab('box');
+              }
+            }}
             className={`flex items-center gap-1 border px-2 py-1 rounded-lg text-xs font-semibold transition shrink-0 ${
-              isOutlineActive
+              isOutlineActive || isBoxBorderActive
                 ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300'
                 : openSubmenu === 'outline'
                 ? 'bg-slate-800 border-slate-600 text-white'
                 : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white'
             }`}
-            title="Personalizar contorno (borde de texto)"
+            title="Personalizar contorno de letras y/o borde del marco"
           >
             <Square className="w-3 h-3 text-emerald-400" />
             <span className="hidden sm:inline">Contorno</span>
-            {isOutlineActive && (
+            {(isOutlineActive || isBoxBorderActive) && (
               <span
                 className="w-2 h-2 rounded-full border border-slate-900 ml-0.5"
-                style={{ backgroundColor: currentOutlineColor }}
+                style={{
+                  backgroundColor: isOutlineActive ? currentOutlineColor : currentBoxBorderColor,
+                }}
               />
             )}
           </button>
@@ -673,92 +705,273 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
         </div>
 
         {/* ========================================================================= */}
-        {/* PANEL EXPANDIBLE DE CONTORNO (STROKE) */}
+        {/* PANEL EXPANDIBLE DE CONTORNO (STROKE DE LETRAS Y BORDE DEL MARCO) */}
         {/* ========================================================================= */}
         {openSubmenu === 'outline' && (
-          <div className="bg-slate-950/95 border border-emerald-500/40 rounded-xl p-3 shadow-2xl space-y-2.5">
+          <div className="bg-slate-950/95 border border-emerald-500/40 rounded-xl p-3 shadow-2xl space-y-3">
+            {/* Header del Panel */}
             <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
               <div className="flex items-center gap-2">
                 <Square className="w-4 h-4 text-emerald-400" />
-                <span className="text-xs font-bold text-white">Contorno de Texto (Borde / Trazo)</span>
+                <span className="text-xs font-bold text-white">
+                  {isContainer ? 'Borde del Recuadro / Caja' : 'Contorno de Letras y Borde del Marco'}
+                </span>
               </div>
-              <div className="flex items-center gap-2">
+              <button
+                onClick={() => setOpenSubmenu(null)}
+                className="p-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition"
+                title="Cerrar panel"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Pestañas de Selección (Letras vs Marco) para textos */}
+            {!isContainer && (
+              <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-lg border border-slate-800">
                 <button
-                  onClick={() => {
-                    onUpdateStyle(activeKey, {
-                      outline: !isOutlineActive,
-                      outlineColor: currentOutlineColor,
-                      outlineWidth: currentOutlineWidth,
-                    });
-                  }}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition ${
-                    isOutlineActive
-                      ? 'bg-emerald-600 text-white hover:bg-emerald-500'
-                      : 'bg-slate-800 text-slate-400 hover:text-white'
+                  type="button"
+                  onClick={() => setOutlineTab('text')}
+                  className={`flex-1 py-1.5 px-2 rounded-md text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                    outlineTab === 'text'
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-white'
                   }`}
                 >
-                  {isOutlineActive ? 'Activo' : 'Desactivado'}
+                  <span>🔤 Contorno de Letras</span>
+                  {isOutlineActive && (
+                    <span
+                      className="w-2 h-2 rounded-full border border-slate-900"
+                      style={{ backgroundColor: currentOutlineColor }}
+                    />
+                  )}
                 </button>
                 <button
-                  onClick={() => setOpenSubmenu(null)}
-                  className="p-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition"
-                  title="Cerrar panel"
+                  type="button"
+                  onClick={() => setOutlineTab('box')}
+                  className={`flex-1 py-1.5 px-2 rounded-md text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                    outlineTab === 'box'
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
                 >
-                  <X className="w-3.5 h-3.5" />
+                  <span>🔲 Borde del Marco (Recuadro)</span>
+                  {isBoxBorderActive && (
+                    <span
+                      className="w-2 h-2 rounded-full border border-slate-900"
+                      style={{ backgroundColor: currentBoxBorderColor }}
+                    />
+                  )}
                 </button>
               </div>
-            </div>
+            )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-0.5">
-              {/* Grosor de Contorno */}
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-semibold text-slate-400">Grosor del Contorno:</label>
-                <div className="flex items-center gap-1.5">
-                  {[1, 2, 3, 4, 6].map((w) => (
-                    <button
-                      key={w}
-                      onClick={() => onUpdateStyle(activeKey, { outline: true, outlineWidth: w })}
-                      className={`flex-1 py-1 px-1.5 rounded-lg text-xs font-bold transition border ${
-                        currentOutlineWidth === w && isOutlineActive
-                          ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300'
-                          : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      {w}px
-                    </button>
-                  ))}
+            {/* CONTENIDO: CONTORNO DE LETRAS (STROKE) */}
+            {!isContainer && outlineTab === 'text' && (
+              <div className="space-y-3 pt-0.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-slate-300">
+                    Trazo sobre las letras del texto (sin marcar el recuadro)
+                  </span>
+                  <button
+                    onClick={() => {
+                      onUpdateStyle(activeKey, {
+                        outline: !isOutlineActive,
+                        outlineColor: currentOutlineColor,
+                        outlineWidth: currentOutlineWidth,
+                      });
+                    }}
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+                      isOutlineActive
+                        ? 'bg-emerald-600 text-white hover:bg-emerald-500'
+                        : 'bg-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {isOutlineActive ? 'Activo' : 'Desactivado'}
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Grosor de Contorno de Letras */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold text-slate-400">Grosor de Letras:</label>
+                    <div className="flex items-center gap-1.5">
+                      {[1, 2, 3, 4, 6].map((w) => (
+                        <button
+                          key={w}
+                          onClick={() => onUpdateStyle(activeKey, { outline: true, outlineWidth: w })}
+                          className={`flex-1 py-1 px-1.5 rounded-lg text-xs font-bold transition border ${
+                            currentOutlineWidth === w && isOutlineActive
+                              ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300'
+                              : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          {w}px
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Color del Contorno de Letras */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold text-slate-400">Color de Letras:</label>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {['#000000', '#ffffff', primaryColor, '#ef4444', '#f59e0b', '#38bdf8', '#10b981', '#a855f7'].map((c) => (
+                        <button
+                          key={c}
+                          onClick={() => onUpdateStyle(activeKey, { outline: true, outlineColor: c })}
+                          className={`w-6 h-6 rounded-full border-2 transition transform hover:scale-110 ${
+                            currentOutlineColor === c && isOutlineActive
+                              ? 'border-emerald-400 ring-2 ring-emerald-500/50 scale-110'
+                              : 'border-slate-700'
+                          }`}
+                          style={{ backgroundColor: c }}
+                          title={`Color contorno letras: ${c}`}
+                        />
+                      ))}
+                      <label
+                        className="relative flex items-center justify-center w-6 h-6 rounded-full bg-slate-900 border border-slate-700 cursor-pointer hover:border-slate-500 transition"
+                        title="Color personalizado de letras"
+                      >
+                        <input
+                          type="color"
+                          value={currentOutlineColor.startsWith('#') ? currentOutlineColor : '#000000'}
+                          onChange={(e) => onUpdateStyle(activeKey, { outline: true, outlineColor: e.target.value })}
+                          className="opacity-0 absolute inset-0 w-full h-full cursor-pointer"
+                        />
+                        <span className="text-[10px] font-black text-slate-300">+</span>
+                      </label>
+                    </div>
+                  </div>
                 </div>
               </div>
+            )}
 
-              {/* Color del Contorno */}
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-semibold text-slate-400">Color del Contorno:</label>
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {['#000000', '#ffffff', primaryColor, '#ef4444', '#f59e0b', '#38bdf8', '#10b981', '#a855f7'].map((c) => (
-                    <button
-                      key={c}
-                      onClick={() => onUpdateStyle(activeKey, { outline: true, outlineColor: c })}
-                      className={`w-6 h-6 rounded-full border-2 transition transform hover:scale-110 ${
-                        currentOutlineColor === c && isOutlineActive
-                          ? 'border-emerald-400 ring-2 ring-emerald-500/50 scale-110'
-                          : 'border-slate-700'
-                      }`}
-                      style={{ backgroundColor: c }}
-                      title={`Color contorno: ${c}`}
-                    />
-                  ))}
-                  <label className="relative flex items-center justify-center w-6 h-6 rounded-full bg-slate-900 border border-slate-700 cursor-pointer hover:border-slate-500 transition" title="Selector de color de contorno personalizado">
-                    <input
-                      type="color"
-                      value={currentOutlineColor.startsWith('#') ? currentOutlineColor : '#000000'}
-                      onChange={(e) => onUpdateStyle(activeKey, { outline: true, outlineColor: e.target.value })}
-                      className="opacity-0 absolute inset-0 w-full h-full cursor-pointer"
-                    />
-                    <span className="text-[10px] font-black text-slate-300">+</span>
-                  </label>
+            {/* CONTENIDO: BORDE DEL MARCO / RECUADRO */}
+            {(isContainer || outlineTab === 'box') && (
+              <div className="space-y-3 pt-0.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-slate-300">
+                    Borde exterior del marco o caja contenedora
+                  </span>
+                  <button
+                    onClick={() => {
+                      if (isContainer) {
+                        onUpdateStyle(activeKey, {
+                          outline: !isBoxBorderActive,
+                          outlineColor: currentBoxBorderColor,
+                          outlineWidth: currentBoxBorderWidth,
+                          boxBorder: !isBoxBorderActive,
+                          boxBorderColor: currentBoxBorderColor,
+                          boxBorderWidth: currentBoxBorderWidth,
+                        });
+                      } else {
+                        onUpdateStyle(activeKey, {
+                          boxBorder: !isBoxBorderActive,
+                          boxBorderColor: currentBoxBorderColor,
+                          boxBorderWidth: currentBoxBorderWidth,
+                        });
+                      }
+                    }}
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+                      isBoxBorderActive
+                        ? 'bg-emerald-600 text-white hover:bg-emerald-500'
+                        : 'bg-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {isBoxBorderActive ? 'Activo' : 'Desactivado'}
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Grosor del Marco */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold text-slate-400">Grosor del Marco:</label>
+                    <div className="flex items-center gap-1.5">
+                      {[1, 2, 3, 4, 6].map((w) => (
+                        <button
+                          key={w}
+                          onClick={() => {
+                            if (isContainer) {
+                              onUpdateStyle(activeKey, {
+                                outline: true,
+                                outlineWidth: w,
+                                boxBorder: true,
+                                boxBorderWidth: w,
+                              });
+                            } else {
+                              onUpdateStyle(activeKey, { boxBorder: true, boxBorderWidth: w });
+                            }
+                          }}
+                          className={`flex-1 py-1 px-1.5 rounded-lg text-xs font-bold transition border ${
+                            currentBoxBorderWidth === w && isBoxBorderActive
+                              ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300'
+                              : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          {w}px
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Color del Marco */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold text-slate-400">Color del Marco:</label>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {['#000000', '#ffffff', primaryColor, '#ef4444', '#f59e0b', '#38bdf8', '#10b981', '#a855f7'].map((c) => (
+                        <button
+                          key={c}
+                          onClick={() => {
+                            if (isContainer) {
+                              onUpdateStyle(activeKey, {
+                                outline: true,
+                                outlineColor: c,
+                                boxBorder: true,
+                                boxBorderColor: c,
+                              });
+                            } else {
+                              onUpdateStyle(activeKey, { boxBorder: true, boxBorderColor: c });
+                            }
+                          }}
+                          className={`w-6 h-6 rounded-full border-2 transition transform hover:scale-110 ${
+                            currentBoxBorderColor === c && isBoxBorderActive
+                              ? 'border-emerald-400 ring-2 ring-emerald-500/50 scale-110'
+                              : 'border-slate-700'
+                          }`}
+                          style={{ backgroundColor: c }}
+                          title={`Color borde marco: ${c}`}
+                        />
+                      ))}
+                      <label
+                        className="relative flex items-center justify-center w-6 h-6 rounded-full bg-slate-900 border border-slate-700 cursor-pointer hover:border-slate-500 transition"
+                        title="Color personalizado del marco"
+                      >
+                        <input
+                          type="color"
+                          value={currentBoxBorderColor.startsWith('#') ? currentBoxBorderColor : '#000000'}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (isContainer) {
+                              onUpdateStyle(activeKey, {
+                                outline: true,
+                                outlineColor: val,
+                                boxBorder: true,
+                                boxBorderColor: val,
+                              });
+                            } else {
+                              onUpdateStyle(activeKey, { boxBorder: true, boxBorderColor: val });
+                            }
+                          }}
+                          className="opacity-0 absolute inset-0 w-full h-full cursor-pointer"
+                        />
+                        <span className="text-[10px] font-black text-slate-300">+</span>
+                      </label>
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         )}
 

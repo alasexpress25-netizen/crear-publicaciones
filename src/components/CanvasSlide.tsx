@@ -147,7 +147,14 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
       backgroundColor: bg,
     };
 
-    if (custom?.outline) {
+    if (custom?.boxBorder) {
+      const boxCol = custom.boxBorderColor || '#000000';
+      const boxW = custom.boxBorderWidth || 2;
+      style.border = `${boxW}px solid ${boxCol}`;
+      style.borderColor = boxCol;
+      style.borderWidth = `${boxW}px`;
+      style.borderStyle = 'solid';
+    } else if (custom?.outline && (custom?.backgroundColor !== undefined || custom?.transparentBox)) {
       const outCol = custom.outlineColor || '#000000';
       const outW = custom.outlineWidth || 2;
       style.border = `${outW}px solid ${outCol}`;
@@ -166,14 +173,6 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
     }
 
     return style;
-  };
-
-  const getBadgeBg = (key: string = 'badge') => {
-    const custom = slide.textStyle?.[key];
-    if (custom?.transparentBox || custom?.backgroundColor === 'transparent') {
-      return 'transparent';
-    }
-    return custom?.backgroundColor || primaryColor;
   };
 
   const getCtaPillStyle = (): React.CSSProperties => {
@@ -186,7 +185,14 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
       backgroundColor: bg,
     };
 
-    if (custom?.outline) {
+    if (custom?.boxBorder) {
+      const boxCol = custom.boxBorderColor || '#000000';
+      const boxW = custom.boxBorderWidth || 2;
+      style.border = `${boxW}px solid ${boxCol}`;
+      style.borderColor = boxCol;
+      style.borderWidth = `${boxW}px`;
+      style.borderStyle = 'solid';
+    } else if (custom?.outline && (custom?.backgroundColor !== undefined || custom?.transparentBox)) {
       const outCol = custom.outlineColor || '#000000';
       const outW = custom.outlineWidth || 2;
       style.border = `${outW}px solid ${outCol}`;
@@ -205,14 +211,6 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
     }
 
     return style;
-  };
-
-  const getCtaPillBg = () => {
-    const custom = slide.textStyle?.['cta-pill'];
-    if (custom?.transparentBox || custom?.backgroundColor === 'transparent') {
-      return 'transparent';
-    }
-    return custom?.backgroundColor || primaryColor;
   };
 
   const renderActiveControls = (key: string, label?: string) => {
@@ -320,7 +318,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
     if (custom.backgroundColor !== undefined) {
       styleObj.backgroundColor = custom.backgroundColor;
       if (custom.backgroundColor === 'transparent') {
-        if (!custom.outline) {
+        if (!custom.boxBorder && (!isContainer || !custom.outline)) {
           styleObj.borderColor = 'transparent';
         }
       } else {
@@ -328,27 +326,27 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
       }
     } else if (custom.transparentBox) {
       styleObj.backgroundColor = 'transparent';
-      if (!custom.outline) {
+      if (!custom.boxBorder && (!isContainer || !custom.outline)) {
         styleObj.borderColor = 'transparent';
       }
     }
 
     const shadowParts: string[] = [];
 
-    // 1. Contorno (Stroke para texto y Borde físico para cajas/recuadros/elementos)
+    // 1. Contorno de texto (Stroke exclusivo para letras)
     if (custom.outline) {
       const outCol = custom.outlineColor || '#000000';
       const outW = custom.outlineWidth || 2;
       const isTransparentColor = custom.color === 'transparent' || styleObj.color === 'transparent';
-      
-      // Aplicar borde físico visible a cajas, recuadros, o cualquier elemento seleccionado
-      styleObj.border = `${outW}px solid ${outCol}`;
-      styleObj.borderColor = outCol;
-      styleObj.borderWidth = `${outW}px`;
-      styleObj.borderStyle = 'solid';
 
-      // Si NO es un contenedor padre grande (para evitar que todo el texto interno herede stroke accidentalmente)
-      if (!isContainer) {
+      if (isContainer) {
+        // Si el elemento seleccionado es una tarjeta / caja contenedora pura (ej. comp-left-card), outline actúa como borde de marco
+        styleObj.border = `${outW}px solid ${outCol}`;
+        styleObj.borderColor = outCol;
+        styleObj.borderWidth = `${outW}px`;
+        styleObj.borderStyle = 'solid';
+      } else {
+        // Para elementos de TEXTO: aplica ÚNICAMENTE stroke en las letras sin dibujar ningún marco o recuadro
         if (!isTransparentColor) {
           shadowParts.push(
             `-${outW}px -${outW}px 0 ${outCol}`,
@@ -364,6 +362,17 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
         (styleObj as any).WebkitTextStroke = `${Math.max(1, outW * 0.8)}px ${outCol}`;
         (styleObj as any).paintOrder = 'stroke fill';
       }
+    }
+
+    // 2. Contorno del marco / recuadro contenedor (Borde exterior de la caja)
+    if (custom.boxBorder) {
+      const boxCol = custom.boxBorderColor || '#000000';
+      const boxW = custom.boxBorderWidth || 2;
+      styleObj.border = `${boxW}px solid ${boxCol}`;
+      styleObj.borderColor = boxCol;
+      styleObj.borderWidth = `${boxW}px`;
+      styleObj.borderStyle = 'solid';
+      styleObj.borderRadius = styleObj.borderRadius || '10px';
     }
 
     // 2. Sombra de texto o caja (Drop Shadow / Box Shadow)

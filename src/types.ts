@@ -16,9 +16,12 @@ export interface TextStyleItem {
   fontSize?: number;
   width?: number;
   color?: string;
-  outline?: boolean;
+  outline?: boolean; // Contorno del texto (stroke de letras)
   outlineColor?: string;
   outlineWidth?: number;
+  boxBorder?: boolean; // Contorno del marco / recuadro contenedor
+  boxBorderColor?: string;
+  boxBorderWidth?: number;
   shadow?: boolean;
   shadowColor?: string;
   shadowType?: 'soft' | 'subtle' | 'hard' | 'glow';
