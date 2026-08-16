@@ -159,18 +159,25 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
     );
   };
 
-  const getStyleFor = (key: string) => {
+  const getStyleFor = (key: string, baseStyle?: React.CSSProperties) => {
+    const customTextLayer = slide.customTexts?.find((c) => c.id === key);
     const custom = (slide.textStyle && slide.textStyle[key]) || (brand.textStyle && brand.textStyle[key]) || {};
     const pos = slide.textPos && slide.textPos[key];
 
-    const styleObj: React.CSSProperties = {};
+    const styleObj: React.CSSProperties = { ...baseStyle };
 
-    if (custom.fontSize) styleObj.fontSize = `${custom.fontSize}px`;
-    if (custom.color) styleObj.color = custom.color;
+    const fontSize = custom.fontSize || customTextLayer?.fontSize;
+    if (fontSize) styleObj.fontSize = `${fontSize}px`;
+
+    const color = custom.color || customTextLayer?.color;
+    if (color) styleObj.color = color;
+
+    const align = custom.align || customTextLayer?.align;
+    if (align) styleObj.textAlign = align;
+
     if (custom.fontFamily) styleObj.fontFamily = custom.fontFamily;
     if (custom.fontWeight) styleObj.fontWeight = custom.fontWeight;
     if (custom.fontStyle) styleObj.fontStyle = custom.fontStyle;
-    if (custom.align) styleObj.textAlign = custom.align;
     if (custom.width) styleObj.width = `${custom.width}px`;
     if (custom.letterSpacing) styleObj.letterSpacing = custom.letterSpacing;
     if (custom.textTransform) styleObj.textTransform = custom.textTransform;
@@ -528,30 +535,67 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
         {/* LAYOUT 2: SPLIT COMPARISON (Antes vs Después / Error vs Solución) */}
         {/* ==================================================================== */}
         {layout === 'split_comparison' && (
-          <div className="space-y-3.5 my-auto">
+          <div className="space-y-3.5 my-auto w-full">
             <div className="text-center space-y-1">
               {slide.badge && (
-                <span
-                  className="text-white font-black text-[9px] px-2.5 py-0.5 rounded uppercase tracking-wider inline-block"
-                  style={{ backgroundColor: primaryColor }}
+                <div
+                  className={`group relative inline-block cursor-pointer transition rounded-lg ${
+                    activeElementKey === 'badge' ? 'ring-2 ring-rose-500' : ''
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectElement('badge');
+                  }}
+                  style={getStyleFor('badge')}
                 >
-                  {slide.badge}
-                </span>
+                  {renderActiveControls('badge')}
+                  <span
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => onUpdateField('badge', e.currentTarget.innerText)}
+                    className="text-white font-black text-[9px] px-2.5 py-0.5 rounded uppercase tracking-wider inline-block outline-none"
+                    style={{ backgroundColor: primaryColor }}
+                  >
+                    {slide.badge}
+                  </span>
+                </div>
               )}
-              <h2
-                contentEditable
-                suppressContentEditableWarning
-                onBlur={(e) => onUpdateField('title', e.currentTarget.innerText)}
-                className="font-black text-base sm:text-xl text-white leading-tight uppercase outline-none"
+              <div
+                className={`group relative cursor-pointer transition rounded-xl p-1 ${
+                  activeElementKey === 'title' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/40'
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectElement('title');
+                }}
+                style={getStyleFor('title')}
               >
-                {slide.title || loc.comparison.title}
-              </h2>
+                {renderActiveControls('title')}
+                <h2
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => onUpdateField('title', e.currentTarget.innerText)}
+                  className="font-black text-base sm:text-xl text-white leading-tight uppercase outline-none"
+                >
+                  {slide.title || loc.comparison.title}
+                </h2>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-2.5">
               {/* Left Column (Mistake / Before) */}
-              <div className="bg-red-950/40 border border-red-800/50 rounded-2xl p-3 space-y-1.5 text-left">
-                <div className="flex items-center gap-1.5 text-red-400 font-black text-[11px] uppercase">
+              <div className="bg-red-950/40 border border-red-800/50 rounded-2xl p-3 space-y-1.5 text-left relative">
+                <div
+                  className={`group relative inline-flex items-center gap-1.5 text-red-400 font-black text-[11px] uppercase cursor-pointer rounded p-0.5 ${
+                    activeElementKey === 'comp-leftTag' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectElement('comp-leftTag');
+                  }}
+                  style={getStyleFor('comp-leftTag')}
+                >
+                  {renderActiveControls('comp-leftTag')}
                   <XCircle className="w-4 h-4 shrink-0" />
                   <span
                     contentEditable
@@ -562,27 +606,63 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                     {slide.comparison?.leftTag || loc.comparison.leftTag}
                   </span>
                 </div>
-                <h4
-                  contentEditable
-                  suppressContentEditableWarning
-                  onBlur={(e) => onUpdateComparison?.({ leftTitle: e.currentTarget.innerText })}
-                  className="text-xs font-bold text-white leading-snug outline-none"
+
+                <div
+                  className={`group relative cursor-pointer rounded p-0.5 transition ${
+                    activeElementKey === 'comp-leftTitle' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectElement('comp-leftTitle');
+                  }}
+                  style={getStyleFor('comp-leftTitle')}
                 >
-                  {slide.comparison?.leftTitle || loc.comparison.leftTitle}
-                </h4>
-                <p
-                  contentEditable
-                  suppressContentEditableWarning
-                  onBlur={(e) => onUpdateComparison?.({ leftText: e.currentTarget.innerText })}
-                  className="text-[11px] text-slate-300 leading-relaxed outline-none"
+                  {renderActiveControls('comp-leftTitle')}
+                  <h4
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => onUpdateComparison?.({ leftTitle: e.currentTarget.innerText })}
+                    className="text-xs font-bold text-white leading-snug outline-none"
+                  >
+                    {slide.comparison?.leftTitle || loc.comparison.leftTitle}
+                  </h4>
+                </div>
+
+                <div
+                  className={`group relative cursor-pointer rounded p-0.5 transition ${
+                    activeElementKey === 'comp-leftText' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectElement('comp-leftText');
+                  }}
+                  style={getStyleFor('comp-leftText')}
                 >
-                  {slide.comparison?.leftText || loc.comparison.leftText}
-                </p>
+                  {renderActiveControls('comp-leftText')}
+                  <p
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => onUpdateComparison?.({ leftText: e.currentTarget.innerText })}
+                    className="text-[11px] text-slate-300 leading-relaxed outline-none"
+                  >
+                    {slide.comparison?.leftText || loc.comparison.leftText}
+                  </p>
+                </div>
               </div>
 
               {/* Right Column (Solution / After) */}
-              <div className="bg-emerald-950/40 border border-emerald-700/60 rounded-2xl p-3 space-y-1.5 text-left">
-                <div className="flex items-center gap-1.5 text-emerald-400 font-black text-[11px] uppercase">
+              <div className="bg-emerald-950/40 border border-emerald-700/60 rounded-2xl p-3 space-y-1.5 text-left relative">
+                <div
+                  className={`group relative inline-flex items-center gap-1.5 text-emerald-400 font-black text-[11px] uppercase cursor-pointer rounded p-0.5 ${
+                    activeElementKey === 'comp-rightTag' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectElement('comp-rightTag');
+                  }}
+                  style={getStyleFor('comp-rightTag')}
+                >
+                  {renderActiveControls('comp-rightTag')}
                   <CheckCircle2 className="w-4 h-4 shrink-0" />
                   <span
                     contentEditable
@@ -593,34 +673,72 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                     {slide.comparison?.rightTag || loc.comparison.rightTag}
                   </span>
                 </div>
-                <h4
-                  contentEditable
-                  suppressContentEditableWarning
-                  onBlur={(e) => onUpdateComparison?.({ rightTitle: e.currentTarget.innerText })}
-                  className="text-xs font-bold text-white leading-snug outline-none"
+
+                <div
+                  className={`group relative cursor-pointer rounded p-0.5 transition ${
+                    activeElementKey === 'comp-rightTitle' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectElement('comp-rightTitle');
+                  }}
+                  style={getStyleFor('comp-rightTitle')}
                 >
-                  {slide.comparison?.rightTitle || loc.comparison.rightTitle}
-                </h4>
-                <p
-                  contentEditable
-                  suppressContentEditableWarning
-                  onBlur={(e) => onUpdateComparison?.({ rightText: e.currentTarget.innerText })}
-                  className="text-[11px] text-slate-300 leading-relaxed outline-none"
+                  {renderActiveControls('comp-rightTitle')}
+                  <h4
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => onUpdateComparison?.({ rightTitle: e.currentTarget.innerText })}
+                    className="text-xs font-bold text-white leading-snug outline-none"
+                  >
+                    {slide.comparison?.rightTitle || loc.comparison.rightTitle}
+                  </h4>
+                </div>
+
+                <div
+                  className={`group relative cursor-pointer rounded p-0.5 transition ${
+                    activeElementKey === 'comp-rightText' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectElement('comp-rightText');
+                  }}
+                  style={getStyleFor('comp-rightText')}
                 >
-                  {slide.comparison?.rightText || loc.comparison.rightText}
-                </p>
+                  {renderActiveControls('comp-rightText')}
+                  <p
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => onUpdateComparison?.({ rightText: e.currentTarget.innerText })}
+                    className="text-[11px] text-slate-300 leading-relaxed outline-none"
+                  >
+                    {slide.comparison?.rightText || loc.comparison.rightText}
+                  </p>
+                </div>
               </div>
             </div>
 
             {slide.body && (
-              <p
-                contentEditable
-                suppressContentEditableWarning
-                onBlur={(e) => onUpdateField('body', e.currentTarget.innerText)}
-                className="text-xs text-center text-slate-300 leading-relaxed pt-1 outline-none"
+              <div
+                className={`group relative cursor-pointer transition rounded-xl p-1 text-center ${
+                  activeElementKey === 'body' ? 'ring-2 ring-rose-500 bg-slate-900/60' : 'hover:bg-slate-900/30'
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectElement('body');
+                }}
+                style={getStyleFor('body')}
               >
-                {slide.body}
-              </p>
+                {renderActiveControls('body')}
+                <p
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => onUpdateField('body', e.currentTarget.innerText)}
+                  className="text-xs text-center text-slate-300 leading-relaxed outline-none"
+                >
+                  {slide.body}
+                </p>
+              </div>
             )}
           </div>
         )}
@@ -629,7 +747,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
         {/* LAYOUT 3: QUOTE / TESTIMONIAL (Cita de Autoridad) */}
         {/* ==================================================================== */}
         {layout === 'quote' && (
-          <div className="space-y-4 my-auto text-center px-2">
+          <div className="space-y-4 my-auto text-center px-2 w-full">
             <div className="flex justify-center">
               <div
                 className="w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-xl"
@@ -639,11 +757,26 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
               </div>
             </div>
 
-            <div className="relative">
+            <div
+              className={`group relative cursor-pointer transition rounded-2xl p-2 ${
+                activeElementKey === 'quote-text' || activeElementKey === 'body'
+                  ? 'ring-2 ring-rose-500 bg-slate-900/60'
+                  : 'hover:bg-slate-900/30'
+              }`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectElement('quote-text');
+              }}
+              style={getStyleFor('quote-text')}
+            >
+              {renderActiveControls('quote-text')}
               <p
                 contentEditable
                 suppressContentEditableWarning
-                onBlur={(e) => onUpdateQuote?.({ quoteText: e.currentTarget.innerText })}
+                onBlur={(e) => {
+                  const val = e.currentTarget.innerText.replace(/^["“”]/, '').replace(/["“”]$/, '');
+                  onUpdateQuote?.({ quoteText: val });
+                }}
                 className="text-base sm:text-xl font-bold text-white italic leading-relaxed outline-none font-serif"
               >
                 "{slide.quote?.quoteText || slide.body || loc.quote.quoteText}"
@@ -651,22 +784,47 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
             </div>
 
             <div className="pt-2 border-t border-slate-800/80 inline-block px-4 space-y-0.5">
-              <h4
-                contentEditable
-                suppressContentEditableWarning
-                onBlur={(e) => onUpdateQuote?.({ authorName: e.currentTarget.innerText })}
-                className="text-xs font-black text-white uppercase tracking-wider outline-none"
+              <div
+                className={`group relative cursor-pointer transition rounded-md p-1 ${
+                  activeElementKey === 'quote-author' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectElement('quote-author');
+                }}
+                style={getStyleFor('quote-author')}
               >
-                {slide.quote?.authorName || brand.name || 'LA VISUAL MK'}
-              </h4>
-              <p
-                contentEditable
-                suppressContentEditableWarning
-                onBlur={(e) => onUpdateQuote?.({ authorRole: e.currentTarget.innerText })}
-                className="text-[11px] font-semibold text-rose-400 outline-none"
+                {renderActiveControls('quote-author')}
+                <h4
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => onUpdateQuote?.({ authorName: e.currentTarget.innerText })}
+                  className="text-xs font-black text-white uppercase tracking-wider outline-none"
+                >
+                  {slide.quote?.authorName || brand.name || 'LA VISUAL MK'}
+                </h4>
+              </div>
+
+              <div
+                className={`group relative cursor-pointer transition rounded-md p-1 ${
+                  activeElementKey === 'quote-role' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectElement('quote-role');
+                }}
+                style={getStyleFor('quote-role')}
               >
-                {slide.quote?.authorRole || loc.quote.authorRole}
-              </p>
+                {renderActiveControls('quote-role')}
+                <p
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => onUpdateQuote?.({ authorRole: e.currentTarget.innerText })}
+                  className="text-[11px] font-semibold text-rose-400 outline-none"
+                >
+                  {slide.quote?.authorRole || loc.quote.authorRole}
+                </p>
+              </div>
             </div>
           </div>
         )}
@@ -675,48 +833,99 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
         {/* LAYOUT 4: BIG STAT / MÉTRICA */}
         {/* ==================================================================== */}
         {layout === 'big_number' && (
-          <div className="space-y-3.5 my-auto text-center">
+          <div className="space-y-3.5 my-auto text-center w-full">
             {slide.badge && (
-              <span
-                className="text-white font-black text-[9px] px-3 py-1 rounded uppercase tracking-wider inline-block shadow"
-                style={{ backgroundColor: primaryColor }}
+              <div
+                className={`group relative inline-block cursor-pointer transition rounded-lg ${
+                  activeElementKey === 'badge' ? 'ring-2 ring-rose-500' : ''
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectElement('badge');
+                }}
+                style={getStyleFor('badge')}
               >
-                {slide.badge || loc.stat.badge}
-              </span>
+                {renderActiveControls('badge')}
+                <span
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => onUpdateField('badge', e.currentTarget.innerText)}
+                  className="text-white font-black text-[9px] px-3 py-1 rounded uppercase tracking-wider inline-block shadow outline-none"
+                  style={{ backgroundColor: primaryColor }}
+                >
+                  {slide.badge || loc.stat.badge}
+                </span>
+              </div>
             )}
 
-            <div className="py-1">
-              <span
-                contentEditable
-                suppressContentEditableWarning
-                onBlur={(e) => onUpdateStat?.({ statNumber: e.currentTarget.innerText })}
-                className="text-5xl sm:text-7xl font-black text-white tracking-tight outline-none block drop-shadow-lg"
-                style={{
-                  fontFamily: 'Montserrat, sans-serif',
-                  color: primaryColor,
+            <div className="py-1 space-y-1">
+              <div
+                className={`group relative cursor-pointer transition rounded-2xl p-1 inline-block ${
+                  activeElementKey === 'stat-number' ? 'ring-2 ring-rose-500 bg-slate-900/60' : 'hover:bg-slate-900/30'
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectElement('stat-number');
                 }}
+                style={getStyleFor('stat-number')}
               >
-                {slide.stat?.statNumber || loc.stat.statNumber}
-              </span>
-              <p
-                contentEditable
-                suppressContentEditableWarning
-                onBlur={(e) => onUpdateStat?.({ statLabel: e.currentTarget.innerText })}
-                className="text-xs sm:text-sm font-black text-white uppercase tracking-widest outline-none mt-1"
+                {renderActiveControls('stat-number')}
+                <span
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => onUpdateStat?.({ statNumber: e.currentTarget.innerText })}
+                  className="text-5xl sm:text-7xl font-black text-white tracking-tight outline-none block drop-shadow-lg"
+                  style={{
+                    color: primaryColor,
+                  }}
+                >
+                  {slide.stat?.statNumber || loc.stat.statNumber}
+                </span>
+              </div>
+
+              <div
+                className={`group relative cursor-pointer transition rounded-xl p-1 ${
+                  activeElementKey === 'stat-label' ? 'ring-2 ring-rose-500 bg-slate-900/60' : 'hover:bg-slate-900/30'
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectElement('stat-label');
+                }}
+                style={getStyleFor('stat-label')}
               >
-                {slide.stat?.statLabel || slide.title || loc.stat.statLabel}
-              </p>
+                {renderActiveControls('stat-label')}
+                <p
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => onUpdateStat?.({ statLabel: e.currentTarget.innerText })}
+                  className="text-xs sm:text-sm font-black text-white uppercase tracking-widest outline-none"
+                >
+                  {slide.stat?.statLabel || slide.title || loc.stat.statLabel}
+                </p>
+              </div>
             </div>
 
-            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-3.5 text-left space-y-1">
-              <p
-                contentEditable
-                suppressContentEditableWarning
-                onBlur={(e) => onUpdateStat?.({ statSubtext: e.currentTarget.innerText })}
-                className="text-xs text-slate-300 leading-relaxed outline-none"
+            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-3.5 text-left relative">
+              <div
+                className={`group relative cursor-pointer transition rounded-xl p-1 ${
+                  activeElementKey === 'stat-subtext' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/40'
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectElement('stat-subtext');
+                }}
+                style={getStyleFor('stat-subtext')}
               >
-                {slide.stat?.statSubtext || slide.body || loc.stat.statSubtext}
-              </p>
+                {renderActiveControls('stat-subtext')}
+                <p
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => onUpdateStat?.({ statSubtext: e.currentTarget.innerText })}
+                  className="text-xs text-slate-300 leading-relaxed outline-none"
+                >
+                  {slide.stat?.statSubtext || slide.body || loc.stat.statSubtext}
+                </p>
+              </div>
             </div>
           </div>
         )}
@@ -725,22 +934,51 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
         {/* LAYOUT 5: CHECKLIST / STEPS (Paso a Paso) */}
         {/* ==================================================================== */}
         {layout === 'checklist' && (
-          <div className="space-y-3 my-auto">
+          <div className="space-y-3 my-auto w-full">
             <div className="space-y-1 text-center">
-              <span
-                className="text-white font-black text-[9px] px-2.5 py-0.5 rounded uppercase tracking-wider inline-block"
-                style={{ backgroundColor: primaryColor }}
+              {slide.badge && (
+                <div
+                  className={`group relative inline-block cursor-pointer transition rounded-lg ${
+                    activeElementKey === 'badge' ? 'ring-2 ring-rose-500' : ''
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectElement('badge');
+                  }}
+                  style={getStyleFor('badge')}
+                >
+                  {renderActiveControls('badge')}
+                  <span
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => onUpdateField('badge', e.currentTarget.innerText)}
+                    className="text-white font-black text-[9px] px-2.5 py-0.5 rounded uppercase tracking-wider inline-block outline-none"
+                    style={{ backgroundColor: primaryColor }}
+                  >
+                    {slide.badge || loc.checklist.badge}
+                  </span>
+                </div>
+              )}
+              <div
+                className={`group relative cursor-pointer transition rounded-xl p-1 ${
+                  activeElementKey === 'title' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/40'
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectElement('title');
+                }}
+                style={getStyleFor('title')}
               >
-                {slide.badge || loc.checklist.badge}
-              </span>
-              <h2
-                contentEditable
-                suppressContentEditableWarning
-                onBlur={(e) => onUpdateField('title', e.currentTarget.innerText)}
-                className="font-black text-base sm:text-xl text-white leading-tight uppercase outline-none"
-              >
-                {slide.title || loc.checklist.title}
-              </h2>
+                {renderActiveControls('title')}
+                <h2
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => onUpdateField('title', e.currentTarget.innerText)}
+                  className="font-black text-base sm:text-xl text-white leading-tight uppercase outline-none"
+                >
+                  {slide.title || loc.checklist.title}
+                </h2>
+              </div>
             </div>
 
             <div className="space-y-2 pt-1">
@@ -750,8 +988,16 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
               ).map((bullet, idx, arr) => (
                 <div
                   key={idx}
-                  className="group relative flex items-start gap-3 bg-slate-900/85 border border-slate-800 rounded-2xl p-3 text-xs text-slate-200 shadow-sm"
+                  className={`group relative flex items-start gap-3 bg-slate-900/85 border border-slate-800 rounded-2xl p-3 text-xs text-slate-200 shadow-sm cursor-pointer transition ${
+                    activeElementKey === `bullet-${idx}` ? 'ring-2 ring-rose-500 bg-slate-900' : 'hover:border-slate-700'
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectElement(`bullet-${idx}`);
+                  }}
+                  style={getStyleFor(`bullet-${idx}`)}
                 >
+                  {renderActiveControls(`bullet-${idx}`)}
                   <div
                     className="w-6 h-6 rounded-xl flex items-center justify-center text-[11px] font-black text-white shrink-0 mt-0.5 shadow-sm"
                     style={{ backgroundColor: primaryColor }}
@@ -807,7 +1053,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
         {/* LAYOUT 6: CTA FINAL / CONVERSIÓN */}
         {/* ==================================================================== */}
         {layout === 'cta_final' && (
-          <div className="space-y-4 my-auto text-center">
+          <div className="space-y-4 my-auto text-center w-full">
             {/* Avatar or Logo Icon */}
             <div className="flex justify-center">
               {brand.logo ? (
@@ -827,46 +1073,104 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
             </div>
 
             <div className="space-y-1.5">
-              <span
-                className="text-white font-black text-[9px] px-3 py-1 rounded-full uppercase tracking-wider inline-block shadow-sm"
-                style={{ backgroundColor: primaryColor }}
+              {slide.badge && (
+                <div
+                  className={`group relative inline-block cursor-pointer transition rounded-lg ${
+                    activeElementKey === 'badge' ? 'ring-2 ring-rose-500' : ''
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectElement('badge');
+                  }}
+                  style={getStyleFor('badge')}
+                >
+                  {renderActiveControls('badge')}
+                  <span
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => onUpdateField('badge', e.currentTarget.innerText)}
+                    className="text-white font-black text-[9px] px-3 py-1 rounded-full uppercase tracking-wider inline-block shadow-sm outline-none"
+                    style={{ backgroundColor: primaryColor }}
+                  >
+                    {slide.badge || loc.ctaFinal.badge}
+                  </span>
+                </div>
+              )}
+
+              <div
+                className={`group relative cursor-pointer transition rounded-xl p-1 ${
+                  activeElementKey === 'cta-headline' || activeElementKey === 'title'
+                    ? 'ring-2 ring-rose-500 bg-slate-900/70'
+                    : 'hover:bg-slate-900/40'
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectElement('cta-headline');
+                }}
+                style={getStyleFor('cta-headline')}
               >
-                {slide.badge || loc.ctaFinal.badge}
-              </span>
-              <h2
-                contentEditable
-                suppressContentEditableWarning
-                onBlur={(e) => onUpdateCtaFinal?.({ headline: e.currentTarget.innerText })}
-                className="font-black text-lg sm:text-2xl text-white leading-tight uppercase outline-none"
-              >
-                {slide.ctaFinal?.headline || slide.title || loc.ctaFinal.headline}
-              </h2>
+                {renderActiveControls('cta-headline')}
+                <h2
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => onUpdateCtaFinal?.({ headline: e.currentTarget.innerText })}
+                  className="font-black text-lg sm:text-2xl text-white leading-tight uppercase outline-none"
+                >
+                  {slide.ctaFinal?.headline || slide.title || loc.ctaFinal.headline}
+                </h2>
+              </div>
             </div>
 
-            <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 space-y-2">
-              <p
-                contentEditable
-                suppressContentEditableWarning
-                onBlur={(e) => onUpdateCtaFinal?.({ subheadline: e.currentTarget.innerText })}
-                className="text-xs text-slate-300 leading-relaxed outline-none"
+            <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 space-y-2 relative">
+              <div
+                className={`group relative cursor-pointer transition rounded-xl p-1 ${
+                  activeElementKey === 'cta-subheadline' || activeElementKey === 'body'
+                    ? 'ring-2 ring-rose-500 bg-slate-900/70'
+                    : 'hover:bg-slate-900/30'
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectElement('cta-subheadline');
+                }}
+                style={getStyleFor('cta-subheadline')}
               >
-                {slide.ctaFinal?.subheadline || slide.body || loc.ctaFinal.subheadline}
-              </p>
+                {renderActiveControls('cta-subheadline')}
+                <p
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => onUpdateCtaFinal?.({ subheadline: e.currentTarget.innerText })}
+                  className="text-xs text-slate-300 leading-relaxed outline-none"
+                >
+                  {slide.ctaFinal?.subheadline || slide.body || loc.ctaFinal.subheadline}
+                </p>
+              </div>
 
               {/* Action Trigger Button Simulation */}
               <div
-                className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-white text-xs font-black uppercase tracking-wider shadow-lg"
-                style={{ backgroundColor: primaryColor }}
+                className={`group relative cursor-pointer transition rounded-xl ${
+                  activeElementKey === 'cta-pill' ? 'ring-2 ring-rose-500' : ''
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectElement('cta-pill');
+                }}
+                style={getStyleFor('cta-pill')}
               >
-                <MessageCircle className="w-4 h-4" />
-                <span
-                  contentEditable
-                  suppressContentEditableWarning
-                  onBlur={(e) => onUpdateCtaFinal?.({ actionPill: e.currentTarget.innerText })}
-                  className="outline-none"
+                {renderActiveControls('cta-pill')}
+                <div
+                  className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-white text-xs font-black uppercase tracking-wider shadow-lg"
+                  style={{ backgroundColor: primaryColor }}
                 >
-                  {slide.ctaFinal?.actionPill || loc.ctaFinal.actionPill}
-                </span>
+                  <MessageCircle className="w-4 h-4" />
+                  <span
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => onUpdateCtaFinal?.({ actionPill: e.currentTarget.innerText })}
+                    className="outline-none"
+                  >
+                    {slide.ctaFinal?.actionPill || loc.ctaFinal.actionPill}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -892,12 +1196,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                   contentEditable
                   suppressContentEditableWarning
                   onBlur={(e) => onUpdateCustomText?.(custom.id, e.currentTarget.innerText)}
-                  className="text-xs sm:text-sm text-slate-200 outline-none leading-relaxed"
-                  style={{
-                    color: custom.color || undefined,
-                    fontSize: custom.fontSize ? `${custom.fontSize}px` : undefined,
-                    textAlign: custom.align || 'left',
-                  }}
+                  className="outline-none leading-relaxed"
                 >
                   {custom.text}
                 </div>

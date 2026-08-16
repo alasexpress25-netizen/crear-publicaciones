@@ -470,6 +470,25 @@ export default function App() {
     } else if (key.startsWith('custom-')) {
       handleDeleteCustomText(key);
       setActiveElementKey(null);
+    } else if (key.startsWith('comp-')) {
+      const field = key.replace('comp-', '') as keyof ComparisonData;
+      handleUpdateComparison({ [field]: '' });
+      setActiveElementKey(null);
+    } else if (key.startsWith('quote-')) {
+      if (key === 'quote-text') handleUpdateQuote({ quoteText: '' });
+      if (key === 'quote-author') handleUpdateQuote({ authorName: '' });
+      if (key === 'quote-role') handleUpdateQuote({ authorRole: '' });
+      setActiveElementKey(null);
+    } else if (key.startsWith('stat-')) {
+      if (key === 'stat-number') handleUpdateStat({ statNumber: '' });
+      if (key === 'stat-label') handleUpdateStat({ statLabel: '' });
+      if (key === 'stat-subtext') handleUpdateStat({ statSubtext: '' });
+      setActiveElementKey(null);
+    } else if (key.startsWith('cta-')) {
+      if (key === 'cta-headline') handleUpdateCtaFinal({ headline: '' });
+      if (key === 'cta-subheadline') handleUpdateCtaFinal({ subheadline: '' });
+      if (key === 'cta-pill') handleUpdateCtaFinal({ actionPill: '' });
+      setActiveElementKey(null);
     }
   };
 

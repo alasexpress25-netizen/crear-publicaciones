@@ -64,6 +64,42 @@ const ELEMENT_LABELS: Record<string, string> = {
   cta: 'Llamado a la Acción',
   brandName: 'Nombre de Marca',
   brandWeb: 'Sitio Web / Watermark',
+  'quote-text': 'Cita / Testimonio',
+  'quote-author': 'Autor de la Cita',
+  'quote-role': 'Cargo / Rol del Autor',
+  'stat-number': 'Métrica / Gran Número',
+  'stat-label': 'Etiqueta de Métrica',
+  'stat-subtext': 'Explicación de Métrica',
+  'comp-leftTag': 'Etiqueta Antes / Error',
+  'comp-leftTitle': 'Título Antes / Error',
+  'comp-leftText': 'Texto Antes / Error',
+  'comp-rightTag': 'Etiqueta Después / Solución',
+  'comp-rightTitle': 'Título Después / Solución',
+  'comp-rightText': 'Texto Después / Solución',
+  'cta-headline': 'Titular Final (CTA)',
+  'cta-subheadline': 'Subtítulo Final (CTA)',
+  'cta-pill': 'Botón de Acción (CTA)',
+};
+
+const getElementLabel = (key: string): string => {
+  if (ELEMENT_LABELS[key]) return ELEMENT_LABELS[key];
+  if (key.startsWith('bullet-')) {
+    const num = parseInt(key.replace('bullet-', ''), 10) + 1;
+    return `Punto / Paso #${num}`;
+  }
+  if (key.startsWith('custom-')) {
+    return 'Texto Personalizado';
+  }
+  return key;
+};
+
+const getDefaultSizeForKey = (key: string): number => {
+  if (key === 'stat-number') return 56;
+  if (key === 'title' || key === 'cta-headline') return 24;
+  if (key === 'quote-text') return 20;
+  if (key === 'subtag' || key === 'comp-leftTitle' || key === 'comp-rightTitle' || key === 'stat-label') return 14;
+  if (key === 'badge' || key === 'comp-leftTag' || key === 'comp-rightTag' || key === 'quote-role') return 10;
+  return 13;
 };
 
 export const TextStyleBar: React.FC<TextStyleBarProps> = ({
@@ -214,8 +250,8 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
           {/* Target Element Name */}
           <div className="flex items-center gap-1.5 pr-2 border-r border-slate-800 shrink-0">
             <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
-            <span className="font-bold text-rose-400 text-xs truncate max-w-[110px]">
-              {ELEMENT_LABELS[activeKey] || activeKey}
+            <span className="font-bold text-rose-400 text-xs truncate max-w-[125px]">
+              {getElementLabel(activeKey)}
             </span>
           </div>
 
@@ -249,7 +285,7 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
               onClick={() => {
                 const cur = (activeKey === 'brandName' || activeKey === 'brandWeb'
                   ? brand.textStyle?.[activeKey]?.fontSize
-                  : slide.textStyle?.[activeKey]?.fontSize) || (activeKey === 'title' ? 24 : 14);
+                  : slide.textStyle?.[activeKey]?.fontSize) || getDefaultSizeForKey(activeKey);
                 onUpdateStyle(activeKey, { fontSize: Math.max(8, cur - 2) });
               }}
               className="p-1 hover:bg-slate-800 rounded text-slate-300 transition"
@@ -260,14 +296,14 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
             <span className="px-1 font-mono text-[11px] font-bold text-slate-200 min-w-[28px] text-center">
               {(activeKey === 'brandName' || activeKey === 'brandWeb'
                 ? brand.textStyle?.[activeKey]?.fontSize
-                : slide.textStyle?.[activeKey]?.fontSize) || (activeKey === 'title' ? 24 : 14)}p
+                : slide.textStyle?.[activeKey]?.fontSize) || getDefaultSizeForKey(activeKey)}p
             </span>
             <button
               onClick={() => {
                 const cur = (activeKey === 'brandName' || activeKey === 'brandWeb'
                   ? brand.textStyle?.[activeKey]?.fontSize
-                  : slide.textStyle?.[activeKey]?.fontSize) || (activeKey === 'title' ? 24 : 14);
-                onUpdateStyle(activeKey, { fontSize: Math.min(72, cur + 2) });
+                  : slide.textStyle?.[activeKey]?.fontSize) || getDefaultSizeForKey(activeKey);
+                onUpdateStyle(activeKey, { fontSize: Math.min(84, cur + 2) });
               }}
               className="p-1 hover:bg-slate-800 rounded text-slate-300 transition"
               title="Aumentar tamaño"
