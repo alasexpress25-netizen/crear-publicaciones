@@ -23,7 +23,9 @@ import {
   FolderOpen,
   RefreshCw,
   AlertCircle,
-  FileDown
+  FileDown,
+  Image as ImageIcon,
+  Search
 } from 'lucide-react';
 import { Slide, BrandInfo, CarouselPostMeta, AspectRatio, SavedCarouselProject } from '../types';
 import {
@@ -32,6 +34,13 @@ import {
   deleteProjectDB,
   saveAllProjectsDB
 } from '../services/storageDb';
+import {
+  ClientLogoAsset,
+  getAllClientLogosDB,
+  saveClientLogoDB,
+  deleteClientLogoDB,
+  downloadLogoFile
+} from '../services/clientLogosStorage';
 import {
   isFileSystemAccessSupported,
   pickLocalFolder,
@@ -55,6 +64,7 @@ interface ProjectsManagerModalProps {
   currentAspectRatio: AspectRatio;
   onLoadProject: (project: SavedCarouselProject) => void;
   onNewProject: () => void;
+  onUpdateBrand?: (field: keyof BrandInfo, value: string) => void;
 }
 
 export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
@@ -68,10 +78,15 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
   currentAspectRatio,
   onLoadProject,
   onNewProject,
+  onUpdateBrand,
 }) => {
+  const [activeTab, setActiveTab] = useState<'projects' | 'logos'>('projects');
   const [projects, setProjects] = useState<SavedCarouselProject[]>([]);
+  const [logos, setLogos] = useState<ClientLogoAsset[]>([]);
   const [newTitle, setNewTitle] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [logoSearchQuery, setLogoSearchQuery] = useState('');
+  const [newLogoClientName, setNewLogoClientName] = useState('');
   const [selectedClientFilter, setSelectedClientFilter] = useState<string>('all');
   const [activeProject, setActiveProject] = useState<SavedCarouselProject | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -79,11 +94,14 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
   const [linkedFolderName, setLinkedFolderName] = useState<string | null>(null);
   const [isSyncingFolder, setIsSyncingFolder] = useState(false);
   const [folderNotification, setFolderNotification] = useState<string | null>(null);
+  const [appliedLogoId, setAppliedLogoId] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
       loadProjectsFromStorage();
+      loadLogosFromStorage();
       setLinkedFolderName(getLinkedFolderName());
+      setNewLogoClientName(currentBrand.name || '');
 
       // Intentar restaurar el handle persistido de la carpeta automáticamente
       restorePersistedDirectoryHandle().then((res) => {
@@ -98,6 +116,63 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
       setNewTitle(defaultTitle.replace(/[^\w\s\sáéíóúÁÉÍÓÚñÑüÜ.,-]/gi, '').slice(0, 50).trim());
     }
   }, [isOpen, currentSlides, currentBrief, currentBrand.name]);
+
+  const loadLogosFromStorage = async () => {
+    try {
+      const storedLogos = await getAllClientLogosDB();
+      setLogos(storedLogos);
+    } catch (e) {
+      console.warn('Error loading logos from DB', e);
+    }
+  };
+
+  const handleUploadLogoToGallery = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      if (ev.target?.result) {
+        const logoData = ev.target.result as string;
+        const newAsset: ClientLogoAsset = {
+          id: `logo-${Date.now()}`,
+          clientName: newLogoClientName.trim() || currentBrand.name || 'Cliente',
+          logoUrl: logoData,
+          createdAt: new Date().toISOString(),
+          fileName: file.name,
+          fileSize: `${Math.round(file.size / 1024)} KB`,
+        };
+
+        await saveClientLogoDB(newAsset);
+        await loadLogosFromStorage();
+        setFolderNotification(`Logo de "${newAsset.clientName}" guardado en la carpeta de logos`);
+        setTimeout(() => setFolderNotification(null), 3000);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleDeleteLogoFromGallery = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm('¿Seguro que deseas eliminar este logo de la carpeta?')) return;
+    await deleteClientLogoDB(id);
+    await loadLogosFromStorage();
+  };
+
+  const handleApplyLogoToCanvas = (logo: ClientLogoAsset) => {
+    if (onUpdateBrand) {
+      onUpdateBrand('logo', logo.logoUrl);
+      if (logo.clientName && !currentBrand.name) {
+        onUpdateBrand('name', logo.clientName);
+      }
+      setAppliedLogoId(logo.id);
+      setFolderNotification(`Logo de "${logo.clientName}" aplicado al carrusel actual`);
+      setTimeout(() => {
+        setAppliedLogoId(null);
+        setFolderNotification(null);
+      }, 3000);
+    }
+  };
 
   const loadProjectsFromStorage = async () => {
     try {
@@ -308,14 +383,22 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
     return matchesSearch && matchesClient;
   });
 
+  const filteredLogos = logos.filter((l) => {
+    const q = logoSearchQuery.toLowerCase();
+    return (
+      (l.clientName && l.clientName.toLowerCase().includes(q)) ||
+      (l.fileName && l.fileName.toLowerCase().includes(q))
+    );
+  });
+
   const fsSupported = isFileSystemAccessSupported();
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/85 backdrop-blur-md">
       <div className="relative w-full max-w-5xl bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/90">
+        {/* Header Tabs & Actions */}
+        <div className="flex flex-wrap items-center justify-between px-6 py-3 border-b border-slate-800 bg-slate-900/90 gap-3">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-600 to-rose-600 flex items-center justify-center text-white shadow-lg shadow-indigo-950/50">
               <FolderArchive className="w-5 h-5" />
@@ -327,38 +410,75 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
                 </h3>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-800/60 flex items-center gap-1">
                   <HardDrive className="w-3 h-3" />
-                  IndexedDB Ilimitado
-                </span>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
-                  {projects.length} Carruseles
+                  IndexedDB
                 </span>
               </div>
               <p className="text-xs text-slate-400">
-                Tus carruseles se almacenan en el motor de base de datos de tu disco rígido sin límites de tamaño
+                Guarda carruseles y logos de todos tus clientes organizados en tu disco rígido
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              onClick={handleExportJSON}
-              className="p-2 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition text-xs font-semibold flex items-center gap-1.5 border border-slate-800"
-              title="Descargar copia de seguridad en JSON de todos tus proyectos"
-            >
-              <Download className="w-4 h-4 text-slate-300" />
-              <span className="hidden sm:inline">Backup Total</span>
-            </button>
-            <label
-              className="p-2 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition text-xs font-semibold flex items-center gap-1.5 border border-slate-800 cursor-pointer"
-              title="Importar proyectos desde JSON"
-            >
-              <Upload className="w-4 h-4 text-slate-300" />
-              <span className="hidden sm:inline">Importar</span>
-              <input type="file" accept=".json" onChange={handleImportJSON} className="hidden" />
-            </label>
+            {/* Primary Tab Switcher */}
+            <div className="flex items-center bg-slate-950 p-1 rounded-2xl border border-slate-800">
+              <button
+                type="button"
+                onClick={() => setActiveTab('projects')}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition ${
+                  activeTab === 'projects'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>Carruseles</span>
+                <span className="text-[10px] opacity-75 bg-black/20 px-1.5 py-0.5 rounded-md">
+                  {projects.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('logos')}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition ${
+                  activeTab === 'logos'
+                    ? 'bg-rose-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                }`}
+              >
+                <ImageIcon className="w-3.5 h-3.5" />
+                <span>Carpeta de Logos</span>
+                <span className="text-[10px] opacity-75 bg-black/20 px-1.5 py-0.5 rounded-md">
+                  {logos.length}
+                </span>
+              </button>
+            </div>
+
+            {activeTab === 'projects' && (
+              <>
+                <button
+                  onClick={handleExportJSON}
+                  className="p-2 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition text-xs font-semibold flex items-center gap-1.5 border border-slate-800"
+                  title="Descargar copia de seguridad en JSON de todos tus proyectos"
+                >
+                  <Download className="w-4 h-4 text-slate-300" />
+                  <span className="hidden sm:inline">Backup</span>
+                </button>
+                <label
+                  className="p-2 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition text-xs font-semibold flex items-center gap-1.5 border border-slate-800 cursor-pointer"
+                  title="Importar proyectos desde JSON"
+                >
+                  <Upload className="w-4 h-4 text-slate-300" />
+                  <span className="hidden sm:inline">Importar</span>
+                  <input type="file" accept=".json" onChange={handleImportJSON} className="hidden" />
+                </label>
+              </>
+            )}
+
             <button
               onClick={onClose}
-              className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition"
+              className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition ml-1"
             >
               <X className="w-5 h-5" />
             </button>
@@ -366,64 +486,66 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
         </div>
 
         {/* Real Hard Drive Local Folder Integration Banner */}
-        <div className="px-6 py-2.5 bg-slate-950/90 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-2.5">
-            <div className="p-1.5 rounded-lg bg-indigo-950/60 text-indigo-400 border border-indigo-800/40">
-              <FolderOpen className="w-4 h-4" />
+        {activeTab === 'projects' && (
+          <div className="px-6 py-2.5 bg-slate-950/90 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2.5">
+              <div className="p-1.5 rounded-lg bg-indigo-950/60 text-indigo-400 border border-indigo-800/40">
+                <FolderOpen className="w-4 h-4" />
+              </div>
+              <div>
+                {linkedFolderName ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-300 font-semibold">
+                      Carpeta Física de tu PC vinculada:
+                    </span>
+                    <span className="font-mono text-emerald-400 font-bold bg-emerald-950/60 px-2 py-0.5 rounded-lg border border-emerald-800/50 flex items-center gap-1">
+                      <FolderCheck className="w-3.5 h-3.5" />
+                      📁 {linkedFolderName}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-slate-300 font-medium">
+                      ¿Quieres sincronizar automáticamente con una carpeta en tu disco rígido (C:\, Documentos, etc.)?
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
-            <div>
+
+            <div className="flex items-center gap-2">
               {linkedFolderName ? (
-                <div className="flex items-center gap-2">
-                  <span className="text-slate-300 font-semibold">
-                    Carpeta Física de tu PC vinculada:
-                  </span>
-                  <span className="font-mono text-emerald-400 font-bold bg-emerald-950/60 px-2 py-0.5 rounded-lg border border-emerald-800/50 flex items-center gap-1">
-                    <FolderCheck className="w-3.5 h-3.5" />
-                    📁 {linkedFolderName}
-                  </span>
-                </div>
+                <>
+                  <button
+                    onClick={() => handleScanFolder()}
+                    disabled={isSyncingFolder}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold transition border border-slate-700"
+                    title="Volver a escanear archivos en la carpeta de tu PC"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncingFolder ? 'animate-spin text-indigo-400' : ''}`} />
+                    <span>Sincronizar</span>
+                  </button>
+                  <button
+                    onClick={handleUnlinkFolder}
+                    className="px-2.5 py-1.5 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-950/30 transition text-[11px]"
+                    title="Desvincular carpeta de la sesión"
+                  >
+                    Desvincular
+                  </button>
+                </>
               ) : (
-                <div className="flex items-center gap-1.5">
-                  <span className="text-slate-300 font-medium">
-                    ¿Quieres sincronizar automáticamente con una carpeta en tu disco rígido (C:\, Documentos, etc.)?
-                  </span>
-                </div>
+                <button
+                  onClick={handleLinkFolder}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-indigo-600/90 hover:bg-indigo-500 text-white font-bold transition shadow-sm border border-indigo-500/30"
+                  title="Selecciona una carpeta de tu ordenador para guardar archivos .json reales"
+                >
+                  <FolderSync className="w-3.5 h-3.5" />
+                  <span>Vincular Carpeta de mi PC</span>
+                </button>
               )}
             </div>
           </div>
-
-          <div className="flex items-center gap-2">
-            {linkedFolderName ? (
-              <>
-                <button
-                  onClick={() => handleScanFolder()}
-                  disabled={isSyncingFolder}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold transition border border-slate-700"
-                  title="Volver a escanear archivos en la carpeta de tu PC"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncingFolder ? 'animate-spin text-indigo-400' : ''}`} />
-                  <span>Sincronizar</span>
-                </button>
-                <button
-                  onClick={handleUnlinkFolder}
-                  className="px-2.5 py-1.5 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-950/30 transition text-[11px]"
-                  title="Desvincular carpeta de la sesión"
-                >
-                  Desvincular
-                </button>
-              </>
-            ) : (
-              <button
-                onClick={handleLinkFolder}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-indigo-600/90 hover:bg-indigo-500 text-white font-bold transition shadow-sm border border-indigo-500/30"
-                title="Selecciona una carpeta de tu ordenador para guardar archivos .json reales"
-              >
-                <FolderSync className="w-3.5 h-3.5" />
-                <span>Vincular Carpeta de mi PC</span>
-              </button>
-            )}
-          </div>
-        </div>
+        )}
 
         {/* Notifications & Status */}
         {(folderNotification || saveDiskStatus) && (
@@ -434,7 +556,9 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
         )}
 
         {/* Quick Save Current Carousel Bar */}
-        <div className="p-4 bg-slate-950/80 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
+        {activeTab === 'projects' ? (
+          <>
+            <div className="p-4 bg-slate-950/80 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 flex-1 min-w-[260px]">
             <Save className="w-4 h-4 text-rose-400 shrink-0" />
             <input
@@ -719,6 +843,139 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
           </div>
 
         </div>
+      </>
+    ) : (
+      /* Carpeta de Logos Tab Content */
+      <div className="flex-1 flex flex-col overflow-hidden bg-slate-900/60 min-h-0">
+        {/* Logo Upload & Search Bar */}
+        <div className="p-4 bg-slate-950/80 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 flex-1 min-w-[240px]">
+            <Search className="w-4 h-4 text-rose-400 shrink-0" />
+            <input
+              type="text"
+              value={logoSearchQuery}
+              onChange={(e) => setLogoSearchQuery(e.target.value)}
+              placeholder="Buscar logo por nombre de cliente o archivo..."
+              className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-rose-500"
+            />
+          </div>
+
+          {/* Upload form for new logo */}
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={newLogoClientName}
+              onChange={(e) => setNewLogoClientName(e.target.value)}
+              placeholder="Nombre del cliente / marca..."
+              className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-rose-500 w-48 font-medium"
+            />
+            <label className="flex items-center gap-1.5 bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-md shadow-rose-950/50 cursor-pointer transition transform active:scale-95 shrink-0">
+              <Upload className="w-3.5 h-3.5" />
+              <span>Subir Logo a Carpeta</span>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleUploadLogoToGallery}
+                className="hidden"
+              />
+            </label>
+          </div>
+        </div>
+
+        {/* Logos Grid Gallery */}
+        <div className="flex-1 overflow-y-auto p-5 scrollbar-thin">
+          {filteredLogos.length === 0 ? (
+            <div className="py-16 text-center text-slate-400 space-y-3">
+              <div className="w-14 h-14 rounded-2xl bg-slate-800/80 border border-slate-700 flex items-center justify-center mx-auto text-rose-400 shadow-inner">
+                <ImageIcon className="w-7 h-7" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-white">
+                  {logoSearchQuery ? 'No se encontraron logos con ese nombre' : 'Carpeta de logos vacía'}
+                </h4>
+                <p className="text-xs text-slate-400 max-w-md mx-auto mt-1">
+                  Sube logos PNG transparentes de tus clientes arriba o guárdalos al crear un cliente en la sección Clientes. Se quedarán guardados permanentemente en tu disco.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {filteredLogos.map((logo) => {
+                const isApplied = appliedLogoId === logo.id || currentBrand.logo === logo.logoUrl;
+
+                return (
+                  <div
+                    key={logo.id}
+                    className={`bg-slate-950/90 rounded-2xl border p-4 flex flex-col justify-between transition group hover:shadow-lg ${
+                      isApplied
+                        ? 'border-rose-500/80 ring-1 ring-rose-500/40 bg-rose-950/20'
+                        : 'border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    {/* Logo Preview box */}
+                    <div className="w-full h-28 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-center p-3 relative overflow-hidden mb-3 group-hover:border-slate-700 transition">
+                      <img
+                        src={logo.logoUrl}
+                        alt={logo.clientName}
+                        className="max-h-full max-w-full object-contain filter drop-shadow-md"
+                      />
+                      {isApplied && (
+                        <span className="absolute top-2 right-2 bg-rose-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-full shadow flex items-center gap-1">
+                          <Check className="w-3 h-3" />
+                          En Uso
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Logo Info */}
+                    <div className="space-y-1 mb-3">
+                      <h4 className="text-xs font-bold text-white truncate">
+                        {logo.clientName || 'Cliente sin nombre'}
+                      </h4>
+                      <div className="flex items-center justify-between text-[10px] text-slate-400">
+                        <span>{logo.fileSize || 'PNG'}</span>
+                        <span>{new Date(logo.createdAt).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+
+                    {/* Action buttons */}
+                    <div className="flex items-center gap-2 pt-2 border-t border-slate-800/80">
+                      <button
+                        type="button"
+                        onClick={() => handleApplyLogoToCanvas(logo)}
+                        className="flex-1 flex items-center justify-center gap-1.5 bg-rose-600/90 hover:bg-rose-500 text-white font-bold text-xs py-1.5 px-2 rounded-xl transition shadow-sm"
+                        title="Usar este logo en las diapositivas del carrusel actual"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Aplicar</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => downloadLogoFile(logo)}
+                        className="p-1.5 rounded-xl text-slate-400 hover:text-emerald-400 hover:bg-slate-800 border border-slate-800 transition"
+                        title="Descargar archivo de imagen"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={(e) => handleDeleteLogoFromGallery(logo.id, e)}
+                        className="p-1.5 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 border border-slate-800 transition"
+                        title="Eliminar logo de la carpeta"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    )}
 
         {/* Footer */}
         <div className="px-6 py-3 border-t border-slate-800 bg-slate-900/90 flex items-center justify-between text-xs text-slate-400">

@@ -62,6 +62,7 @@ export interface AgencyClient {
   brand_color?: string;
   secondary_color?: string;
   logo_url?: string;
+  language?: 'es' | 'pt' | 'en';
   tone?: string;
   mission?: string;
   pain_points?: string[];
@@ -312,6 +313,7 @@ export function normalizeClient(item: any): AgencyClient {
     brand_color: safeString(item.brand_color || item.primary_color || item.color || raw.brand_color, '#e11d48'),
     secondary_color: safeString(item.secondary_color || raw.secondary_color, '#0f172a'),
     logo_url: safeString(item.logo_url || item.logo || raw.logo_url, ''),
+    language: (['es', 'pt', 'en'].includes(item.language || item.lang || raw.language || raw.lang) ? (item.language || item.lang || raw.language || raw.lang) : 'es') as 'es' | 'pt' | 'en',
     tone: safeString(item.tone || item.brand_voice || raw.tone, 'Estratégico y cercano'),
     mission: safeString(item.mission || item.description || raw.mission, ''),
     pain_points: toStringArray(item.pain_points || item.pains || raw.pain_points),

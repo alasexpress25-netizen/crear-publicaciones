@@ -19,6 +19,7 @@ import {
   DEFAULT_MARKETING_DOCUMENTS
 } from './data/marketingPlaybooks';
 import { AgencyClient, getFallbackAgencyClients } from './services/supabase';
+import { findLogoForClient } from './services/clientLogosStorage';
 import { apiTranslateCarousel } from './services/api';
 import { Header } from './components/Header';
 import { CanvasSlide } from './components/CanvasSlide';
@@ -177,15 +178,21 @@ export default function App() {
 
     // Update Brand Info
     const primaryCol = client.brand_color || '#e11d48';
+    const logoToUse = client.logo_url || findLogoForClient(client.id, client.name) || '';
     setBrand((prev) => ({
       ...prev,
       name: client.name,
       web: client.website || prev.web,
       handle: client.instagram_handle || prev.handle,
-      logo: client.logo_url || prev.logo,
+      logo: logoToUse,
       primaryColor: primaryCol,
       clientId: client.id,
     }));
+
+    // Update Language automatically from client profile
+    if (client.language) {
+      setLanguage(client.language);
+    }
 
     // Update Brief & Audience
     if (client.business_type || client.industry) {
@@ -885,6 +892,7 @@ export default function App() {
         currentAspectRatio={aspectRatio}
         onLoadProject={handleLoadSavedProject}
         onNewProject={handleCreateNewBlankProject}
+        onUpdateBrand={handleUpdateBrand}
       />
 
       <KnowledgeBaseModal

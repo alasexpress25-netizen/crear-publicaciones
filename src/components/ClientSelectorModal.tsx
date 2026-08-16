@@ -16,7 +16,11 @@ import {
   Upload,
   Image as ImageIcon,
   AlertCircle,
-  Tag
+  Tag,
+  Trash2,
+  Languages,
+  FolderOpen,
+  FolderHeart
 } from 'lucide-react';
 import {
   AgencyClient,
@@ -28,6 +32,14 @@ import {
   getFallbackAgencyClients
 } from '../services/supabase';
 import { BrandInfo } from '../types';
+import {
+  saveClientLogoDB,
+  getAllClientLogosDB,
+  findLogoForClient,
+  saveClientLogoMapping,
+  removeClientLogoMapping,
+  ClientLogoAsset
+} from '../services/clientLogosStorage';
 
 interface ClientSelectorModalProps {
   isOpen: boolean;
@@ -49,6 +61,7 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
   onUpdateBrand,
 }) => {
   const [clients, setClients] = useState<AgencyClient[]>(() => getFallbackAgencyClients());
+  const [savedLogos, setSavedLogos] = useState<ClientLogoAsset[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showConfig, setShowConfig] = useState(false);
@@ -69,6 +82,7 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
   const [newClientInstagram, setNewClientInstagram] = useState('');
   const [newClientColor, setNewClientColor] = useState('#e11d48');
   const [newClientLogo, setNewClientLogo] = useState('');
+  const [newClientLanguage, setNewClientLanguage] = useState<'es' | 'pt' | 'en'>('es');
   const [newClientKB, setNewClientKB] = useState('');
   const [newClientTechnicalTerms, setNewClientTechnicalTerms] = useState('');
 
@@ -114,9 +128,17 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
   const loadClients = async () => {
     setIsLoading(true);
     try {
+      // 1. Fetch logos saved locally in IndexedDB / LocalStorage
+      let storedLogos: ClientLogoAsset[] = [];
+      try {
+        storedLogos = await getAllClientLogosDB();
+        setSavedLogos(storedLogos);
+      } catch {}
+
+      // 2. Fetch clients from Supabase
       const data = await fetchAgencyClients();
       
-      // Load custom local clients created by user
+      // 3. Load custom local clients created by user
       let customClients: AgencyClient[] = [];
       try {
         const saved = localStorage.getItem(LOCAL_STORAGE_CUSTOM_CLIENTS);
@@ -126,14 +148,30 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
       const combined = [...customClients, ...(Array.isArray(data) ? data : getFallbackAgencyClients())];
       // Deduplicate safely by ID
       const uniqueClients = combined.filter((v, i, a) => a.findIndex((t) => t.id === v.id) === i);
-      setClients(uniqueClients);
+
+      // 4. Enrich every client with stored logos
+      const enrichedClients = uniqueClients.map((client) => {
+        const mappedLogo = findLogoForClient(client.id, client.name, storedLogos);
+        const activeBrandLogo = (brand.clientId === client.id || (brand.name && client.name && brand.name.toLowerCase() === client.name.toLowerCase())) ? brand.logo : '';
+        const finalLogo = mappedLogo || client.logo_url || activeBrandLogo || '';
+        return {
+          ...client,
+          logo_url: finalLogo,
+        };
+      });
+
+      setClients(enrichedClients);
 
       if (selectedClientId) {
-        const found = uniqueClients.find((c) => c.id === selectedClientId);
+        const found = enrichedClients.find((c) => c.id === selectedClientId);
         if (found) setActiveClientPreview(found);
-        else if (uniqueClients.length > 0) setActiveClientPreview(uniqueClients[0]);
-      } else if (uniqueClients.length > 0) {
-        setActiveClientPreview((prev) => prev || uniqueClients[0]);
+        else if (enrichedClients.length > 0) setActiveClientPreview(enrichedClients[0]);
+      } else if (enrichedClients.length > 0) {
+        setActiveClientPreview((prev) => {
+          if (!prev) return enrichedClients[0];
+          const updatedPrev = enrichedClients.find((c) => c.id === prev.id);
+          return updatedPrev || enrichedClients[0];
+        });
       }
     } catch (err) {
       console.warn('Error loading clients, falling back to local list', err);
@@ -177,6 +215,7 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
       instagram_handle: newClientInstagram.trim().replace(/^@/, ''),
       brand_color: newClientColor || '#e11d48',
       logo_url: newClientLogo,
+      language: newClientLanguage || 'es',
       knowledge_base: newClientKB.trim(),
       technical_terms: termsArray,
       topics: [
@@ -187,6 +226,18 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
       pain_points: ['Poco alcance', 'Falta de clientes'],
       offers: [newClientBusiness.trim() || 'Servicios principales'],
     };
+
+    if (newClientLogo) {
+      saveClientLogoDB({
+        id: `logo-${Date.now()}`,
+        clientId: newClient.id,
+        clientName: newClient.name,
+        logoUrl: newClientLogo,
+        createdAt: new Date().toISOString(),
+      }).catch(console.warn);
+
+      saveClientLogoMapping(newClient.id, newClient.name, newClientLogo);
+    }
 
     let customList: AgencyClient[] = [];
     try {
@@ -216,16 +267,99 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
           const res = ev.target.result as string;
           setNewClientLogo(res);
           onUpdateBrand('logo', res);
+
           if (activeClientPreview) {
-            setActiveClientPreview({
+            const updated = {
               ...activeClientPreview,
               logo_url: res,
-            });
+            };
+            setActiveClientPreview(updated);
+            setClients((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+
+            // Save to local custom storage if custom client
+            try {
+              const saved = localStorage.getItem(LOCAL_STORAGE_CUSTOM_CLIENTS);
+              if (saved) {
+                const list: AgencyClient[] = JSON.parse(saved);
+                const updatedList = list.map((c) => (c.id === updated.id ? updated : c));
+                localStorage.setItem(LOCAL_STORAGE_CUSTOM_CLIENTS, JSON.stringify(updatedList));
+              }
+            } catch {}
+
+            // Save client-to-logo mapping
+            saveClientLogoMapping(updated.id, updated.name, res);
+
+            // Save to persistent logos gallery
+            const newAsset: ClientLogoAsset = {
+              id: `logo-${Date.now()}`,
+              clientId: updated.id,
+              clientName: updated.name,
+              logoUrl: res,
+              createdAt: new Date().toISOString(),
+              fileName: file.name,
+              fileSize: `${Math.round(file.size / 1024)} KB`,
+            };
+            saveClientLogoDB(newAsset).catch(console.warn);
+            setSavedLogos((prev) => [newAsset, ...prev.filter((l) => l.logoUrl !== res)]);
           }
         }
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  const handleAssignSavedLogo = (logoAsset: ClientLogoAsset) => {
+    if (!activeClientPreview) return;
+    const res = logoAsset.logoUrl;
+    const updated = {
+      ...activeClientPreview,
+      logo_url: res,
+    };
+    setActiveClientPreview(updated);
+    setClients((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+    saveClientLogoMapping(updated.id, updated.name, res);
+    onUpdateBrand('logo', res);
+
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_CUSTOM_CLIENTS);
+      if (saved) {
+        const list: AgencyClient[] = JSON.parse(saved);
+        const updatedList = list.map((c) => (c.id === updated.id ? updated : c));
+        localStorage.setItem(LOCAL_STORAGE_CUSTOM_CLIENTS, JSON.stringify(updatedList));
+      }
+    } catch {}
+  };
+
+  const handleUpdateClientLanguage = (client: AgencyClient, lang: 'es' | 'pt' | 'en') => {
+    const updated = { ...client, language: lang };
+    setActiveClientPreview(updated);
+    setClients((prev) => prev.map((c) => (c.id === client.id ? updated : c)));
+
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_CUSTOM_CLIENTS);
+      if (saved) {
+        const list: AgencyClient[] = JSON.parse(saved);
+        const updatedList = list.map((c) => (c.id === client.id ? updated : c));
+        localStorage.setItem(LOCAL_STORAGE_CUSTOM_CLIENTS, JSON.stringify(updatedList));
+      }
+    } catch {}
+  };
+
+  const handleRemoveClientLogo = (client: AgencyClient) => {
+    const updated = { ...client, logo_url: '' };
+    setActiveClientPreview(updated);
+    setClients((prev) => prev.map((c) => (c.id === client.id ? updated : c)));
+    removeClientLogoMapping(client.id, client.name);
+    onUpdateBrand('logo', '');
+
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_CUSTOM_CLIENTS);
+      if (saved) {
+        const list: AgencyClient[] = JSON.parse(saved);
+        const updatedList = list.map((c) => (c.id === client.id ? updated : c));
+        localStorage.setItem(LOCAL_STORAGE_CUSTOM_CLIENTS, JSON.stringify(updatedList));
+      }
+    } catch {}
   };
 
   if (!isOpen) return null;
@@ -450,6 +584,50 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
 
               <div>
                 <label className="text-xs font-bold text-slate-300 block mb-1">
+                  Idioma Predeterminado de Publicación
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setNewClientLanguage('es')}
+                    className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl text-xs font-bold border transition ${
+                      newClientLanguage === 'es'
+                        ? 'bg-rose-600 border-rose-500 text-white shadow-sm'
+                        : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800'
+                    }`}
+                  >
+                    <span>🇪🇸</span>
+                    <span>Español</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewClientLanguage('pt')}
+                    className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl text-xs font-bold border transition ${
+                      newClientLanguage === 'pt'
+                        ? 'bg-emerald-600 border-emerald-500 text-white shadow-sm'
+                        : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800'
+                    }`}
+                  >
+                    <span>🇧🇷</span>
+                    <span>Português</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewClientLanguage('en')}
+                    className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl text-xs font-bold border transition ${
+                      newClientLanguage === 'en'
+                        ? 'bg-blue-600 border-blue-500 text-white shadow-sm'
+                        : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800'
+                    }`}
+                  >
+                    <span>🇺🇸</span>
+                    <span>English</span>
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-300 block mb-1">
                   Usuario de Instagram
                 </label>
                 <input
@@ -621,14 +799,16 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
                       >
                         <div className="flex items-center gap-3 min-w-0">
                           {client.logo_url ? (
-                            <img
-                              src={client.logo_url}
-                              alt={client.name || 'Cliente'}
-                              className="w-9 h-9 rounded-xl object-contain bg-slate-950 border border-slate-700 shrink-0"
-                            />
+                            <div className="w-10 h-10 rounded-xl bg-slate-950 border border-slate-700/80 flex items-center justify-center p-1 shrink-0 overflow-hidden shadow-sm">
+                              <img
+                                src={client.logo_url}
+                                alt={client.name || 'Cliente'}
+                                className="max-h-full max-w-full object-contain"
+                              />
+                            </div>
                           ) : (
                             <div
-                              className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-black text-white shrink-0 shadow-sm"
+                              className="w-10 h-10 rounded-xl flex items-center justify-center text-xs font-black text-white shrink-0 shadow-sm"
                               style={{
                                 backgroundColor: client.brand_color || '#e11d48',
                               }}
@@ -639,6 +819,9 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
                           <div className="min-w-0">
                             <h4 className="text-xs font-bold text-white truncate flex items-center gap-1.5">
                               <span>{client.name || 'Cliente'}</span>
+                              <span className="text-[10px] opacity-75 font-normal">
+                                {client.language === 'pt' ? '🇧🇷' : client.language === 'en' ? '🇺🇸' : '🇪🇸'}
+                              </span>
                               {isSelected && (
                                 <span className="w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-emerald-950" />
                               )}
@@ -676,14 +859,16 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
                   <div className="flex items-start justify-between gap-4 pb-4 border-b border-slate-800">
                     <div className="flex items-center gap-3.5">
                       {activeClientPreview.logo_url ? (
-                        <img
-                          src={activeClientPreview.logo_url}
-                          alt={activeClientPreview.name}
-                          className="w-14 h-14 rounded-2xl object-contain bg-slate-950 border border-slate-700 shadow-md p-1"
-                        />
+                        <div className="w-14 h-14 rounded-2xl bg-slate-950 border border-slate-700/80 shadow-md p-1.5 flex items-center justify-center shrink-0 overflow-hidden">
+                          <img
+                            src={activeClientPreview.logo_url}
+                            alt={activeClientPreview.name}
+                            className="max-h-full max-w-full object-contain filter drop-shadow-sm"
+                          />
+                        </div>
                       ) : (
                         <div
-                          className="w-14 h-14 rounded-2xl flex items-center justify-center text-xl font-black text-white shadow-lg"
+                          className="w-14 h-14 rounded-2xl flex items-center justify-center text-xl font-black text-white shadow-lg shrink-0"
                           style={{
                             backgroundColor: activeClientPreview.brand_color || '#e11d48',
                           }}
@@ -717,20 +902,145 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
                     </button>
                   </div>
 
-                  {/* Logo Uploader for Current Client */}
-                  <div className="bg-slate-950 p-3 rounded-2xl border border-slate-800 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2.5">
-                      <ImageIcon className="w-4 h-4 text-rose-400" />
-                      <div>
-                        <span className="text-xs font-bold text-slate-200 block">Logo de Marca</span>
-                        <span className="text-[10px] text-slate-400 block">Aparece en la esquina superior de cada slide</span>
+                  {/* Logo Management for Current Client */}
+                  <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-3.5">
+                        {/* Prominent Logo Preview Box */}
+                        <div className="w-24 h-16 sm:w-28 sm:h-16 rounded-xl bg-slate-900/90 border border-slate-700 flex items-center justify-center p-1.5 relative overflow-hidden shadow-inner shrink-0">
+                          {activeClientPreview.logo_url ? (
+                            <img
+                              src={activeClientPreview.logo_url}
+                              alt="Logo preview"
+                              className="max-h-full max-w-full object-contain filter drop-shadow-md"
+                            />
+                          ) : (
+                            <div className="flex flex-col items-center justify-center text-slate-500 text-[10px]">
+                              <ImageIcon className="w-5 h-5 mb-0.5 opacity-50" />
+                              <span>Sin logo</span>
+                            </div>
+                          )}
+                        </div>
+
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-slate-200">
+                              Logo Oficial de Marca
+                            </span>
+                            {activeClientPreview.logo_url && (
+                              <span className="text-[9px] bg-emerald-950 text-emerald-300 font-bold px-2 py-0.5 rounded-full border border-emerald-800/80 flex items-center gap-1">
+                                <Check className="w-2.5 h-2.5" /> Vinculado
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[11px] text-slate-400 block mt-0.5">
+                            {activeClientPreview.logo_url
+                              ? 'Este logo se dibuja automáticamente en cada diapositiva del carrusel'
+                              : 'Sube un archivo PNG transparente para estamparlo en el carrusel'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {activeClientPreview.logo_url && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveClientLogo(activeClientPreview)}
+                            className="p-2 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 border border-slate-800 transition text-xs flex items-center gap-1"
+                            title="Quitar logo de este cliente"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span className="text-[11px]">Quitar</span>
+                          </button>
+                        )}
+                        <label className="flex items-center gap-1.5 bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white text-xs font-bold px-3.5 py-2 rounded-xl cursor-pointer shadow-md transition transform active:scale-95">
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>{activeClientPreview.logo_url ? 'Cambiar Logo' : 'Subir Logo PNG'}</span>
+                          <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
+                        </label>
                       </div>
                     </div>
-                    <label className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-3 py-1.5 rounded-xl cursor-pointer border border-slate-700 transition">
-                      <Upload className="w-3.5 h-3.5 text-rose-400" />
-                      <span>{brand.logo || activeClientPreview.logo_url ? 'Cambiar Logo' : 'Subir Logo PNG'}</span>
-                      <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
-                    </label>
+
+                    {/* Quick Selector from Saved Logos Folder */}
+                    {savedLogos.length > 0 && (
+                      <div className="pt-2.5 border-t border-slate-800/80">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1.5">
+                            <FolderOpen className="w-3.5 h-3.5 text-rose-400" />
+                            Elegir logo guardado de tu carpeta de marcas:
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
+                          {savedLogos.map((logo) => {
+                            const isCurrent = activeClientPreview.logo_url === logo.logoUrl;
+                            return (
+                              <button
+                                key={logo.id}
+                                type="button"
+                                onClick={() => handleAssignSavedLogo(logo)}
+                                className={`flex items-center gap-2 p-1.5 pr-2.5 rounded-xl border transition text-left shrink-0 ${
+                                  isCurrent
+                                    ? 'bg-rose-950/60 border-rose-500 ring-1 ring-rose-500/50 text-rose-300'
+                                    : 'bg-slate-900 border-slate-800 hover:border-slate-700 text-slate-300'
+                                }`}
+                                title={`Asignar logo de ${logo.clientName}`}
+                              >
+                                <div className="w-8 h-8 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-center p-1 overflow-hidden shrink-0">
+                                  <img
+                                    src={logo.logoUrl}
+                                    alt={logo.clientName}
+                                    className="max-h-full max-w-full object-contain"
+                                  />
+                                </div>
+                                <div className="text-[11px] font-bold truncate max-w-[110px]">
+                                  {logo.clientName}
+                                </div>
+                                {isCurrent && <Check className="w-3 h-3 text-rose-400 ml-0.5" />}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Client Language Selector */}
+                  <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <Languages className="w-4 h-4 text-indigo-400" />
+                      <div>
+                        <span className="text-xs font-bold text-slate-200 block">
+                          Idioma Predeterminado de la Marca
+                        </span>
+                        <span className="text-[10px] text-slate-400 block">
+                          La IA redactará carruseles y copys en este idioma al seleccionarlo
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 bg-slate-900 p-1 rounded-xl border border-slate-800">
+                      {[
+                        { code: 'es', label: '🇪🇸 Español' },
+                        { code: 'pt', label: '🇧🇷 Português' },
+                        { code: 'en', label: '🇺🇸 English' },
+                      ].map(({ code, label }) => {
+                        const isCurrent = (activeClientPreview.language || 'es') === code;
+                        return (
+                          <button
+                            key={code}
+                            type="button"
+                            onClick={() => handleUpdateClientLanguage(activeClientPreview, code as 'es' | 'pt' | 'en')}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+                              isCurrent
+                                ? 'bg-indigo-600 text-white shadow-sm'
+                                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
 
                   {/* Info Pills */}
