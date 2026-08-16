@@ -28,6 +28,10 @@ import {
   setStoredAppLanguage,
   initClientLanguagesFromDB,
 } from './services/clientLanguageStorage';
+import {
+  getActiveWorkspaceDB,
+  saveActiveWorkspaceDB,
+} from './services/storageDb';
 import { apiTranslateCarousel } from './services/api';
 import { Header } from './components/Header';
 import { CanvasSlide } from './components/CanvasSlide';
@@ -134,7 +138,7 @@ export default function App() {
   });
   const [isTranslating, setIsTranslating] = useState<boolean>(false);
 
-  // Reconcile languages from IndexedDB on startup
+  // Reconcile languages and restore active workspace from IndexedDB on startup
   useEffect(() => {
     initClientLanguagesFromDB().then((mapping) => {
       if (selectedClient) {
@@ -143,6 +147,20 @@ export default function App() {
           setLanguage(custom);
           setSelectedClient((prev) => prev ? { ...prev, language: custom } : prev);
         }
+      }
+    }).catch(console.warn);
+
+    // Cargar automáticamente la mesa de trabajo completa con imágenes reales desde IndexedDB
+    getActiveWorkspaceDB().then((active) => {
+      if (active && active.slides && active.slides.length > 0) {
+        setSlides(active.slides);
+        if (active.brand) setBrand(active.brand);
+        if (active.brief) setBrief(active.brief);
+        if (active.targetAudience) setTargetAudience(active.targetAudience);
+        if (active.postMeta) setPostMeta(active.postMeta);
+        if (active.aspectRatio) setAspectRatio(active.aspectRatio);
+        if (active.documents && active.documents.length > 0) setDocuments(active.documents);
+        if (active.selectedClient) setSelectedClient(active.selectedClient);
       }
     }).catch(console.warn);
   }, []);
@@ -208,6 +226,16 @@ export default function App() {
     if (proj.aspectRatio) setAspectRatio(proj.aspectRatio);
     setEscenasPorDiapositiva({});
     setCurrentIndex(0);
+    saveActiveWorkspaceDB({
+      slides: proj.slides || slides,
+      brand: proj.brand || brand,
+      brief: proj.brief || brief,
+      targetAudience: proj.targetAudience || targetAudience,
+      postMeta: proj.postMeta || postMeta,
+      aspectRatio: proj.aspectRatio || aspectRatio,
+      documents,
+      selectedClient,
+    });
   };
 
   const handleCreateNewBlankProject = () => {
@@ -215,10 +243,33 @@ export default function App() {
     setBrief('');
     setEscenasPorDiapositiva({});
     setCurrentIndex(0);
+    saveActiveWorkspaceDB({
+      slides: INITIAL_DEFAULT_SLIDES,
+      brand,
+      brief: '',
+      targetAudience,
+      postMeta,
+      aspectRatio,
+      documents,
+      selectedClient,
+    });
   };
 
-  // Sync to LocalStorage
+  // Sync to IndexedDB (unlimited storage for HD base64 images from PC) and LocalStorage fallback
   useEffect(() => {
+    // 1. Guardar permanentemente en IndexedDB
+    saveActiveWorkspaceDB({
+      slides,
+      brand,
+      brief,
+      targetAudience,
+      postMeta,
+      aspectRatio,
+      documents,
+      selectedClient,
+    });
+
+    // 2. Respaldo ligero en LocalStorage
     try {
       localStorage.setItem(LOCAL_STORAGE_SLIDES_KEY, JSON.stringify(slides));
       localStorage.setItem(LOCAL_STORAGE_BRAND_KEY, JSON.stringify(brand));
@@ -228,7 +279,7 @@ export default function App() {
         localStorage.setItem(LOCAL_STORAGE_CLIENT_KEY, JSON.stringify(selectedClient));
       }
     } catch {}
-  }, [slides, brand, documents, postMeta, selectedClient]);
+  }, [slides, brand, brief, targetAudience, postMeta, aspectRatio, documents, selectedClient]);
 
   // Active slide safety check
   const currentSlide = slides[currentIndex] || slides[0] || INITIAL_DEFAULT_SLIDES[0];
