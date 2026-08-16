@@ -63,6 +63,7 @@ const ELEMENT_LABELS: Record<string, string> = {
   body: 'Cuerpo de Texto',
   cta: 'Llamado a la Acción',
   brandName: 'Nombre de Marca',
+  brandHandle: 'Usuario Instagram / Handle (@)',
   brandWeb: 'Sitio Web / Watermark',
   'quote-text': 'Cita / Testimonio',
   'quote-author': 'Autor de la Cita',
@@ -93,19 +94,22 @@ const getElementLabel = (key: string): string => {
   return key;
 };
 
+const isBrandKey = (key: string) => key === 'brandName' || key === 'brandWeb' || key === 'brandHandle';
+
 const getDefaultSizeForKey = (key: string): number => {
   if (key === 'stat-number') return 60;
   if (key === 'title' || key === 'cta-headline') return 22;
   if (key === 'quote-text') return 18;
   if (key === 'subtag' || key === 'comp-leftTitle' || key === 'comp-rightTitle' || key === 'stat-label' || key === 'body') return 13;
   if (key === 'cta' || key === 'cta-pill' || key === 'stat-subtext' || key === 'cta-subheadline' || key.startsWith('bullet-')) return 12;
-  if (key === 'comp-leftText' || key === 'comp-rightText' || key === 'quote-role' || key === 'brandWeb') return 11;
+  if (key === 'comp-leftText' || key === 'comp-rightText' || key === 'quote-role' || key === 'brandWeb' || key === 'brandHandle') return 11;
   if (key === 'badge' || key === 'comp-leftTag' || key === 'comp-rightTag') return 10;
   return 13;
 };
 
 const getDefaultColorForKey = (key: string, primaryColor: string): string => {
   if (key === 'subtag' || key === 'stat-number' || key === 'brandWeb') return primaryColor;
+  if (key === 'brandHandle') return '#94a3b8';
   if (key === 'quote-role') return '#fb7185';
   if (key === 'comp-leftTag') return '#f87171';
   if (key === 'comp-rightTag') return '#34d399';
@@ -269,7 +273,7 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
           {/* Font Family */}
           <select
             value={
-              (activeKey === 'brandName' || activeKey === 'brandWeb'
+              (isBrandKey(activeKey)
                 ? brand.textStyle?.[activeKey]?.fontFamily
                 : slide.textStyle?.[activeKey]?.fontFamily) || "'Montserrat', sans-serif"
             }
@@ -294,7 +298,7 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
           <div className="flex items-center gap-0.5 bg-slate-950 border border-slate-800 rounded-lg p-0.5 shrink-0">
             <button
               onClick={() => {
-                const cur = (activeKey === 'brandName' || activeKey === 'brandWeb'
+                const cur = (isBrandKey(activeKey)
                   ? brand.textStyle?.[activeKey]?.fontSize
                   : slide.textStyle?.[activeKey]?.fontSize) || getDefaultSizeForKey(activeKey);
                 onUpdateStyle(activeKey, { fontSize: Math.max(8, cur - 2) });
@@ -305,13 +309,13 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
               <Minimize2 className="w-3 h-3" />
             </button>
             <span className="px-1 font-mono text-[11px] font-bold text-slate-200 min-w-[28px] text-center">
-              {(activeKey === 'brandName' || activeKey === 'brandWeb'
+              {(isBrandKey(activeKey)
                 ? brand.textStyle?.[activeKey]?.fontSize
                 : slide.textStyle?.[activeKey]?.fontSize) || getDefaultSizeForKey(activeKey)}p
             </span>
             <button
               onClick={() => {
-                const cur = (activeKey === 'brandName' || activeKey === 'brandWeb'
+                const cur = (isBrandKey(activeKey)
                   ? brand.textStyle?.[activeKey]?.fontSize
                   : slide.textStyle?.[activeKey]?.fontSize) || getDefaultSizeForKey(activeKey);
                 onUpdateStyle(activeKey, { fontSize: Math.min(84, cur + 2) });
@@ -325,7 +329,7 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
 
           {/* Color Presets */}
           {(() => {
-            const currentColor = (activeKey === 'brandName' || activeKey === 'brandWeb'
+            const currentColor = (isBrandKey(activeKey)
               ? brand.textStyle?.[activeKey]?.color
               : slide.textStyle?.[activeKey]?.color) || getDefaultColorForKey(activeKey, primaryColor);
             return (
@@ -381,7 +385,7 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
           <div className="flex items-center gap-0.5 bg-slate-950 border border-slate-800 rounded-lg p-0.5 shrink-0">
             <button
               onClick={() => {
-                const cur = (activeKey === 'brandName' || activeKey === 'brandWeb'
+                const cur = (isBrandKey(activeKey)
                   ? brand.textStyle?.[activeKey]?.fontWeight
                   : slide.textStyle?.[activeKey]?.fontWeight) || 'normal';
                 onUpdateStyle(activeKey, { fontWeight: cur === 'bold' || cur === '800' || cur === '900' ? 'normal' : 'bold' });
@@ -393,7 +397,7 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
             </button>
             <button
               onClick={() => {
-                const cur = (activeKey === 'brandName' || activeKey === 'brandWeb'
+                const cur = (isBrandKey(activeKey)
                   ? brand.textStyle?.[activeKey]?.fontStyle
                   : slide.textStyle?.[activeKey]?.fontStyle) || 'normal';
                 onUpdateStyle(activeKey, { fontStyle: cur === 'italic' ? 'normal' : 'italic' });
@@ -408,7 +412,7 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
           {/* Outline / Sombra */}
           <button
             onClick={() => {
-              const cur = (activeKey === 'brandName' || activeKey === 'brandWeb'
+              const cur = (isBrandKey(activeKey)
                 ? brand.textStyle?.[activeKey]?.outline
                 : slide.textStyle?.[activeKey]?.outline);
               onUpdateStyle(activeKey, { outline: !cur, outlineColor: '#000000' });

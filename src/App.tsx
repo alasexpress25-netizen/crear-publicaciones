@@ -398,7 +398,7 @@ export default function App() {
   };
 
   const handleUpdateTextStyle = (key: string, stylePartial: Partial<TextStyleItem>) => {
-    if (key === 'brandName' || key === 'brandWeb') {
+    if (key === 'brandName' || key === 'brandWeb' || key === 'brandHandle') {
       setBrand((prev) => ({
         ...prev,
         textStyle: {
@@ -430,7 +430,7 @@ export default function App() {
   };
 
   const handleResetTextStyle = (key: string) => {
-    if (key === 'brandName' || key === 'brandWeb') {
+    if (key === 'brandName' || key === 'brandWeb' || key === 'brandHandle') {
       setBrand((prev) => {
         const textStyle = { ...(prev.textStyle || {}) };
         delete textStyle[key];
@@ -462,6 +462,9 @@ export default function App() {
     if (!key) return;
     if (key === 'badge' || key === 'subtag' || key === 'title' || key === 'body' || key === 'cta') {
       handleUpdateSlideField(key as keyof Slide, '');
+      setActiveElementKey(null);
+    } else if (key === 'brandHandle') {
+      handleUpdateBrand('handle', '');
       setActiveElementKey(null);
     } else if (key.startsWith('bullet-')) {
       const idx = parseInt(key.replace('bullet-', ''), 10);

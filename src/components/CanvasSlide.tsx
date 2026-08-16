@@ -161,6 +161,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
 
   const getDefaultsForElement = (key: string, pColor: string): React.CSSProperties => {
     if (key === 'brandName') return { color: '#e2e8f0', fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em' };
+    if (key === 'brandHandle') return { color: '#94a3b8', fontSize: '11px', fontWeight: 500, letterSpacing: '0.025em' };
     if (key === 'brandWeb') return { color: pColor, fontSize: '11px', fontWeight: 'bold' };
     if (key === 'badge') return { color: '#ffffff', fontSize: '10px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em' };
     if (key === 'subtag') return { color: pColor, fontSize: '13px', fontWeight: 'bold' };
@@ -235,7 +236,8 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
       styleObj.top = `${pos.top}%`;
       styleObj.transform = 'translate(-50%, -50%)';
       styleObj.zIndex = 30;
-      styleObj.width = styleObj.width || '85%';
+      const isInline = ['brandName', 'brandHandle', 'brandWeb', 'badge', 'cta', 'cta-pill', 'comp-leftTag', 'comp-rightTag', 'quote-author', 'quote-role'].includes(key) || key.startsWith('bullet-');
+      styleObj.width = styleObj.width || (isInline ? 'auto' : '85%');
     }
 
     return styleObj;
@@ -316,14 +318,16 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
       {/* Top Header Bar */}
       <div className="relative z-10 w-full p-5 sm:p-6 pb-2 flex items-center justify-between gap-3 border-b border-slate-800/50">
         <div
-          className={`flex items-center gap-2 cursor-pointer transition rounded-xl px-2 py-1 ${
+          className={`group relative flex items-center gap-2 cursor-pointer transition rounded-xl px-2 py-1 ${
             activeElementKey === 'brandName' ? 'ring-2 ring-rose-500 bg-slate-900/80' : 'hover:bg-slate-900/40'
           }`}
           onClick={(e) => {
             e.stopPropagation();
             onSelectElement('brandName');
           }}
+          style={getStyleFor('brandName')}
         >
+          {renderActiveControls('brandName')}
           {brand.logo ? (
             <img
               src={brand.logo}
@@ -336,7 +340,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
             />
           ) : (
             <div
-              className="rounded-lg flex items-center justify-center text-white font-black shadow-sm transition-all"
+              className="rounded-lg flex items-center justify-center text-white font-black shadow-sm transition-all shrink-0"
               style={{
                 backgroundColor: primaryColor,
                 width: `${brand.logoSize || 24}px`,
@@ -352,18 +356,33 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
             suppressContentEditableWarning
             onBlur={(e) => onUpdateBrand('name', e.currentTarget.innerText)}
             className="outline-none"
-            style={getStyleFor('brandName')}
           >
             {brand.name || 'LA VISUAL MK'}
           </span>
         </div>
 
-        <div className="flex items-center gap-1.5">
-          {brand.handle && (
-            <span className="text-slate-400 font-medium text-[11px] tracking-wide">
-              {brand.handle.startsWith('@') ? brand.handle : `@${brand.handle}`}
-            </span>
-          )}
+        <div
+          className={`group relative flex items-center gap-1.5 cursor-pointer transition rounded-xl px-2 py-1 ${
+            activeElementKey === 'brandHandle' ? 'ring-2 ring-rose-500 bg-slate-900/80' : 'hover:bg-slate-900/40'
+          }`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onSelectElement('brandHandle');
+          }}
+          style={getStyleFor('brandHandle')}
+        >
+          {renderActiveControls('brandHandle')}
+          <span
+            contentEditable
+            suppressContentEditableWarning
+            onBlur={(e) => {
+              const val = e.currentTarget.innerText.trim();
+              onUpdateBrand('handle', val.startsWith('@') ? val : (val ? `@${val}` : ''));
+            }}
+            className="outline-none tracking-wide"
+          >
+            {brand.handle ? (brand.handle.startsWith('@') ? brand.handle : `@${brand.handle}`) : '@lavisualmk'}
+          </span>
         </div>
       </div>
 
