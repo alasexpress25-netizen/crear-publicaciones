@@ -178,6 +178,23 @@ export default function App() {
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isSlideRewriteOpen, setIsSlideRewriteOpen] = useState(false);
 
+  // Concrete Scene Memory for Art Director (Paso B memory across carousel)
+  const [escenasPorDiapositiva, setEscenasPorDiapositiva] = useState<Record<string | number, string>>({});
+
+  const handleSaveConcreteScene = (slideKey: string | number, scene: string) => {
+    setEscenasPorDiapositiva((prev) => ({
+      ...prev,
+      [slideKey]: scene,
+    }));
+  };
+
+  const handleSaveAllConcreteScenes = (scenesMap: Record<string | number, string>) => {
+    setEscenasPorDiapositiva((prev) => ({
+      ...prev,
+      ...scenesMap,
+    }));
+  };
+
   // Load Saved Project Handler
   const handleLoadSavedProject = (proj: SavedCarouselProject) => {
     if (proj.slides && proj.slides.length > 0) setSlides(proj.slides);
@@ -186,12 +203,14 @@ export default function App() {
     if (proj.targetAudience) setTargetAudience(proj.targetAudience);
     if (proj.postMeta) setPostMeta(proj.postMeta);
     if (proj.aspectRatio) setAspectRatio(proj.aspectRatio);
+    setEscenasPorDiapositiva({});
     setCurrentIndex(0);
   };
 
   const handleCreateNewBlankProject = () => {
     setSlides(INITIAL_DEFAULT_SLIDES);
     setBrief('');
+    setEscenasPorDiapositiva({});
     setCurrentIndex(0);
   };
 
@@ -666,6 +685,7 @@ export default function App() {
   const handleApplyGeneratedCarousel = (newSlides: Slide[], newPostMeta?: CarouselPostMeta, _rationale?: string) => {
     if (newSlides && newSlides.length > 0) {
       const primaryCol = brand.primaryColor || '#e11d48';
+      setEscenasPorDiapositiva({});
       setSlides(newSlides.map((s, idx) => ({
         ...s,
         id: idx + 1,
@@ -845,10 +865,20 @@ export default function App() {
             </div>
             <MediaPanel
               slide={currentSlide}
+              slides={slides}
+              onUpdateAllSlides={setSlides}
               brief={brief}
               visualStyle={visualStyle}
               aspectRatio={aspectRatio}
               onUpdateSlide={handleUpdateSlidePartial}
+              client={selectedClient}
+              brand={brand}
+              targetAudience={targetAudience}
+              slideIndex={currentIndex}
+              totalSlides={slides.length}
+              escenasPorDiapositiva={escenasPorDiapositiva}
+              onSaveConcreteScene={handleSaveConcreteScene}
+              onSaveAllConcreteScenes={handleSaveAllConcreteScenes}
             />
           </div>
         ) : (

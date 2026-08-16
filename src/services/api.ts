@@ -99,13 +99,56 @@ export async function apiGenerateHooks(params: {
   return data.data.hooks || [];
 }
 
-export async function apiEnhanceImagePrompt(params: {
-  slideText: string;
+export interface EnhanceImagePromptResult {
+  enhancedPrompt: string;
+  mediaSearchKeywords?: string[];
+  artDirectionNotes: string;
+  alternativeConcepts?: { title: string; prompt: string }[];
+}
+
+/**
+ * PASO B — Director de Arte: Convierte una idea abstracta en UNA ESCENA CONCRETA (máx 25 palabras)
+ * con memoria del carrusel completo para evitar repetir sujeto, acción o entorno.
+ */
+export async function apiBuildConcreteScene(params: {
+  imageSuggestion: string;
   brief: string;
-  visualStyle: string;
-  isVideo: boolean;
-  aspect: string;
-}): Promise<{ enhancedPrompt: string; artDirectionNotes: string }> {
+  escenasYaUsadas: string[];
+}): Promise<string> {
+  const res = await fetch('/api/build-concrete-scene', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || `Error ${res.status} al construir escena concreta`);
+  }
+
+  const data = await res.json();
+  return data.data.escenaConcreta || '';
+}
+
+/**
+ * PASO C — Redactor de Prompt Técnico para Gemini / Imagen 3 / Veo / Nano Banana
+ * Toma la escena YA concreta y le agrega encuadre, cámara, luz, estilo visual y aspect ratio.
+ */
+export async function apiEnhanceImagePrompt(params: {
+  slide?: any;
+  escenaConcreta?: string;
+  slideText?: string;
+  slideIndex?: number;
+  totalSlides?: number;
+  clientInfo?: any;
+  brand?: any;
+  brief?: string;
+  targetAudience?: string;
+  visualStyle?: string;
+  artDirectionMode?: string;
+  isVideo?: boolean;
+  aspect?: string;
+}): Promise<EnhanceImagePromptResult> {
   const res = await fetch('/api/enhance-image-prompt', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -115,6 +158,39 @@ export async function apiEnhanceImagePrompt(params: {
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
     throw new Error(errorData.error || `Error ${res.status} al mejorar prompt`);
+  }
+
+  const data = await res.json();
+  return data.data;
+}
+
+export async function apiEnhanceAllImagePrompts(params: {
+  slides: any[];
+  clientInfo?: any;
+  brand?: any;
+  brief?: string;
+  targetAudience?: string;
+  visualStyle?: string;
+  artDirectionMode?: string;
+  isVideo?: boolean;
+  aspect?: string;
+}): Promise<{
+  slides: Array<{
+    slideIndex: number;
+    enhancedPrompt: string;
+    mediaSearchKeywords?: string[];
+    artDirectionNotes?: string;
+  }>;
+}> {
+  const res = await fetch('/api/enhance-all-image-prompts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || `Error ${res.status} al mejorar prompts de todo el carrusel`);
   }
 
   const data = await res.json();

@@ -284,9 +284,14 @@ REQUISITOS CRÍTICOS:
    - Usa la jerga o términos del sector para diferenciar este contenido de contenido genérico de novatos.
 3. DIAPOSITIVA FINAL (EL CIERRE / CTA):
    - Llamado a la acción inequívoco y natural para ${objective}.
-4. DIRECTOR DE MEDIOS & FONDOS VISUALES (STOCK & IA):
-   - Para CADA diapositiva, debes actuar como Director de Medios. Provee "mediaSearchKeywords": lista de 2 a 3 palabras clave EN INGLÉS ultra-precisas para buscar fondos fotográficos cinematográficos de stock en Pixabay (ej: ["luxury office", "confident executive", "dark workspace", "financial chart", "minimalist architecture"]).
-   - "imageSuggestion": Prompt detallado en español para dirección de arte o generación de IA.
+4. DIRECTOR DE MEDIOS & FONDOS VISUALES ESPECÍFICOS PARA CADA DIAPOSITIVA (STOCK & IA):
+   - ¡PROHIBIDO REPETIR PROMPTS O PALABRAS CLAVE ENTRE DIAPOSITIVAS!
+   - CADA DIAPOSITIVA ES UN ESCENARIO VISUAL DISTINTO:
+     * Slide 1: Gancho de alta tensión / emoción / duda / metáfora que frena el scroll.
+     * Slides intermedias: Problema específico, error en acción, datos, herramientas de trabajo, personas debatiendo o analizando el proceso del nicho.
+     * Slide final: Cierre, éxito, claridad, llamada a la acción o resultado satisfactorio.
+   - "imageSuggestion": Prompt fotográfico fotorrealista/cinematográfico ÚNICO y altamente personalizado para ESTA diapositiva, de 2 a 3 frases describiendo la escena, personajes, iluminación, colores y ambiente del rubro "${brand.name} / ${brief}". SIEMPRE terminar con "sin texto en la imagen, sin marcas de agua, fotorrealismo premium".
+   - "mediaSearchKeywords": 3 a 4 palabras clave en INGLÉS precisas para Pixabay acordes a la escena específica de esta diapositiva (ej: para Slide 1 de error: ["frustrated business owner", "dark office desk", "financial stress"]; para Slide de crecimiento: ["modern skyscraper interior", "confident professional", "sunset window"]).
 5. POST CAPTION & HASHTAGS:
    - Redactar el texto completo para el pie de foto de Instagram/LinkedIn con gancho de lectura, espaciado elegante y llamada a la acción.
    - Lista de 5-10 hashtags ultra-específicos del nicho (sin el caracter #, en minúsculas).
@@ -304,7 +309,7 @@ Devuelve EXCLUSIVAMENTE un JSON con esta estructura exacta:
       "body": "Cuerpo de 1 frase concisa o vacío si el título es autosuficiente",
       "cta": "Desliza para ver la verdad 👉",
       "bullets": [],
-      "imageSuggestion": "Descripción concreta de la escena visual/foto profesional para esta diapositiva",
+      "imageSuggestion": "Descripción concreta de la escena visual/foto profesional única para esta diapositiva",
       "mediaSearchKeywords": ["dark office", "businessman thinking", "cinematic lighting"]
     }
   ],
@@ -328,6 +333,50 @@ Devuelve EXCLUSIVAMENTE un JSON con esta estructura exacta:
       );
 
       const parsed = JSON.parse(response.text || "{}");
+
+      // Validate & guarantee 100% distinct prompts for every slide
+      if (parsed && Array.isArray(parsed.slides)) {
+        const seenPrompts = new Set<string>();
+        parsed.slides = parsed.slides.map((s: any, idx: number) => {
+          const slideNum = idx + 1;
+          const total = parsed.slides.length;
+          let promptText = (s.imageSuggestion || "").trim();
+
+          const headline = s.title || s.subtag || s.badge || `Diapositiva #${slideNum}`;
+          const isHook = slideNum === 1;
+          const isFinal = slideNum === total;
+
+          if (!promptText || seenPrompts.has(promptText.toLowerCase()) || promptText.length < 25) {
+            if (isHook) {
+              promptText = `Fotografía cinematográfica dramática de alto impacto para ${brief}. Persona profesional con expresión de profunda reflexión frente a un problema crucial en su negocio o trabajo, luz lateral de claroscuro, fondo de oficina moderna en desenfoque suave, sin texto en la imagen, sin tipografías, sin marcas de agua, fotorrealismo premium.`;
+            } else if (isFinal) {
+              promptText = `Fotografía publicitaria luminosa y triunfante para ${brief}. Profesional o cliente satisfecho en un entorno de éxito y claridad, luz natural cálida de atardecer, atmósfera de confianza y solución lograda, sin texto en la imagen, sin marcas de agua, 8k fotorrealista.`;
+            } else {
+              promptText = `Fotografía editorial fotorrealista capturando la acción de "${headline.slice(0, 60)}" en el rubro de ${brief}. Enfoque nítido en el proceso y detalles auténticos del oficio, iluminación equilibrada de estudio, sin texto en la imagen, sin tipografías, estilo publicitario de alta gama.`;
+            }
+          }
+          seenPrompts.add(promptText.toLowerCase());
+
+          let keywords = Array.isArray(s.mediaSearchKeywords) && s.mediaSearchKeywords.length > 0 ? s.mediaSearchKeywords : [];
+          if (keywords.length === 0) {
+            const baseWords = headline
+              .toLowerCase()
+              .replace(/[^\w\s]/g, '')
+              .split(' ')
+              .filter((w: string) => w.length > 3)
+              .slice(0, 3);
+            keywords = baseWords.length > 0 ? baseWords : (isHook ? ['business strategy', 'thinking', 'stress'] : isFinal ? ['success', 'handshake', 'growth'] : ['workspace', 'teamwork', 'analytics']);
+          }
+
+          return {
+            ...s,
+            id: slideNum,
+            imageSuggestion: promptText,
+            mediaSearchKeywords: keywords,
+          };
+        });
+      }
+
       res.json({ success: true, data: parsed });
     } catch (err: any) {
       console.error("Error generating carousel:", err);
@@ -483,7 +532,9 @@ ${JSON.stringify(slide, null, 2)}
 REGLAS:
 1. Conserva la misma estructura básica (badge, subtag, title, body, cta, bullets si aplica, comparison si aplica, stat si aplica, quote si aplica, ctaFinal si aplica) pero con textos totalmente renovados, más potentes y magnéticos.
 2. Mantén los títulos concisos y con impacto visual.
-3. Devuelve EXCLUSIVAMENTE un JSON con la estructura actualizada de la diapositiva:
+3. Genera un prompt fotográfico ("imageSuggestion") fotorrealista ÚNICO y adaptado al nuevo texto de esta diapositiva, terminando con "sin texto en la imagen, sin marcas de agua, fotorrealismo premium".
+4. Genera 3-4 palabras clave en inglés ("mediaSearchKeywords") para Pixabay acordes a esta escena.
+5. Devuelve EXCLUSIVAMENTE un JSON con la estructura actualizada de la diapositiva:
 {
   "badge": "...",
   "subtag": "...",
@@ -491,6 +542,8 @@ REGLAS:
   "body": "...",
   "cta": "...",
   "bullets": [...],
+  "imageSuggestion": "...",
+  "mediaSearchKeywords": ["keyword1", "keyword2", "keyword3"],
   "comparison": { ... }, // si la diapositiva original lo tenía
   "stat": { ... }, // si la diapositiva original lo tenía
   "quote": { ... }, // si la diapositiva original lo tenía
@@ -639,35 +692,172 @@ Devuelve EXCLUSIVAMENTE un JSON válido con la estructura exacta:
     }
   });
 
-  // 4. Enhance Image/Video Prompt with Art Director
+  // 4. PASO B — Director de Arte: Convierte una idea abstracta en UNA ESCENA CONCRETA (máx 25 palabras)
+  // con memoria del carrusel completo para evitar repetir sujeto, acción o entorno.
+  app.post("/api/build-concrete-scene", async (req, res) => {
+    try {
+      const {
+        imageSuggestion = "",
+        brief = "",
+        escenasYaUsadas = [],
+      } = req.body;
+
+      const escenasList = Array.isArray(escenasYaUsadas) && escenasYaUsadas.length > 0
+        ? `Estas son las escenas YA usadas en otras diapositivas de este mismo carrusel — tu escena nueva NO puede repetir el mismo sujeto, la misma acción ni el mismo entorno que ninguna de estas:\n${escenasYaUsadas.map((e: string, idx: number) => `${idx + 1}. ${e}`).join("\n")}`
+        : "No hay escenas previas registradas aún para este carrusel.";
+
+      const prompt = `Sos el "Director de Arte" de una agencia de marketing: tu único trabajo es convertir una idea ABSTRACTA de qué imagen poner en UNA ESCENA CONCRETA de una sola frase, en español, de máximo 25 palabras. Rubro/negocio real (ancla siempre a esto, nunca a una interpretación genérica del beneficio): ${brief || "Servicios profesionales"}. ${escenasList}
+
+Una escena concreta tiene SIEMPRE estas 4 partes en la misma frase: (1) un sujeto específico (no "una persona", sí "una vendedora" / "un cliente" / "el dueño del local"), (2) una acción específica y puntual (no "usando el producto", sí "entregando una bolsa en el mostrador"), (3) un entorno específico real de ese rubro (no "un lugar", sí "el mostrador del local" / "la vereda del gimnasio"), y (4) la prueba visual del beneficio (qué se ve en la imagen que demuestra, sin texto, que el beneficio es real).
+
+PROHIBIDO devolver algo abstracto tipo "representa la idea del ahorro" o "mostrar el producto de forma clara". PROHIBIDO usar clichés genéricos de banco de imágenes: apretón de manos de stock, gente sonriendo a cámara sin contexto, oficina con laptop sin relación al rubro, iconos o elementos flotantes. PROHIBIDO repetir el sujeto/acción/entorno de las escenas ya usadas listadas arriba.
+
+IDEA ABSTRACTA O CONTENIDO DE LA DIAPOSITIVA:
+"${imageSuggestion || brief || "Profesional trabajando en su rubro"}"
+
+Respondé SOLO con la escena final (una frase, sin comillas, sin explicaciones, sin prefijos tipo "Escena:").`;
+
+      const response = await executeWithFallback((ai, modelName) =>
+        ai.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: {
+            temperature: 0.5,
+          },
+        })
+      );
+
+      let escena = (response.text || "").trim();
+      escena = escena.replace(/^["'«“]|["'»”]$/g, '').replace(/^(Escena:\s*|Scene:\s*)/i, '').trim();
+
+      res.json({ success: true, data: { escenaConcreta: escena } });
+    } catch (err: any) {
+      console.error("Error building concrete scene:", err);
+      res.status(500).json({ error: err.message || "Error al construir escena concreta" });
+    }
+  });
+
+  // 5. PASO C — Redactor de Prompt Técnico para Gemini / Imagen 3 / Veo / Nano Banana
+  // Toma la escena YA concreta resuelta por el Director de Arte y le agrega encuadre, cámara, luz, estilo y aspect ratio.
   app.post("/api/enhance-image-prompt", async (req, res) => {
     try {
-      const { slideText, brief, visualStyle, isVideo, aspect = "4:5" } = req.body;
+      const {
+        slide,
+        escenaConcreta,
+        slideText: rawSlideText,
+        slideIndex = 1,
+        totalSlides = 5,
+        clientInfo,
+        brand,
+        brief,
+        targetAudience,
+        visualStyle = "Fotografía profesional con iluminación cinematográfica, paleta de colores moderna y coherente",
+        artDirectionMode = "photorealistic",
+        isVideo = false,
+        aspect = "4:5"
+      } = req.body;
+
+      // Extract rich text representation of the slide if slide object was passed
+      let compiledSlideContent = rawSlideText || "";
+      if (slide) {
+        const parts: string[] = [];
+        if (slide.badge) parts.push(`[Etiqueta / Badge]: ${slide.badge}`);
+        if (slide.subtag) parts.push(`[Subtítulo / Gancho]: ${slide.subtag}`);
+        if (slide.title) parts.push(`[Título Principal]: ${slide.title}`);
+        if (slide.body) parts.push(`[Cuerpo]: ${slide.body}`);
+        if (slide.bullets && slide.bullets.length > 0) parts.push(`[Puntos Clave / Bullets]: ${slide.bullets.join('; ')}`);
+        
+        // Handle specialized templates
+        if (slide.comparison) {
+          parts.push(`[Comparativa]: Lado A (${slide.comparison.leftTag || 'Antes'}): ${slide.comparison.leftTitle || ''} - ${slide.comparison.leftText || ''} VS Lado B (${slide.comparison.rightTag || 'Después'}): ${slide.comparison.rightTitle || ''} - ${slide.comparison.rightText || ''}`);
+        }
+        if (slide.stat) {
+          parts.push(`[Estadística / Cifra]: ${slide.stat.statNumber || ''} - ${slide.stat.statLabel || ''} (${slide.stat.statSubtext || ''})`);
+        }
+        if (slide.quote) {
+          parts.push(`[Cita / Testimonio]: "${slide.quote.quoteText || ''}" por ${slide.quote.authorName || ''} (${slide.quote.authorRole || ''})`);
+        }
+        if (slide.ctaFinal) {
+          parts.push(`[Cierre / CTA Final]: ${slide.ctaFinal.headline || ''} - ${slide.ctaFinal.subheadline || ''} | Acción: ${slide.ctaFinal.actionPill || ''}`);
+        }
+        if (slide.customTexts && slide.customTexts.length > 0) {
+          parts.push(`[Capas de texto adicionales]: ${slide.customTexts.map((c: any) => c.text).join(' | ')}`);
+        }
+        if (slide.cta) parts.push(`[Llamado]: ${slide.cta}`);
+        
+        compiledSlideContent = parts.join("\n");
+      }
+
+      const escenaMandatoria = escenaConcreta || rawSlideText || compiledSlideContent;
+
+      // Compile Client Dossier
+      const clientDetails = clientInfo ? `
+DATOS DEL CLIENTE / MARCA:
+- Nombre: ${clientInfo.name || brand?.name || 'Cliente'}
+- Rubro / Industria: ${clientInfo.industry || clientInfo.business_type || 'Servicios Profesionales'}
+- Público Objetivo: ${clientInfo.target_audience || targetAudience || 'Clientes potenciales'}
+- Propuesta / Oferta: ${Array.isArray(clientInfo.offers) ? clientInfo.offers.join(', ') : clientInfo.offers || 'Servicios especializados'}
+- Dolores que resuelve: ${Array.isArray(clientInfo.pain_points) ? clientInfo.pain_points.join(', ') : clientInfo.pain_points || ''}
+- Tono de Marca: ${clientInfo.tone || clientInfo.brand_voice || 'Profesional de alto valor'}
+` : `
+DATOS DE LA MARCA:
+- Nombre: ${brand?.name || 'Marca'} | Web: ${brand?.web || ''}
+- Público Objetivo: ${targetAudience || 'Profesionales y clientes ideales'}
+`;
 
       const prompt = `
-Actúa como Director de Arte Publicitario.
-Convierte los siguientes textos de una diapositiva en un PROMPT FOTOGRÁFICO REALISTA O DE VIDEO para generar la imagen de fondo perfecta.
+ACTÚA COMO UN REDACTOR TÉCNICO DE PROMPTS Y DIRECTOR DE FOTOGRAFÍA PUBLICITARIA SENIOR (para Gemini, Imagen 3, Veo, Midjourney).
+Tu objetivo es tomar una ESCENA CONCRETA ya definida y convertirla en un PROMPT FOTOGRÁFICO/CINEMATOGRÁFICO DE MÁXIMA CALIDAD para la DIAPOSITIVA #${slideIndex} (de un total de ${totalSlides}).
 
-TEXTO DE LA DIAPOSITIVA:
-${slideText}
+Escena concreta a representar (definida por el Director de Arte a partir de la estrategia del carrusel): ${escenaMandatoria}. Esta es la base obligatoria de la imagen, no la cambies por otra idea.
 
-NEGOCIO / RUBRO:
-${brief || "Negocio profesional"}
+${clientDetails}
 
-ESTILO VISUAL / ILUMINACIÓN SOLICITADO:
-${visualStyle || "Fotografía profesional con iluminación cinematográfica, paleta de colores moderna y coherente"}
+TEMA / BRIEF GENERAL DEL CARRUSEL:
+${brief || "Carrusel de marketing estratégico"}
 
-FORMATO: ${aspect} (${isVideo ? "Video en bucle de 4-6 segundos" : "Fotografía realista de alta definición"})
+CONTENIDO DE ESTA DIAPOSITIVA #${slideIndex}:
+"""
+${compiledSlideContent || "Diapositiva del carrusel"}
+"""
 
-REGLAS:
-- Describe una escena humana, auténtica y con significado real (NO un cliché genérico ni un apretón de manos de stock).
-- Encuadre, ángulo de cámara, iluminación, paleta cromática y atmósfera.
-- Terminar SIEMPRE con: "sin texto en la imagen, sin marcas de agua, sin logos, sin deformaciones anatómicas, estilo fotorrealista premium".
+ROL DE ESTA DIAPOSITIVA EN LA NARRATIVA:
+${
+  slideIndex === 1
+    ? "-> DIAPOSITIVA 1 (GANCHO / DETENER EL SCROLL): Momento de alta tensión, curiosidad, emoción fuerte o duda que frena el scroll."
+    : slideIndex === totalSlides
+    ? "-> DIAPOSITIVA FINAL (CIERRE / CTA / VICTORIA): Momento de claridad, solución, éxito, confianza, avance y llamado a la acción."
+    : "-> DIAPOSITIVA INTERMEDIA (VALOR / CONFLICTO / ANÁLISIS / PROCESO): Ejecución real, contraste, métrica, error o técnica del oficio."
+}
 
-Devuelve JSON:
+ESTILO VISUAL / ATMÓSFERA SOLICITADA:
+${visualStyle}
+Modo de Dirección de Arte: ${artDirectionMode}
+FORMATO: ${aspect} (${isVideo ? "Video en bucle cinematográfico de 4-6 segundos" : "Fotografía realista publicitaria de ultra alta definición"})
+
+REGLAS TÉCNICAS DE GENERACIÓN:
+1. Toma la ESCENA CONCRETA obligatoria y amplíala con detalles técnicos de: tipo de lente (ej: 35mm / 50mm f/1.8), encuadre, iluminación (luz natural de ventana, luz cenital, claroscuro), paleta de colores y ambiente fotorrealista.
+2. Composición equilibrada para asegurar espacio limpio donde el texto del carrusel superpuesto se lea nítidamente.
+3. Evita clichés de stock (no apretones de manos aislados, no personas sonriendo forzadamente a cámara sin contexto).
+4. Termina el prompt SIEMPRE con: "sin texto en la imagen, sin tipografías, sin marcas de agua, sin logos superpuestos, estilo fotorrealista premium, iluminación cinematográfica".
+5. Provee también 3 a 4 palabras clave en INGLÉS (mediaSearchKeywords) exactas y descriptivas para buscar imágenes reales de stock en Pixabay acordes a esta escena particular.
+6. Provee 2 conceptos visuales alternativos breves (uno metafórico/simbólico y uno de acción real).
+
+Devuelve EXCLUSIVAMENTE un JSON con:
 {
-  "enhancedPrompt": "Texto completo del prompt en español listo para copiar o generar...",
-  "artDirectionNotes": "Breve nota de por qué esta composición complementa el mensaje del texto"
+  "enhancedPrompt": "Prompt maestro completo en español para Gemini / Imagen 3 / Veo...",
+  "mediaSearchKeywords": ["specific english keyword 1", "keyword 2", "keyword 3", "keyword 4"],
+  "artDirectionNotes": "Explicación de 1-2 frases de cómo la escena representa fielmente el mensaje",
+  "alternativeConcepts": [
+    {
+      "title": "Metáfora Visual / Simbólico",
+      "prompt": "Descripción del concepto alternativo 1..."
+    },
+    {
+      "title": "Escena Humana / Acción Real",
+      "prompt": "Descripción del concepto alternativo 2..."
+    }
+  ]
 }
 `;
 
@@ -677,7 +867,7 @@ Devuelve JSON:
           contents: prompt,
           config: {
             responseMimeType: "application/json",
-            temperature: 0.6,
+            temperature: 0.65,
           },
         })
       );
@@ -687,6 +877,94 @@ Devuelve JSON:
     } catch (err: any) {
       console.error("Error enhancing image prompt:", err);
       res.status(500).json({ error: err.message || "Error al mejorar prompt" });
+    }
+  });
+
+  // 5. Enhance All Image Prompts for the Entire Carousel in One Go (Zero Repetition Guarantee)
+  app.post("/api/enhance-all-image-prompts", async (req, res) => {
+    try {
+      const {
+        slides = [],
+        clientInfo,
+        brand,
+        brief,
+        targetAudience,
+        visualStyle = "Fotografía profesional con iluminación cinematográfica, paleta de colores moderna y coherente",
+        artDirectionMode = "photorealistic",
+        isVideo = false,
+        aspect = "4:5",
+      } = req.body;
+
+      if (!Array.isArray(slides) || slides.length === 0) {
+        return res.status(400).json({ error: "No se proporcionaron diapositivas" });
+      }
+
+      const slidesSummary = slides.map((s, i) => {
+        const parts: string[] = [];
+        if (s.badge) parts.push(`Badge: ${s.badge}`);
+        if (s.subtag) parts.push(`Subtag: ${s.subtag}`);
+        if (s.title) parts.push(`Título: ${s.title}`);
+        if (s.body) parts.push(`Cuerpo: ${s.body}`);
+        if (s.bullets && s.bullets.length > 0) parts.push(`Bullets: ${s.bullets.join(', ')}`);
+        return `[DIAPOSITIVA #${i + 1} (${i === 0 ? 'Gancho inicial' : i === slides.length - 1 ? 'Cierre/CTA' : 'Desarrollo/Valor'})]:\n${parts.join(' | ')}`;
+      }).join("\n\n");
+
+      const clientDetails = clientInfo ? `
+CLIENTE / MARCA: ${clientInfo.name || brand?.name || 'Marca'}
+RUBRO / INDUSTRIA: ${clientInfo.industry || clientInfo.business_type || 'Servicios Profesionales'}
+PÚBLICO: ${clientInfo.target_audience || targetAudience || 'Clientes'}
+OFERTA: ${Array.isArray(clientInfo.offers) ? clientInfo.offers.join(', ') : clientInfo.offers || ''}
+      ` : `MARCA: ${brand?.name || 'Marca'} | AUDIENCIA: ${targetAudience || 'Profesionales'}`;
+
+      const prompt = `
+ACTÚA COMO DIRECTOR DE ARTE FOTOGRÁFICO PUBLICITARIO SENIOR.
+Diseña la dirección de arte visual completa para este carrusel de ${slides.length} diapositivas.
+
+¡REGLA FUNDAMENTAL DE ORO!:
+¡ESTÁ COMPLETAMENTE PROHIBIDO REPETIR PROMPTS, CONCEPTOS O PALABRAS CLAVE ENTRE DIAPOSITIVAS!
+CADA diapositiva DEBE tener una escena visual fotorrealista completamente DISTINTA y PERSONALIZADA según su texto específico:
+- Diapositiva 1 (Gancho): Tensión, conflicto, duda, metáfora visual o problema del cliente en su entorno.
+- Diapositivas intermedias: Proceso técnico real, personas debatiendo, herramientas del oficio, análisis de métricas o error en acción.
+- Diapositiva final: Victoria, solución, éxito, claridad o llamado a la acción.
+
+${clientDetails}
+TEMA GENERAL: ${brief || "Carrusel de marketing"}
+ESTILO VISUAL: ${visualStyle}
+MODO DE DIRECCIÓN: ${artDirectionMode}
+FORMATO: ${aspect} (${isVideo ? "Video bucle cinematográfico" : "Fotografía publicitaria de ultra alta definición"})
+
+CONTENIDO DE CADA DIAPOSITIVA:
+${slidesSummary}
+
+Devuelve EXCLUSIVAMENTE un JSON con:
+{
+  "slides": [
+    {
+      "slideIndex": 1,
+      "enhancedPrompt": "Prompt fotográfico cinematográfico completo en español de 2 a 3 frases para Diapositiva 1... sin texto en la imagen, sin marcas de agua, fotorrealismo premium",
+      "mediaSearchKeywords": ["english keyword 1", "keyword 2", "keyword 3"],
+      "artDirectionNotes": "Por qué esta composición visual representa exactamente el mensaje de la Diapositiva 1"
+    }
+  ]
+}
+`;
+
+      const response = await executeWithFallback((ai, modelName) =>
+        ai.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+            temperature: 0.65,
+          },
+        })
+      );
+
+      const parsed = JSON.parse(response.text || "{}");
+      res.json({ success: true, data: parsed });
+    } catch (err: any) {
+      console.error("Error enhancing all prompts:", err);
+      res.status(500).json({ error: err.message || "Error al mejorar prompts del carrusel" });
     }
   });
 
