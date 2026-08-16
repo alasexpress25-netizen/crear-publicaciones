@@ -17,6 +17,7 @@ import {
   renderSlideToCanvas,
   formatAllSlidesForCanva
 } from '../utils/exportUtils';
+import { safeAlert } from '../utils/notifications';
 import { CanvasSlide } from './CanvasSlide';
 import JSZip from 'jszip';
 import confetti from 'canvas-confetti';
@@ -93,7 +94,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       triggerConfetti();
     } catch (err) {
       console.error(err);
-      alert('Error al exportar la imagen de la diapositiva.');
+      safeAlert('Error al exportar la imagen de la diapositiva.');
     } finally {
       setIsExportingPng(false);
     }
@@ -193,7 +194,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       triggerConfetti();
     } catch (err) {
       console.error(err);
-      alert('Error al generar el archivo ZIP del carrusel.');
+      safeAlert('Error al generar el archivo ZIP del carrusel.');
     } finally {
       setIsExportingZip(false);
       setExportProgress('');
@@ -242,7 +243,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         triggerConfetti();
         onClose();
       } catch {
-        alert('Archivo de proyecto inválido.');
+        safeAlert('Archivo de proyecto inválido.');
       }
     };
     reader.readAsText(file);

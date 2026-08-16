@@ -43,8 +43,10 @@ import { HookOptimizerModal } from './components/HookOptimizerModal';
 import { PostCaptionModal } from './components/PostCaptionModal';
 import { ExportModal } from './components/ExportModal';
 import { ClientSelectorModal } from './components/ClientSelectorModal';
+import { safeAlert, safeConfirm } from './utils/notifications';
 import { ProjectsManagerModal } from './components/ProjectsManagerModal';
 import { SlideAiRewriteModal } from './components/SlideAiRewriteModal';
+import { FloatingMediaModal } from './components/FloatingMediaModal';
 
 const LOCAL_STORAGE_SLIDES_KEY = 'lavisualmk_carousel_slides_v3';
 const LOCAL_STORAGE_BRAND_KEY = 'lavisualmk_carousel_brand_v3';
@@ -177,6 +179,7 @@ export default function App() {
   const [isPostCaptionOpen, setIsPostCaptionOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isSlideRewriteOpen, setIsSlideRewriteOpen] = useState(false);
+  const [isMediaPopupOpen, setIsMediaPopupOpen] = useState(false);
 
   // Concrete Scene Memory for Art Director (Paso B memory across carousel)
   const [escenasPorDiapositiva, setEscenasPorDiapositiva] = useState<Record<string | number, string>>({});
@@ -353,7 +356,6 @@ export default function App() {
 
   const handleUpdateSlideAccentColor = (color: string) => {
     handleUpdateSlideField('accentColor', color);
-    setBrand((prev) => ({ ...prev, primaryColor: color }));
   };
 
   const handleUpdateComparison = (partial: Partial<ComparisonData>) => {
@@ -566,11 +568,11 @@ export default function App() {
     });
   };
 
-  const handleAddBullet = () => {
+  const handleAddBullet = (customText?: string) => {
     setSlides((prev) => {
       const copy = [...prev];
       if (!copy[currentIndex]) return prev;
-      const bullets = [...(copy[currentIndex].bullets || []), 'Nuevo punto clave destacado'];
+      const bullets = [...(copy[currentIndex].bullets || []), customText || 'Nuevo punto clave destacado'];
       copy[currentIndex] = { ...copy[currentIndex], bullets };
       return copy;
     });
@@ -632,7 +634,7 @@ export default function App() {
       }
     } catch (err: any) {
       console.error(err);
-      alert('Error al traducir el carrusel: ' + (err.message || 'Intente nuevamente.'));
+      safeAlert('Error al traducir el carrusel: ' + (err.message || 'Intente nuevamente.'));
     } finally {
       setIsTranslating(false);
     }
@@ -688,7 +690,7 @@ export default function App() {
   };
 
   const handleResetCarousel = () => {
-    if (confirm('¿Deseas reiniciar el carrusel a la plantilla por defecto?')) {
+    if (safeConfirm('¿Deseas reiniciar el carrusel a la plantilla por defecto?')) {
       setSlides(INITIAL_DEFAULT_SLIDES);
       setCurrentIndex(0);
     }
@@ -987,18 +989,52 @@ export default function App() {
 
       {/* Persistent Bottom Tab Bar (Available on PC & Mobile) */}
       <MobileTabBar
-        activeTab={isGridView ? 'grid' : mobileTab}
+        activeTab={isGridView ? 'grid' : (isMediaPopupOpen && mobileTab === 'canvas') ? 'media' : mobileTab}
         onChangeTab={(tab) => {
+          if (tab === 'media') {
+            if (typeof window !== 'undefined' && window.innerWidth >= 1024) {
+              // PC / Desktop: Abrir modal flotante arrastrable para seguir viendo el editor en tiempo real
+              setIsMediaPopupOpen((prev) => !prev);
+              setIsGridView(false);
+              setMobileTab('canvas');
+              return;
+            }
+          }
           if (tab === 'grid') {
             setIsGridView(true);
             setMobileTab('grid');
+            setIsMediaPopupOpen(false);
           } else {
             setIsGridView(false);
             setMobileTab(tab);
+            if (tab === 'canvas' && typeof window !== 'undefined' && window.innerWidth >= 1024) {
+              // Keep canvas active
+            }
           }
         }}
         onOpenProjects={() => setIsProjectsOpen(true)}
         onOpenExport={() => setIsExportOpen(true)}
+      />
+
+      {/* Floating Draggable Media & Backgrounds Modal for PC */}
+      <FloatingMediaModal
+        isOpen={isMediaPopupOpen}
+        onClose={() => setIsMediaPopupOpen(false)}
+        slide={currentSlide}
+        slides={slides}
+        onUpdateSlide={handleUpdateSlidePartial}
+        onUpdateAllSlides={setSlides}
+        brief={brief}
+        visualStyle={visualStyle}
+        aspectRatio={aspectRatio}
+        client={selectedClient}
+        brand={brand}
+        targetAudience={targetAudience}
+        slideIndex={currentIndex}
+        totalSlides={slides.length}
+        escenasPorDiapositiva={escenasPorDiapositiva}
+        onSaveConcreteScene={handleSaveConcreteScene}
+        onSaveAllConcreteScenes={handleSaveAllConcreteScenes}
       />
 
       {/* Strategic Modals */}

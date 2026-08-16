@@ -10,6 +10,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { AspectRatio, BrandInfo } from '../types';
+import { safeAlert } from '../utils/notifications';
 
 interface HeaderProps {
   brand: BrandInfo;
@@ -64,7 +65,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   const handleInstallClick = async () => {
     if (!installPrompt) {
-      alert('Para instalar en iPhone/iPad: toca el botón "Compartir" en Safari y selecciona "Agregar al inicio". En Android/PC: toca el menú de tres puntos y selecciona "Instalar aplicación".');
+      safeAlert('Para instalar en iPhone/iPad: toca el botón "Compartir" en Safari y selecciona "Agregar al inicio". En Android/PC: toca el menú de tres puntos y selecciona "Instalar aplicación".');
       return;
     }
     installPrompt.prompt();

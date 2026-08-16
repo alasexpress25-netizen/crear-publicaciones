@@ -23,6 +23,7 @@ import {
 import { MarketingDocument, BrandInfo, CarouselPostMeta } from '../types';
 import { AgencyClient } from '../services/supabase';
 import { apiGenerateCarousel } from '../services/api';
+import { safeAlert } from '../utils/notifications';
 
 interface AiPanelProps {
   brief: string;
@@ -106,7 +107,7 @@ export const AiPanel: React.FC<AiPanelProps> = ({
       setCopiedPost(true);
       setTimeout(() => setCopiedPost(false), 2000);
     } catch {
-      alert('Texto copiado al portapapeles.');
+      safeAlert('Texto copiado al portapapeles.');
     }
   };
 
@@ -114,7 +115,7 @@ export const AiPanel: React.FC<AiPanelProps> = ({
   const handleToggleDictation = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert('Tu navegador no soporta dictado por voz. Recomendamos usar Google Chrome o Microsoft Edge.');
+      safeAlert('Tu navegador no soporta dictado por voz. Recomendamos usar Google Chrome o Microsoft Edge.');
       return;
     }
 

@@ -28,6 +28,7 @@ import {
   Search
 } from 'lucide-react';
 import { Slide, BrandInfo, CarouselPostMeta, AspectRatio, SavedCarouselProject } from '../types';
+import { safeAlert, safeConfirm } from '../utils/notifications';
 import {
   getAllProjectsDB,
   saveProjectDB,
@@ -154,7 +155,7 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
 
   const handleDeleteLogoFromGallery = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm('¿Seguro que deseas eliminar este logo de la carpeta?')) return;
+    if (!safeConfirm('¿Seguro que deseas eliminar este logo de la carpeta?')) return;
     await deleteClientLogoDB(id);
     await loadLogosFromStorage();
   };
@@ -204,7 +205,7 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
       }
     } catch (err: any) {
       console.error(err);
-      alert(err.message || 'No se pudo vincular la carpeta.');
+      safeAlert(err.message || 'No se pudo vincular la carpeta.');
     }
   };
 
@@ -238,7 +239,7 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
       }
     } catch (err: any) {
       console.error(err);
-      alert('Error leyendo los archivos de la carpeta vinculada.');
+      safeAlert('Error leyendo los archivos de la carpeta vinculada.');
     } finally {
       setIsSyncingFolder(false);
     }
@@ -319,7 +320,7 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
 
   const handleDeleteProject = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm('¿Deseas eliminar este carrusel guardado de tu biblioteca?')) {
+    if (safeConfirm('¿Deseas eliminar este carrusel guardado de tu biblioteca?')) {
       await deleteProjectDB(id);
       const updated = projects.filter((p) => p.id !== id);
       setProjects(updated);
@@ -351,15 +352,15 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
           const unique = merged.filter((v, i, a) => a.findIndex(t => t.id === v.id) === i);
           await saveAllProjectsDB(unique);
           setProjects(unique);
-          alert(`¡${parsed.length} carruseles importados y guardados en tu disco!`);
+          safeAlert(`¡${parsed.length} carruseles importados y guardados en tu disco!`);
         } else if (parsed && parsed.slides) {
           // Es un solo proyecto
           await saveProjectDB(parsed);
           await loadProjectsFromStorage();
-          alert('¡Proyecto importado correctamente a tu biblioteca!');
+          safeAlert('¡Proyecto importado correctamente a tu biblioteca!');
         }
       } catch (err) {
-        alert('Archivo JSON no válido.');
+        safeAlert('Archivo JSON no válido.');
       }
     };
     reader.readAsText(file);
@@ -581,7 +582,7 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
 
             <button
               onClick={() => {
-                if (confirm('¿Deseas vaciar el lienzo y empezar un carrusel nuevo en blanco?')) {
+                if (safeConfirm('¿Deseas vaciar el lienzo y empezar un carrusel nuevo en blanco?')) {
                   onNewProject();
                   onClose();
                 }

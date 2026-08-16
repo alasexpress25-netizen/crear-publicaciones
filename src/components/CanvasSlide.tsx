@@ -39,7 +39,7 @@ interface CanvasSlideProps {
   onUpdateField: (field: keyof Slide, value: any) => void;
   onUpdateBullet: (index: number, value: string) => void;
   onDeleteBullet?: (index: number) => void;
-  onAddBullet?: () => void;
+  onAddBullet?: (customText?: string) => void;
   onUpdateBrand: (field: keyof BrandInfo, value: any) => void;
   onUpdateCustomText?: (id: string, text: string) => void;
   onDeleteCustomText?: (id: string) => void;
@@ -133,8 +133,24 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
 
   const isCardBoxTransparent = (key?: string) => {
     if (slide.hideCardBoxes) return true;
-    if (key && slide.textStyle?.[key]?.transparentBox) return true;
+    if (key && (slide.textStyle?.[key]?.transparentBox || slide.textStyle?.[key]?.backgroundColor === 'transparent')) return true;
     return false;
+  };
+
+  const getBadgeBg = (key: string = 'badge') => {
+    const custom = slide.textStyle?.[key];
+    if (custom?.transparentBox || custom?.backgroundColor === 'transparent') {
+      return 'transparent';
+    }
+    return custom?.backgroundColor || primaryColor;
+  };
+
+  const getCtaPillBg = () => {
+    const custom = slide.textStyle?.['cta-pill'];
+    if (custom?.transparentBox || custom?.backgroundColor === 'transparent') {
+      return 'transparent';
+    }
+    return custom?.backgroundColor || primaryColor;
   };
 
   const renderActiveControls = (key: string, label?: string) => {
@@ -230,22 +246,38 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
     if (custom.letterSpacing) styleObj.letterSpacing = custom.letterSpacing;
     if (custom.textTransform) styleObj.textTransform = custom.textTransform;
 
+    if (custom.backgroundColor !== undefined) {
+      styleObj.backgroundColor = custom.backgroundColor;
+      if (custom.backgroundColor === 'transparent') {
+        styleObj.borderColor = 'transparent';
+      } else {
+        styleObj.borderRadius = styleObj.borderRadius || '10px';
+      }
+    } else if (custom.transparentBox) {
+      styleObj.backgroundColor = 'transparent';
+      styleObj.borderColor = 'transparent';
+    }
+
     const shadowParts: string[] = [];
 
     // 1. Contorno de texto (Stroke / Outline)
     if (custom.outline) {
       const outCol = custom.outlineColor || '#000000';
       const outW = custom.outlineWidth || 2;
-      shadowParts.push(
-        `-${outW}px -${outW}px 0 ${outCol}`,
-        `0px -${outW}px 0 ${outCol}`,
-        `${outW}px -${outW}px 0 ${outCol}`,
-        `-${outW}px 0px 0 ${outCol}`,
-        `${outW}px 0px 0 ${outCol}`,
-        `-${outW}px ${outW}px 0 ${outCol}`,
-        `0px ${outW}px 0 ${outCol}`,
-        `${outW}px ${outW}px 0 ${outCol}`
-      );
+      const isTransparentColor = custom.color === 'transparent' || styleObj.color === 'transparent';
+      
+      if (!isTransparentColor) {
+        shadowParts.push(
+          `-${outW}px -${outW}px 0 ${outCol}`,
+          `0px -${outW}px 0 ${outCol}`,
+          `${outW}px -${outW}px 0 ${outCol}`,
+          `-${outW}px 0px 0 ${outCol}`,
+          `${outW}px 0px 0 ${outCol}`,
+          `-${outW}px ${outW}px 0 ${outCol}`,
+          `0px ${outW}px 0 ${outCol}`,
+          `${outW}px ${outW}px 0 ${outCol}`
+        );
+      }
       (styleObj as any).WebkitTextStroke = `${Math.max(1, outW * 0.8)}px ${outCol}`;
       (styleObj as any).paintOrder = 'stroke fill';
     }
@@ -496,7 +528,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                   suppressContentEditableWarning
                   onBlur={(e) => onUpdateField('badge', e.currentTarget.innerText)}
                   className="px-3 py-1 rounded-md inline-block outline-none shadow-md"
-                  style={{ backgroundColor: primaryColor }}
+                  style={{ backgroundColor: getBadgeBg('badge') }}
                 >
                   {slide.badge}
                 </span>
@@ -1121,7 +1153,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                   suppressContentEditableWarning
                   onBlur={(e) => onUpdateField('badge', e.currentTarget.innerText)}
                   className="px-3 py-1 rounded uppercase tracking-wider inline-block shadow outline-none"
-                  style={{ backgroundColor: primaryColor }}
+                  style={{ backgroundColor: getBadgeBg('badge') }}
                 >
                   {slide.badge || loc.stat.badge}
                 </span>
@@ -1405,7 +1437,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                     suppressContentEditableWarning
                     onBlur={(e) => onUpdateField('badge', e.currentTarget.innerText)}
                     className="px-3 py-1 rounded-full uppercase tracking-wider inline-block shadow-sm outline-none"
-                    style={{ backgroundColor: primaryColor }}
+                    style={{ backgroundColor: getBadgeBg('badge') }}
                   >
                     {slide.badge || loc.ctaFinal.badge}
                   </span>
@@ -1492,7 +1524,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                 {renderActiveControls('cta-pill')}
                 <div
                   className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl shadow-lg"
-                  style={{ backgroundColor: primaryColor }}
+                  style={{ backgroundColor: getCtaPillBg() }}
                 >
                   <MessageCircle className="w-4 h-4 shrink-0" />
                   <span

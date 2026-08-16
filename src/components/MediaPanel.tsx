@@ -38,6 +38,7 @@ import { AgencyClient } from '../services/supabase';
 import { CURATED_STOCK_PHOTOS } from '../data/marketingPlaybooks';
 import { apiBuildConcreteScene, apiEnhanceImagePrompt, EnhanceImagePromptResult } from '../services/api';
 import { checkSceneSimilarity } from '../utils/sceneSimilarity';
+import { safeAlert } from '../utils/notifications';
 
 interface MediaPanelProps {
   slide: Slide;
@@ -256,7 +257,7 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
     if (!file) return;
 
     if (!file.type.startsWith('audio/')) {
-      alert('Por favor selecciona un archivo de audio válido (.mp3, .wav, .m4a, etc.)');
+      safeAlert('Por favor selecciona un archivo de audio válido (.mp3, .wav, .m4a, etc.)');
       return;
     }
 
@@ -501,7 +502,7 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
       }
     } catch (err: any) {
       console.error('Error generating all image prompts:', err);
-      alert(err.message || 'Error al generar dirección visual para todo el carrusel');
+      safeAlert(err.message || 'Error al generar dirección visual para todo el carrusel');
     } finally {
       setIsEnhancingAll(false);
       setEnhancingStatusText('');

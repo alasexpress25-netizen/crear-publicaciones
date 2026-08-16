@@ -23,6 +23,7 @@ import {
   Loader2,
   X,
   Blend,
+  Palette,
 } from 'lucide-react';
 import { Slide, BrandInfo, TextStyleItem, SlideLayoutTemplate } from '../types';
 
@@ -99,6 +100,7 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
 }) => {
   const primaryColor = slide.accentColor || brand.primaryColor || '#e11d48';
   const [openSubmenu, setOpenSubmenu] = useState<'outline' | 'shadow' | null>(null);
+  const [colorTargetMode, setColorTargetMode] = useState<'text' | 'fill'>('text');
 
   const currentItemStyle = activeKey
     ? isBrandKey(activeKey)
@@ -286,20 +288,30 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
           </div>
         )}
 
-        {/* Botón Objeto: Transparencia */}
-        {onToggleHideCardBoxes && (
-          <button
-            onClick={() => onToggleHideCardBoxes()}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[11px] font-bold transition shrink-0 shadow-sm ${
-              slide.hideCardBoxes
-                ? 'bg-amber-950/80 border-amber-500 text-amber-300 hover:bg-amber-900/90'
-                : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white'
-            }`}
-            title={slide.hideCardBoxes ? 'Objetos transparentes ACTIVADOS. Haz clic para restaurar fondos.' : 'Hacer que los objetos, recuadros y cajas sean transparentes para no tapar fotos.'}
-          >
-            <Blend className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-            <span>Objeto</span>
-          </button>
+        {/* Ancho del Recuadro o Elemento en Fila 1 */}
+        {activeKey && (
+          <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1 shrink-0 text-slate-300 shadow-sm" title="Ancho del recuadro o elemento (reduce el ancho para colocarlo a un lado y no tapar personas)">
+            <span className="text-[11px] font-bold text-slate-400">Ancho:</span>
+            <select
+              value={
+                (isBrandKey(activeKey)
+                  ? brand.textStyle?.[activeKey]?.width
+                  : slide.textStyle?.[activeKey]?.width) ?? 'auto'
+              }
+              onChange={(e) => {
+                const val = e.target.value === 'auto' ? undefined : Number(e.target.value);
+                onUpdateStyle(activeKey, { width: val });
+              }}
+              className="w-[64px] bg-slate-900 border border-slate-800 rounded px-1.5 py-0.5 text-xs text-slate-200 focus:outline-none focus:border-rose-500 cursor-pointer"
+            >
+              <option value="auto">Auto (100%)</option>
+              <option value="100">100% (Completo)</option>
+              <option value="80">80% (Ancho)</option>
+              <option value="65">65% (Medio)</option>
+              <option value="50">50% (Mitad / Lateral)</option>
+              <option value="40">40% (Compacto)</option>
+            </select>
+          </div>
         )}
 
       </div>
@@ -368,54 +380,195 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
             </button>
           </div>
 
-          {/* Paleta de Colores con Color de Acento Integrado */}
+          {/* Paleta de Colores con Selector de Modo (Texto / Relleno) */}
           {(() => {
-            const currentColor = (isBrandKey(activeKey)
+            const currentTextColor = (isBrandKey(activeKey)
               ? brand.textStyle?.[activeKey]?.color
               : slide.textStyle?.[activeKey]?.color) || getDefaultColorForKey(activeKey, primaryColor);
 
-            const paletteColors = [
+            const isBoxTransparent = Boolean(
+              currentItemStyle?.transparentBox || currentItemStyle?.backgroundColor === 'transparent'
+            );
+            const currentFillColor = isBoxTransparent
+              ? 'transparent'
+              : currentItemStyle?.backgroundColor || 'transparent';
+
+            const activeDisplayColor = colorTargetMode === 'text' ? currentTextColor : currentFillColor;
+
+            const textPaletteColors = [
+              'transparent',
+              '#ffffff',
               primaryColor,
-              ...PRESET_COLORS.filter((c) => c.toLowerCase() !== primaryColor.toLowerCase()),
+              '#38bdf8',
+              '#fbbf24',
+              '#10b981',
+              '#000000',
+            ];
+
+            const fillPaletteColors = [
+              'transparent',
+              '#e11d48',
+              '#0f172a',
+              '#000000',
+              '#ffffff',
+              '#38bdf8',
+              '#10b981',
+              '#fbbf24',
             ];
 
             return (
-              <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-lg px-1.5 py-1 shrink-0">
-                <span className="text-[10px] font-bold text-slate-400 mr-0.5">Color:</span>
-                {paletteColors.slice(0, 6).map((c, i) => {
-                  const isAccent = i === 0 || c.toLowerCase() === primaryColor.toLowerCase();
-                  const isSelected = currentColor.toLowerCase() === c.toLowerCase();
-                  return (
-                    <button
-                      key={c + i}
-                      onClick={() => onUpdateStyle(activeKey, { color: c })}
-                      className={`w-3.5 h-3.5 rounded-full border transition relative ${
-                        isSelected
-                          ? 'ring-2 ring-rose-500 scale-110 border-white'
-                          : 'border-slate-700 hover:scale-110'
-                      }`}
-                      style={{ backgroundColor: c }}
-                      title={isAccent ? `Color de Acento (${c})` : c}
-                    >
-                      {isAccent && (
-                        <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-rose-500 rounded-full border border-slate-950" title="Acento de marca" />
-                      )}
-                    </button>
-                  );
-                })}
-                <input
-                  type="color"
-                  value={currentColor.startsWith('#') && currentColor.length === 7 ? currentColor : '#ffffff'}
-                  onChange={(e) => {
-                    const newCol = e.target.value;
-                    onUpdateStyle(activeKey, { color: newCol });
-                    if (onUpdateSlideAccentColor && (activeKey === 'badge' || activeKey === 'subtag' || activeKey === 'cta-pill')) {
-                      onUpdateSlideAccentColor(newCol);
-                    }
-                  }}
-                  className="w-4 h-4 rounded cursor-pointer bg-transparent border-0 ml-0.5"
-                  title="Color personalizado (actualiza acento si editas badge o botón)"
-                />
+              <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 shrink-0">
+                {/* Badge selector: Texto vs Relleno */}
+                <div className="flex items-center bg-slate-900 border border-slate-800 rounded-md p-0.5 shrink-0">
+                  <button
+                    onClick={() => setColorTargetMode('text')}
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition ${
+                      colorTargetMode === 'text'
+                        ? 'bg-rose-600 text-white shadow-sm'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                    title="Modo: Cambiar color del texto seleccionado"
+                  >
+                    Texto
+                  </button>
+                  <button
+                    onClick={() => setColorTargetMode('fill')}
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition flex items-center gap-1 ${
+                      colorTargetMode === 'fill'
+                        ? 'bg-rose-600 text-white shadow-sm'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                    title="Modo: Cambiar color de fondo / relleno del recuadro del elemento"
+                  >
+                    <span
+                      className="w-1.5 h-1.5 rounded-full border border-white/30"
+                      style={{
+                        backgroundColor:
+                          currentFillColor === 'transparent' ? 'rgba(255,255,255,0.2)' : currentFillColor,
+                      }}
+                    />
+                    <span>Relleno</span>
+                  </button>
+                </div>
+
+                {/* Swatches de colores para Texto o Relleno */}
+                <div className="flex items-center gap-1">
+                  {colorTargetMode === 'text' ? (
+                    <>
+                      {textPaletteColors.map((c) => {
+                        const isTrans = c === 'transparent';
+                        const isSelected = currentTextColor.toLowerCase() === c.toLowerCase();
+                        if (isTrans) {
+                          return (
+                            <button
+                              key="text-trans"
+                              onClick={() => onUpdateStyle(activeKey, { color: 'transparent' })}
+                              className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center transition relative overflow-hidden ${
+                                isSelected
+                                  ? 'ring-2 ring-rose-500 scale-110 border-white bg-slate-900'
+                                  : 'border-slate-600 bg-slate-900 hover:scale-110'
+                              }`}
+                              title="Color de Texto Transparente (Hueco / Transparente)"
+                            >
+                              <span className="w-full h-0.5 bg-rose-500 rotate-45 transform origin-center" />
+                            </button>
+                          );
+                        }
+
+                        return (
+                          <button
+                            key={c}
+                            onClick={() => onUpdateStyle(activeKey, { color: c })}
+                            className={`w-3.5 h-3.5 rounded-full border transition relative ${
+                              isSelected
+                                ? 'ring-2 ring-rose-500 scale-110 border-white'
+                                : 'border-slate-700 hover:scale-110'
+                            }`}
+                            style={{ backgroundColor: c }}
+                            title={`Color de texto: ${c}`}
+                          />
+                        );
+                      })}
+                      <input
+                        type="color"
+                        value={
+                          currentTextColor.startsWith('#') && currentTextColor.length === 7
+                            ? currentTextColor
+                            : '#ffffff'
+                        }
+                        onChange={(e) => onUpdateStyle(activeKey, { color: e.target.value })}
+                        className="w-4 h-4 rounded cursor-pointer bg-transparent border-0 ml-0.5"
+                        title="Selector personalizado de color de texto"
+                      />
+                    </>
+                  ) : (
+                    <>
+                      {fillPaletteColors.map((c) => {
+                        const isTrans = c === 'transparent';
+                        const isSelected = isTrans
+                          ? isBoxTransparent
+                          : !isBoxTransparent && currentFillColor.toLowerCase() === c.toLowerCase();
+
+                        if (isTrans) {
+                          return (
+                            <button
+                              key="trans"
+                              onClick={() =>
+                                onUpdateStyle(activeKey, {
+                                  backgroundColor: 'transparent',
+                                  transparentBox: true,
+                                })
+                              }
+                              className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center transition relative overflow-hidden ${
+                                isSelected
+                                  ? 'ring-2 ring-rose-500 scale-110 border-white bg-slate-900'
+                                  : 'border-slate-600 bg-slate-900 hover:scale-110'
+                              }`}
+                              title="Relleno Transparente (Sin fondo)"
+                            >
+                              <span className="w-full h-0.5 bg-rose-500 rotate-45 transform origin-center" />
+                            </button>
+                          );
+                        }
+
+                        return (
+                          <button
+                            key={c}
+                            onClick={() =>
+                              onUpdateStyle(activeKey, {
+                                backgroundColor: c,
+                                transparentBox: false,
+                              })
+                            }
+                            className={`w-3.5 h-3.5 rounded-full border transition relative ${
+                              isSelected
+                                ? 'ring-2 ring-rose-500 scale-110 border-white'
+                                : 'border-slate-700 hover:scale-110'
+                            }`}
+                            style={{ backgroundColor: c }}
+                            title={`Relleno de fondo: ${c}`}
+                          />
+                        );
+                      })}
+                      <input
+                        type="color"
+                        value={
+                          currentFillColor.startsWith('#') && currentFillColor.length === 7
+                            ? currentFillColor
+                            : '#e11d48'
+                        }
+                        onChange={(e) =>
+                          onUpdateStyle(activeKey, {
+                            backgroundColor: e.target.value,
+                            transparentBox: false,
+                          })
+                        }
+                        className="w-4 h-4 rounded cursor-pointer bg-transparent border-0 ml-0.5"
+                        title="Selector personalizado de color de relleno"
+                      />
+                    </>
+                  )}
+                </div>
               </div>
             );
           })()}
@@ -443,44 +596,6 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
             >
               <AlignRight className="w-3 h-3" />
             </button>
-          </div>
-
-          {/* Ancho del Recuadro o Elemento */}
-          <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 shrink-0 text-slate-300" title="Ancho del recuadro o elemento (reduce el ancho para colocarlo a un lado y no tapar personas)">
-            <span className="text-[11px] font-bold text-slate-400">Ancho:</span>
-            {[
-              { label: '100%', val: 100 },
-              { label: '80%', val: 80 },
-              { label: '65%', val: 65 },
-              { label: '50%', val: 50 },
-            ].map((preset) => {
-              const curWidth = isBrandKey(activeKey)
-                ? brand.textStyle?.[activeKey]?.width
-                : slide.textStyle?.[activeKey]?.width;
-              const isSelected = curWidth === preset.val;
-              return (
-                <button
-                  key={preset.val}
-                  onClick={() => onUpdateStyle(activeKey, { width: preset.val })}
-                  className={`text-[10px] font-bold px-1.5 py-0.5 rounded transition ${
-                    isSelected
-                      ? 'bg-rose-600 text-white shadow-sm'
-                      : 'hover:bg-slate-800 text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  {preset.label}
-                </button>
-              );
-            })}
-            {((isBrandKey(activeKey) ? brand.textStyle?.[activeKey]?.width : slide.textStyle?.[activeKey]?.width)) && (
-              <button
-                onClick={() => onUpdateStyle(activeKey, { width: undefined })}
-                className="text-[9px] text-slate-500 hover:text-rose-300 hover:bg-slate-800 px-1 py-0.5 rounded transition font-bold"
-                title="Restablecer ancho automático"
-              >
-                Auto
-              </button>
-            )}
           </div>
 
           {/* Negrita / Cursiva */}
