@@ -61,16 +61,31 @@ export interface CtaFinalData {
   profileHandle?: string;
 }
 
+export interface CustomTextLayer {
+  id: string;
+  text: string;
+  type?: 'heading' | 'body' | 'badge' | 'tag' | 'cta';
+  fontSize?: number;
+  color?: string;
+  align?: 'left' | 'center' | 'right';
+  fontFamily?: string;
+  fontWeight?: string;
+  isUppercase?: boolean;
+  bgPill?: boolean;
+}
+
 export interface Slide {
   id: number;
   _uid?: string;
   layoutTemplate?: SlideLayoutTemplate;
+  contentAlign?: 'top' | 'center' | 'bottom';
   badge: string;
   subtag: string;
   title: string;
   body: string;
   cta: string;
   bullets?: string[];
+  customTexts?: CustomTextLayer[];
   comparison?: ComparisonData;
   stat?: BigStatData;
   quote?: QuoteData;

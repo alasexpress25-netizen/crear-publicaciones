@@ -394,6 +394,87 @@ export default function App() {
     }));
   };
 
+  const handleDeleteActiveElement = (key: string) => {
+    if (!key) return;
+    if (key === 'badge' || key === 'subtag' || key === 'title' || key === 'body' || key === 'cta') {
+      handleUpdateSlideField(key as keyof Slide, '');
+      setActiveElementKey(null);
+    } else if (key.startsWith('bullet-')) {
+      const idx = parseInt(key.replace('bullet-', ''), 10);
+      handleDeleteBullet(idx);
+      setActiveElementKey(null);
+    } else if (key.startsWith('custom-')) {
+      handleDeleteCustomText(key);
+      setActiveElementKey(null);
+    }
+  };
+
+  const handleAddCustomText = (type: 'heading' | 'body' | 'badge' = 'body') => {
+    const newId = `custom-${Date.now()}`;
+    const newLayer = {
+      id: newId,
+      text: type === 'heading' ? 'NUEVO SUBTÍTULO O TITULAR' : type === 'badge' ? 'ETIQUETA DESTACADA' : 'Escribe aquí tu nuevo texto o aclaración adicional.',
+      fontSize: type === 'heading' ? 20 : type === 'badge' ? 11 : 14,
+      color: type === 'badge' ? (currentSlide.accentColor || brand.primaryColor || '#e11d48') : '#ffffff',
+      align: 'left' as const,
+    };
+    setSlides((prev) => {
+      const copy = [...prev];
+      if (!copy[currentIndex]) return prev;
+      const customTexts = [...(copy[currentIndex].customTexts || []), newLayer];
+      copy[currentIndex] = { ...copy[currentIndex], customTexts };
+      return copy;
+    });
+    setActiveElementKey(newId);
+  };
+
+  const handleUpdateCustomText = (id: string, text: string) => {
+    setSlides((prev) => {
+      const copy = [...prev];
+      if (!copy[currentIndex]) return prev;
+      const customTexts = (copy[currentIndex].customTexts || []).map((ct) =>
+        ct.id === id ? { ...ct, text } : ct
+      );
+      copy[currentIndex] = { ...copy[currentIndex], customTexts };
+      return copy;
+    });
+  };
+
+  const handleDeleteCustomText = (id: string) => {
+    setSlides((prev) => {
+      const copy = [...prev];
+      if (!copy[currentIndex]) return prev;
+      const customTexts = (copy[currentIndex].customTexts || []).filter((ct) => ct.id !== id);
+      copy[currentIndex] = { ...copy[currentIndex], customTexts };
+      return copy;
+    });
+    if (activeElementKey === id) setActiveElementKey(null);
+  };
+
+  const handleDeleteBullet = (index: number) => {
+    setSlides((prev) => {
+      const copy = [...prev];
+      if (!copy[currentIndex]) return prev;
+      const bullets = (copy[currentIndex].bullets || []).filter((_, i) => i !== index);
+      copy[currentIndex] = { ...copy[currentIndex], bullets };
+      return copy;
+    });
+  };
+
+  const handleAddBullet = () => {
+    setSlides((prev) => {
+      const copy = [...prev];
+      if (!copy[currentIndex]) return prev;
+      const bullets = [...(copy[currentIndex].bullets || []), 'Nuevo punto clave destacado'];
+      copy[currentIndex] = { ...copy[currentIndex], bullets };
+      return copy;
+    });
+  };
+
+  const handleUpdateSlideContentAlign = (align: 'top' | 'center' | 'bottom') => {
+    handleUpdateSlideField('contentAlign', align);
+  };
+
   const handleAddSlide = () => {
     const primaryCol = brand.primaryColor || '#e11d48';
     const newSlide: Slide = {
@@ -576,6 +657,9 @@ export default function App() {
                   brand={brand}
                   onUpdateStyle={handleUpdateTextStyle}
                   onResetStyle={handleResetTextStyle}
+                  onDeleteActiveElement={handleDeleteActiveElement}
+                  onAddCustomText={handleAddCustomText}
+                  onUpdateSlideContentAlign={handleUpdateSlideContentAlign}
                   onUpdateSlideLayout={handleUpdateSlideLayout}
                   onUpdateSlideOverlayType={handleUpdateSlideOverlayType}
                   onUpdateSlideAccentColor={handleUpdateSlideAccentColor}
@@ -592,7 +676,13 @@ export default function App() {
                     onSelectElement={setActiveElementKey}
                     onUpdateField={handleUpdateSlideField}
                     onUpdateBullet={handleUpdateBullet}
+                    onDeleteBullet={handleDeleteBullet}
+                    onAddBullet={handleAddBullet}
                     onUpdateBrand={handleUpdateBrand}
+                    onUpdateCustomText={handleUpdateCustomText}
+                    onDeleteCustomText={handleDeleteCustomText}
+                    onAddCustomText={handleAddCustomText}
+                    onDeleteElement={handleDeleteActiveElement}
                     onUpdateComparison={handleUpdateComparison}
                     onUpdateStat={handleUpdateStat}
                     onUpdateQuote={handleUpdateQuote}

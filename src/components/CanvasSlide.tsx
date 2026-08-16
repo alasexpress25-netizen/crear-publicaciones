@@ -7,7 +7,8 @@ import {
   BigStatData,
   QuoteData,
   CtaFinalData,
-  SlideLayoutTemplate
+  SlideLayoutTemplate,
+  CustomTextLayer
 } from '../types';
 import {
   Quote,
@@ -18,7 +19,10 @@ import {
   Send,
   MessageCircle,
   Bookmark,
-  Heart
+  Heart,
+  X,
+  Trash2,
+  Plus
 } from 'lucide-react';
 
 interface CanvasSlideProps {
@@ -30,7 +34,13 @@ interface CanvasSlideProps {
   onSelectElement: (key: string) => void;
   onUpdateField: (field: keyof Slide, value: any) => void;
   onUpdateBullet: (index: number, value: string) => void;
+  onDeleteBullet?: (index: number) => void;
+  onAddBullet?: () => void;
   onUpdateBrand: (field: keyof BrandInfo, value: any) => void;
+  onUpdateCustomText?: (id: string, text: string) => void;
+  onDeleteCustomText?: (id: string) => void;
+  onAddCustomText?: (type?: 'heading' | 'body' | 'badge') => void;
+  onDeleteElement?: (key: string) => void;
   onUpdateComparison?: (partial: Partial<ComparisonData>) => void;
   onUpdateStat?: (partial: Partial<BigStatData>) => void;
   onUpdateQuote?: (partial: Partial<QuoteData>) => void;
@@ -46,7 +56,13 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
   onSelectElement,
   onUpdateField,
   onUpdateBullet,
+  onDeleteBullet,
+  onAddBullet,
   onUpdateBrand,
+  onUpdateCustomText,
+  onDeleteCustomText,
+  onAddCustomText,
+  onDeleteElement,
   onUpdateComparison,
   onUpdateStat,
   onUpdateQuote,
@@ -186,12 +202,21 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
             <img
               src={brand.logo}
               alt="Logo"
-              className="w-5 h-5 rounded-md object-cover border border-slate-700"
+              className="rounded-lg object-contain border border-slate-700/80 bg-slate-950/60 p-0.5 transition-all"
+              style={{
+                height: `${brand.logoSize || 24}px`,
+                maxWidth: `${Math.max(60, (brand.logoSize || 24) * 3)}px`,
+              }}
             />
           ) : (
             <div
-              className="w-5 h-5 rounded-md flex items-center justify-center text-[10px] text-white font-black shadow-sm"
-              style={{ backgroundColor: primaryColor }}
+              className="rounded-lg flex items-center justify-center text-white font-black shadow-sm transition-all"
+              style={{
+                backgroundColor: primaryColor,
+                width: `${brand.logoSize || 24}px`,
+                height: `${brand.logoSize || 24}px`,
+                fontSize: `${Math.max(9, Math.round((brand.logoSize || 24) * 0.45))}px`,
+              }}
             >
               {brand.name ? brand.name.charAt(0).toUpperCase() : '★'}
             </div>
@@ -218,16 +243,18 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
       </div>
 
       {/* Main Content Body: Adaptive by Layout Template */}
-      <div className="relative z-10 w-full flex-1 px-5 sm:px-6 py-3 flex flex-col justify-center overflow-y-auto scrollbar-none">
+      <div className={`relative z-10 w-full flex-1 px-5 sm:px-6 py-3 flex flex-col ${
+        slide.contentAlign === 'top' ? 'justify-start' : slide.contentAlign === 'bottom' ? 'justify-end' : 'justify-center'
+      } overflow-y-auto scrollbar-none`}>
         
         {/* ==================================================================== */}
         {/* LAYOUT 1: STANDARD (Title + Subtag + Body + Bullets) */}
         {/* ==================================================================== */}
         {layout === 'standard' && (
-          <div className="space-y-3 my-auto">
+          <div className="space-y-3 my-auto w-full">
             {slide.badge && (
               <div
-                className={`inline-block cursor-pointer transition rounded-lg ${
+                className={`group relative inline-block cursor-pointer transition rounded-lg ${
                   activeElementKey === 'badge' ? 'ring-2 ring-rose-500' : ''
                 }`}
                 onClick={(e) => {
@@ -245,12 +272,24 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                 >
                   {slide.badge}
                 </span>
+                {onDeleteElement && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeleteElement('badge');
+                    }}
+                    className="absolute -top-2 -right-2 bg-rose-600 hover:bg-rose-500 text-white rounded-full p-0.5 shadow-md opacity-0 group-hover:opacity-100 transition"
+                    title="Eliminar badge"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
               </div>
             )}
 
             {slide.subtag && (
               <div
-                className={`cursor-pointer transition rounded-md p-1 ${
+                className={`group relative cursor-pointer transition rounded-md p-1 ${
                   activeElementKey === 'subtag' ? 'ring-2 ring-rose-500 bg-slate-900/60' : 'hover:bg-slate-900/30'
                 }`}
                 onClick={(e) => {
@@ -267,11 +306,23 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                 >
                   {slide.subtag}
                 </p>
+                {onDeleteElement && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeleteElement('subtag');
+                    }}
+                    className="absolute top-1 right-1 bg-rose-600 hover:bg-rose-500 text-white rounded-full p-0.5 shadow-md opacity-0 group-hover:opacity-100 transition"
+                    title="Eliminar subtítulo"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
               </div>
             )}
 
             <div
-              className={`cursor-pointer transition rounded-xl p-1.5 ${
+              className={`group relative cursor-pointer transition rounded-xl p-1.5 ${
                 activeElementKey === 'title' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/40'
               }`}
               onClick={(e) => {
@@ -292,7 +343,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
 
             {slide.body && (
               <div
-                className={`cursor-pointer transition rounded-xl p-1.5 ${
+                className={`group relative cursor-pointer transition rounded-xl p-1.5 ${
                   activeElementKey === 'body' ? 'ring-2 ring-rose-500 bg-slate-900/60' : 'hover:bg-slate-900/30'
                 }`}
                 onClick={(e) => {
@@ -309,6 +360,18 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                 >
                   {slide.body}
                 </p>
+                {onDeleteElement && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeleteElement('body');
+                    }}
+                    className="absolute top-1 right-1 bg-rose-600 hover:bg-rose-500 text-white rounded-full p-0.5 shadow-md opacity-0 group-hover:opacity-100 transition"
+                    title="Eliminar cuerpo de texto"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
               </div>
             )}
 
@@ -317,7 +380,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                 {slide.bullets.map((bullet, idx) => (
                   <div
                     key={idx}
-                    className={`flex items-center gap-2.5 bg-slate-900/80 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-200 cursor-pointer shadow-sm transition ${
+                    className={`group relative flex items-center gap-2.5 bg-slate-900/80 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-200 cursor-pointer shadow-sm transition ${
                       activeElementKey === `bullet-${idx}` ? 'ring-2 ring-rose-500' : 'hover:border-slate-700'
                     }`}
                     onClick={(e) => {
@@ -340,8 +403,34 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                     >
                       {bullet}
                     </span>
+                    {onDeleteBullet && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteBullet(idx);
+                        }}
+                        className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-400 transition rounded"
+                        title="Eliminar este punto"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 ))}
+
+                {onAddBullet && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onAddBullet();
+                    }}
+                    className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400 hover:text-rose-400 transition px-2 py-1"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>+ Añadir Punto a la Lista</span>
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -662,6 +751,51 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                 </span>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Dynamic Custom Text Layers Added by User */}
+        {slide.customTexts && slide.customTexts.length > 0 && (
+          <div className="space-y-2 pt-2 border-t border-slate-800/40 mt-2">
+            {slide.customTexts.map((custom) => (
+              <div
+                key={custom.id}
+                className={`group relative cursor-pointer transition rounded-xl p-2 bg-slate-900/60 border border-slate-800/80 shadow-sm ${
+                  activeElementKey === custom.id ? 'ring-2 ring-rose-500 bg-slate-900/90' : 'hover:bg-slate-900/80'
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectElement(custom.id);
+                }}
+              >
+                <div
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => onUpdateCustomText?.(custom.id, e.currentTarget.innerText)}
+                  className="text-xs sm:text-sm text-slate-200 outline-none leading-relaxed"
+                  style={{
+                    ...getStyleFor(custom.id),
+                    color: custom.color || undefined,
+                    fontSize: custom.fontSize ? `${custom.fontSize}px` : undefined,
+                    textAlign: custom.align || 'left',
+                  }}
+                >
+                  {custom.text}
+                </div>
+                {onDeleteCustomText && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeleteCustomText(custom.id);
+                    }}
+                    className="absolute -top-2 -right-2 bg-rose-600 hover:bg-rose-500 text-white rounded-full p-1 shadow-md opacity-0 group-hover:opacity-100 transition"
+                    title="Eliminar capa de texto"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            ))}
           </div>
         )}
 

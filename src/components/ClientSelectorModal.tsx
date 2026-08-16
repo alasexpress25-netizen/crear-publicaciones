@@ -15,16 +15,16 @@ import {
   ArrowRight,
   Upload,
   Image as ImageIcon,
-  Edit2,
-  Trash2,
-  Info
+  AlertCircle
 } from 'lucide-react';
 import {
   AgencyClient,
   fetchAgencyClients,
   getSupabaseConfig,
   saveSupabaseConfig,
-  fetchClientContext
+  fetchClientContext,
+  testSupabaseConnection,
+  getFallbackAgencyClients
 } from '../services/supabase';
 import { BrandInfo } from '../types';
 
@@ -47,12 +47,15 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
   brand,
   onUpdateBrand,
 }) => {
-  const [clients, setClients] = useState<AgencyClient[]>([]);
+  const [clients, setClients] = useState<AgencyClient[]>(() => getFallbackAgencyClients());
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showConfig, setShowConfig] = useState(false);
   const [supabaseUrl, setSupabaseUrl] = useState('');
   const [supabaseKey, setSupabaseKey] = useState('');
+  const [supabaseTable, setSupabaseTable] = useState('socialbot_clients');
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [isTesting, setIsTesting] = useState(false);
   const [configSaved, setConfigSaved] = useState(false);
   const [activeClientPreview, setActiveClientPreview] = useState<AgencyClient | null>(null);
 
@@ -69,12 +72,42 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      loadClients();
       const cfg = getSupabaseConfig();
       setSupabaseUrl(cfg.url);
       setSupabaseKey(cfg.key);
+      setSupabaseTable(cfg.table || 'socialbot_clients');
+      loadClients();
     }
   }, [isOpen]);
+
+  const handleTestConnection = async () => {
+    setIsTesting(true);
+    setTestResult(null);
+    try {
+      const res = await testSupabaseConnection(supabaseUrl, supabaseKey, supabaseTable);
+      setTestResult(res);
+      if (res.success && res.sampleClients && res.sampleClients.length > 0) {
+        setClients((prev) => {
+          const combined = [...res.sampleClients!, ...prev];
+          return combined.filter((v, i, a) => a.findIndex((t) => t.id === v.id) === i);
+        });
+      }
+    } catch (e: any) {
+      setTestResult({ success: false, message: e.message || 'Error de red o conexión' });
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
+  const handleSaveConfig = () => {
+    saveSupabaseConfig(supabaseUrl, supabaseKey, supabaseTable);
+    setConfigSaved(true);
+    loadClients();
+    setTimeout(() => {
+      setConfigSaved(false);
+      setShowConfig(false);
+    }, 1200);
+  };
 
   const loadClients = async () => {
     setIsLoading(true);
@@ -88,47 +121,35 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
         if (saved) customClients = JSON.parse(saved);
       } catch {}
 
-      const combined = [...customClients, ...data];
-      // Deduplicate by ID
-      const uniqueClients = combined.filter((v, i, a) => a.findIndex(t => t.id === v.id) === i);
+      const combined = [...customClients, ...(Array.isArray(data) ? data : getFallbackAgencyClients())];
+      // Deduplicate safely by ID
+      const uniqueClients = combined.filter((v, i, a) => a.findIndex((t) => t.id === v.id) === i);
       setClients(uniqueClients);
 
       if (selectedClientId) {
         const found = uniqueClients.find((c) => c.id === selectedClientId);
         if (found) setActiveClientPreview(found);
         else if (uniqueClients.length > 0) setActiveClientPreview(uniqueClients[0]);
-      } else if (uniqueClients.length > 0 && !activeClientPreview) {
-        setActiveClientPreview(uniqueClients[0]);
+      } else if (uniqueClients.length > 0) {
+        setActiveClientPreview((prev) => prev || uniqueClients[0]);
       }
     } catch (err) {
-      console.error(err);
+      console.warn('Error loading clients, falling back to local list', err);
+      setClients(getFallbackAgencyClients());
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleSaveConfig = () => {
-    saveSupabaseConfig(supabaseUrl, supabaseKey);
-    setConfigSaved(true);
-    loadClients();
-    setTimeout(() => {
-      setConfigSaved(false);
-      setShowConfig(false);
-    }, 1500);
-  };
-
   const handleChooseClient = async (client: AgencyClient) => {
+    if (!client) return;
     setIsLoading(true);
     try {
-      // Safe context fetch with immediate timeout
-      const context = await Promise.race([
-        fetchClientContext(client.id),
-        new Promise((resolve) => setTimeout(() => resolve(null), 1500))
-      ]);
+      const context = await fetchClientContext(client.id);
       onSelectClient(client, context);
       onClose();
     } catch (err) {
-      console.error('Error selecting client context', err);
+      console.warn('Fallback selecting client without full context', err);
       onSelectClient(client);
       onClose();
     } finally {
@@ -155,7 +176,9 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
         `¿Por qué tu servicio es excelente pero tus ventas no despegan?`,
         `Los 3 errores más comunes en ${newClientBusiness || 'tu sector'}`,
         `Cómo conseguir resultados garantizados paso a paso`
-      ]
+      ],
+      pain_points: ['Poco alcance', 'Falta de clientes'],
+      offers: [newClientBusiness.trim() || 'Servicios principales'],
     };
 
     let customList: AgencyClient[] = [];
@@ -165,13 +188,15 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
     } catch {}
 
     const updatedCustom = [newClient, ...customList];
-    localStorage.setItem(LOCAL_STORAGE_CUSTOM_CLIENTS, JSON.stringify(updatedCustom));
+    try {
+      localStorage.setItem(LOCAL_STORAGE_CUSTOM_CLIENTS, JSON.stringify(updatedCustom));
+    } catch {}
 
     setClients((prev) => [newClient, ...prev]);
     setActiveClientPreview(newClient);
     setIsCreatingClient(false);
     
-    // Auto-select
+    // Auto-select newly created client
     handleChooseClient(newClient);
   };
 
@@ -183,8 +208,12 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
         if (ev.target?.result) {
           const res = ev.target.result as string;
           setNewClientLogo(res);
+          onUpdateBrand('logo', res);
           if (activeClientPreview) {
-            onUpdateBrand('logo', res);
+            setActiveClientPreview({
+              ...activeClientPreview,
+              logo_url: res,
+            });
           }
         }
       };
@@ -194,21 +223,29 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
 
   if (!isOpen) return null;
 
-  const filteredClients = clients.filter((c) => {
-    const q = searchQuery.toLowerCase();
-    return (
-      c.name.toLowerCase().includes(q) ||
-      (c.business_type && c.business_type.toLowerCase().includes(q)) ||
-      (c.industry && c.industry.toLowerCase().includes(q))
-    );
+  const safeClients = Array.isArray(clients) ? clients : [];
+  const filteredClients = safeClients.filter((c) => {
+    if (!c) return false;
+    const q = (searchQuery || '').toLowerCase().trim();
+    if (!q) return true;
+    const nameMatch = (c.name || '').toLowerCase().includes(q);
+    const busMatch = (c.business_type || '').toLowerCase().includes(q);
+    const indMatch = (c.industry || '').toLowerCase().includes(q);
+    return nameMatch || busMatch || indMatch;
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/85 backdrop-blur-md">
-      <div className="relative w-full max-w-4xl bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/85 backdrop-blur-md"
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-4xl bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
         
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/90">
+        <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-slate-800 bg-slate-900/95">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-rose-600 to-pink-600 flex items-center justify-center text-white shadow-lg shadow-rose-950/50">
               <Users className="w-5 h-5" />
@@ -223,7 +260,7 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-400">
-                Selecciona o crea el cliente para actualizar su logo, web, público objetivo y colores en todas las diapositivas
+                Selecciona o crea el cliente para sincronizar su logo, web, público objetivo y colores
               </p>
             </div>
           </div>
@@ -235,13 +272,17 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
               title="Agregar un cliente nuevo"
             >
               <Plus className="w-4 h-4" />
-              <span>Nuevo Cliente</span>
+              <span className="hidden sm:inline">Nuevo Cliente</span>
             </button>
 
             <button
               onClick={() => setShowConfig(!showConfig)}
-              className="p-2 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition text-xs font-semibold flex items-center gap-1.5 border border-slate-800"
-              title="Configuración de Supabase"
+              className={`p-2 rounded-xl transition text-xs font-semibold flex items-center gap-1.5 border ${
+                showConfig
+                  ? 'bg-rose-950/60 border-rose-700 text-rose-300'
+                  : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+              }`}
+              title="Configuración de conexión Supabase"
             >
               <Database className="w-4 h-4 text-rose-400" />
               <span className="hidden sm:inline">BD Supabase</span>
@@ -250,6 +291,7 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
             <button
               onClick={onClose}
               className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition"
+              title="Cerrar ventana"
             >
               <X className="w-5 h-5" />
             </button>
@@ -258,18 +300,18 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
 
         {/* Supabase Config Drawer if toggled */}
         {showConfig && (
-          <div className="p-5 bg-slate-950/90 border-b border-slate-800 space-y-3">
+          <div className="p-4 sm:p-5 bg-slate-950/95 border-b border-slate-800 space-y-3">
             <div className="flex items-center justify-between">
               <h4 className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
                 <Database className="w-4 h-4 text-rose-400" />
                 <span>Credenciales de Conexión Supabase</span>
               </h4>
-              <span className="text-[11px] text-slate-500">
-                Por defecto utiliza la base de datos central de La Visual MK
+              <span className="text-[11px] text-slate-400 hidden sm:inline">
+                Configura tu proyecto de Supabase (URL, Anon Key y Tabla)
               </span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
                 <label className="text-[11px] font-bold text-slate-400 block mb-1">SUPABASE URL:</label>
                 <input
@@ -291,9 +333,44 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
                   placeholder="eyJhbGci..."
                 />
               </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 block mb-1">TABLA DE CLIENTES:</label>
+                <input
+                  type="text"
+                  value={supabaseTable}
+                  onChange={(e) => setSupabaseTable(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 font-mono focus:border-rose-500 focus:outline-none"
+                  placeholder="socialbot_clients, clients o clientes"
+                />
+              </div>
             </div>
 
-            <div className="flex justify-end gap-2 pt-1">
+            {/* Test result feedback banner */}
+            {testResult && (
+              <div
+                className={`p-3 rounded-xl border text-xs flex items-center justify-between gap-3 ${
+                  testResult.success
+                    ? 'bg-emerald-950/60 border-emerald-800/80 text-emerald-300'
+                    : 'bg-rose-950/60 border-rose-800/80 text-rose-300'
+                }`}
+              >
+                <span>{testResult.message}</span>
+                {testResult.success && <Check className="w-4 h-4 text-emerald-400 shrink-0" />}
+              </div>
+            )}
+
+            <div className="flex items-center justify-between pt-1">
+              <button
+                type="button"
+                onClick={handleTestConnection}
+                disabled={isTesting}
+                className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700 text-xs font-bold px-3 py-2 rounded-xl transition"
+              >
+                {isTesting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Database className="w-3.5 h-3.5 text-rose-400" />}
+                <span>{isTesting ? 'Probando Conexión...' : 'Probar Conexión en Vivo'}</span>
+              </button>
+
               <button
                 onClick={handleSaveConfig}
                 className="flex items-center gap-1.5 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold px-4 py-2 rounded-xl transition"
@@ -308,7 +385,7 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
         {/* Modal Body */}
         {isCreatingClient ? (
           /* CREATE CLIENT FORM */
-          <form onSubmit={handleCreateCustomClient} className="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-900/90 scrollbar-thin">
+          <form onSubmit={handleCreateCustomClient} className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4 bg-slate-900/90 scrollbar-thin">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <h4 className="text-sm font-bold text-white flex items-center gap-2">
                 <Plus className="w-4 h-4 text-rose-500" />
@@ -488,11 +565,17 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
                 {isLoading ? (
                   <div className="py-12 flex flex-col items-center justify-center text-slate-400 gap-2">
                     <RefreshCw className="w-6 h-6 animate-spin text-rose-500" />
-                    <span className="text-xs">Cargando clientes...</span>
+                    <span className="text-xs">Sincronizando clientes...</span>
                   </div>
                 ) : filteredClients.length === 0 ? (
-                  <div className="py-12 text-center text-slate-500 text-xs">
+                  <div className="py-12 text-center text-slate-500 text-xs px-4">
                     No se encontraron clientes con "{searchQuery}".
+                    <button
+                      onClick={() => setIsCreatingClient(true)}
+                      className="mt-2 text-rose-400 underline block mx-auto text-xs"
+                    >
+                      + Crear este cliente ahora
+                    </button>
                   </div>
                 ) : (
                   filteredClients.map((client) => {
@@ -513,7 +596,7 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
                           {client.logo_url ? (
                             <img
                               src={client.logo_url}
-                              alt={client.name}
+                              alt={client.name || 'Cliente'}
                               className="w-9 h-9 rounded-xl object-contain bg-slate-950 border border-slate-700 shrink-0"
                             />
                           ) : (
@@ -523,12 +606,12 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
                                 backgroundColor: client.brand_color || '#e11d48',
                               }}
                             >
-                              {client.name.charAt(0).toUpperCase()}
+                              {(client.name || 'C').charAt(0).toUpperCase()}
                             </div>
                           )}
                           <div className="min-w-0">
                             <h4 className="text-xs font-bold text-white truncate flex items-center gap-1.5">
-                              <span>{client.name}</span>
+                              <span>{client.name || 'Cliente'}</span>
                               {isSelected && (
                                 <span className="w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-emerald-950" />
                               )}
@@ -578,13 +661,13 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
                             backgroundColor: activeClientPreview.brand_color || '#e11d48',
                           }}
                         >
-                          {activeClientPreview.name.charAt(0).toUpperCase()}
+                          {(activeClientPreview.name || 'C').charAt(0).toUpperCase()}
                         </div>
                       )}
                       <div>
                         <div className="flex items-center gap-2">
                           <h3 className="text-lg font-black text-white">
-                            {activeClientPreview.name}
+                            {activeClientPreview.name || 'Cliente'}
                           </h3>
                           <span
                             className="w-3.5 h-3.5 rounded-full border border-white/20"
@@ -613,12 +696,12 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
                       <ImageIcon className="w-4 h-4 text-rose-400" />
                       <div>
                         <span className="text-xs font-bold text-slate-200 block">Logo de Marca</span>
-                        <span className="text-[10px] text-slate-400 block">Aparece en la esquina superior izquierda de cada slide</span>
+                        <span className="text-[10px] text-slate-400 block">Aparece en la esquina superior de cada slide</span>
                       </div>
                     </div>
                     <label className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-3 py-1.5 rounded-xl cursor-pointer border border-slate-700 transition">
                       <Upload className="w-3.5 h-3.5 text-rose-400" />
-                      <span>{brand.logo ? 'Cambiar Logo' : 'Subir Logo PNG'}</span>
+                      <span>{brand.logo || activeClientPreview.logo_url ? 'Cambiar Logo' : 'Subir Logo PNG'}</span>
                       <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
                     </label>
                   </div>
@@ -664,7 +747,7 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
                   )}
 
                   {/* Suggested Topics / Angles for this client */}
-                  {activeClientPreview.topics && activeClientPreview.topics.length > 0 && (
+                  {Array.isArray(activeClientPreview.topics) && activeClientPreview.topics.length > 0 && (
                     <div className="space-y-2">
                       <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
                         <Flame className="w-3.5 h-3.5" />
@@ -696,10 +779,10 @@ export const ClientSelectorModal: React.FC<ClientSelectorModalProps> = ({
         )}
 
         {/* Modal Footer */}
-        <div className="px-6 py-3 border-t border-slate-800 bg-slate-900/90 flex items-center justify-between text-xs text-slate-400">
+        <div className="px-5 sm:px-6 py-3 border-t border-slate-800 bg-slate-900/95 flex items-center justify-between text-xs text-slate-400">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-500" />
-            <span>{clients.length} clientes disponibles (Supabase + locales)</span>
+            <span>{safeClients.length} clientes disponibles</span>
           </div>
           <button
             onClick={onClose}

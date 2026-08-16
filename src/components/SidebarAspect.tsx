@@ -168,6 +168,43 @@ export const SidebarAspect: React.FC<SidebarAspectProps> = ({
             <span>{brand.logo ? 'Cambiar Logo' : 'Subir Logo PNG'}</span>
             <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
           </label>
+
+          {/* Logo Size Slider */}
+          <div className="pt-1.5 border-t border-slate-800/70 space-y-1">
+            <div className="flex items-center justify-between text-[10px]">
+              <span className="font-bold text-slate-400">Tamaño del Logo:</span>
+              <span className="font-mono text-rose-400 font-bold">{brand.logoSize || 24}px</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="range"
+                min="16"
+                max="64"
+                step="2"
+                value={brand.logoSize || 24}
+                onChange={(e) => onUpdateBrand('logoSize', parseInt(e.target.value, 10))}
+                className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-rose-500"
+              />
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => onUpdateBrand('logoSize', Math.max(16, (brand.logoSize || 24) - 4))}
+                  className="p-1 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded-lg border border-slate-800 text-[10px] font-bold transition"
+                  title="Reducir tamaño"
+                >
+                  -
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onUpdateBrand('logoSize', Math.min(64, (brand.logoSize || 24) + 4))}
+                  className="p-1 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded-lg border border-slate-800 text-[10px] font-bold transition"
+                  title="Aumentar tamaño"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Web & Instagram input */}
