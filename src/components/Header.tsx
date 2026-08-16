@@ -5,6 +5,9 @@ import {
   Smartphone,
   Tv,
   Users,
+  Languages,
+  Sparkles,
+  Loader2,
 } from 'lucide-react';
 import { AspectRatio, BrandInfo } from '../types';
 
@@ -16,6 +19,9 @@ interface HeaderProps {
   selectedClientName?: string;
   selectedClientColor?: string;
   language?: 'es' | 'pt' | 'en';
+  onChangeLanguage?: (lang: 'es' | 'pt' | 'en') => void;
+  onTranslateCarousel?: (targetLang: 'es' | 'pt' | 'en') => void;
+  isTranslating?: boolean;
   onOpenClientSelector: () => void;
   onOpenProjects?: () => void;
   onOpenExport?: () => void;
@@ -30,6 +36,9 @@ export const Header: React.FC<HeaderProps> = ({
   selectedClientName,
   selectedClientColor,
   language = 'es',
+  onChangeLanguage,
+  onTranslateCarousel,
+  isTranslating = false,
   onOpenClientSelector,
   onResetCarousel,
 }) => {
@@ -156,6 +165,48 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Quick Tools */}
         <div className="flex items-center gap-2">
+
+          {/* Selector de Idioma y Traductor con IA en el Header */}
+          {onChangeLanguage && (
+            <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1 text-xs shadow-sm">
+              <Languages className="w-4 h-4 text-rose-400 shrink-0" />
+              <select
+                value={language || 'es'}
+                onChange={(e) => {
+                  const newLang = e.target.value as 'es' | 'pt' | 'en';
+                  onChangeLanguage(newLang);
+                }}
+                disabled={isTranslating}
+                className="bg-transparent text-white font-bold text-xs focus:outline-none cursor-pointer pr-1"
+                title="Cambiar idioma del proyecto"
+              >
+                <option value="es" className="bg-slate-950 text-white">🇪🇸 ES</option>
+                <option value="pt" className="bg-slate-950 text-white">🇧🇷 PT</option>
+                <option value="en" className="bg-slate-950 text-white">🇺🇸 EN</option>
+              </select>
+
+              {onTranslateCarousel && (
+                <button
+                  onClick={() => onTranslateCarousel(language || 'es')}
+                  disabled={isTranslating}
+                  className="flex items-center gap-1 bg-rose-600 hover:bg-rose-500 disabled:bg-rose-900 text-white px-2 py-0.5 rounded-lg text-[11px] font-bold transition shadow-sm"
+                  title={`Traducir todo el carrusel a ${language === 'pt' ? 'Portugués' : language === 'en' ? 'Inglés' : 'Español'}`}
+                >
+                  {isTranslating ? (
+                    <>
+                      <Loader2 className="w-3 h-3 animate-spin text-white" />
+                      <span className="hidden sm:inline">Traduciendo...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-3 h-3 text-white" />
+                      <span className="hidden sm:inline">Traducir</span>
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+          )}
           
           {/* PWA Install Button (When not yet running in standalone) */}
           {!isInstalled && (

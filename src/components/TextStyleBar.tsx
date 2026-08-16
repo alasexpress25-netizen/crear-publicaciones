@@ -22,6 +22,7 @@ import {
   Languages,
   Loader2,
   X,
+  Blend,
 } from 'lucide-react';
 import { Slide, BrandInfo, TextStyleItem, SlideLayoutTemplate } from '../types';
 
@@ -43,6 +44,7 @@ interface TextStyleBarProps {
   onUpdateSlideContentAlign?: (align: 'top' | 'center' | 'bottom') => void;
   onUpdateSlideLayout?: (layout: SlideLayoutTemplate) => void;
   onOpenAiRewriteSlide?: () => void;
+  onToggleHideCardBoxes?: () => void;
 }
 
 const PRESET_COLORS = [
@@ -92,6 +94,8 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
   onUpdateSlideOverlayType,
   onUpdateSlideAccentColor,
   onUpdateTextPos,
+  onUpdateSlideContentAlign,
+  onToggleHideCardBoxes,
 }) => {
   const primaryColor = slide.accentColor || brand.primaryColor || '#e11d48';
   const [openSubmenu, setOpenSubmenu] = useState<'outline' | 'shadow' | null>(null);
@@ -114,7 +118,7 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-2.5 sm:p-3 shadow-xl space-y-2.5">
       
       {/* ========================================================================= */}
-      {/* FILA 1: AÑADIR TEXTOS (+ Texto, Titular, Badge) + MOVER + ACENTO + IDIOMA */}
+      {/* FILA 1: AÑADIR TEXTOS (+ Texto, Titular, Badge) + MOVER + RECUADROS + ALINEACIÓN + ACENTO + IDIOMA */}
       {/* ========================================================================= */}
       <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 text-xs whitespace-nowrap">
         
@@ -148,54 +152,133 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
 
         {/* Posición / Mover texto libre */}
         {activeKey && (
-          <div className="flex items-center gap-0.5 bg-slate-950 border border-slate-800 rounded-xl px-2 py-1 text-slate-300 shrink-0 shadow-sm">
-            <Move className="w-3.5 h-3.5 text-rose-400 mr-1" />
+          <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl px-2 py-1 text-slate-300 shrink-0 shadow-sm">
+            <Move className="w-3.5 h-3.5 text-rose-400 mr-0.5 shrink-0" />
             <span className="text-[11px] font-bold text-slate-400 mr-0.5">Mover:</span>
-            <button
-              onClick={() => {
-                const currentPos = slide.textPos?.[activeKey] || { left: 50, top: 50 };
-                onUpdateTextPos?.(activeKey, { left: currentPos.left, top: Math.max(5, currentPos.top - 3) });
-              }}
-              className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition"
-              title="Mover arriba"
-            >
-              <ChevronUp className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={() => {
-                const currentPos = slide.textPos?.[activeKey] || { left: 50, top: 50 };
-                onUpdateTextPos?.(activeKey, { left: currentPos.left, top: Math.min(95, currentPos.top + 3) });
-              }}
-              className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition"
-              title="Mover abajo"
-            >
-              <ChevronDown className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={() => {
-                const currentPos = slide.textPos?.[activeKey] || { left: 50, top: 50 };
-                onUpdateTextPos?.(activeKey, { left: Math.max(5, currentPos.left - 3), top: currentPos.top });
-              }}
-              className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition"
-              title="Mover izquierda"
-            >
-              <ChevronLeft className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={() => {
-                const currentPos = slide.textPos?.[activeKey] || { left: 50, top: 50 };
-                onUpdateTextPos?.(activeKey, { left: Math.min(95, currentPos.left + 3), top: currentPos.top });
-              }}
-              className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition"
-              title="Mover derecha"
-            >
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
+
+            {/* Steppers de posición con 5% de salto libre horizontal y vertical */}
+            <div className="flex items-center gap-0.5 bg-slate-900 border border-slate-800 rounded-lg p-0.5">
+              <button
+                onClick={() => {
+                  const currentPos = slide.textPos?.[activeKey] || { left: 50, top: 50 };
+                  onUpdateTextPos?.(activeKey, { left: Math.max(0, currentPos.left - 5), top: currentPos.top });
+                }}
+                className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition"
+                title="Mover a la izquierda (←)"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => {
+                  const currentPos = slide.textPos?.[activeKey] || { left: 50, top: 50 };
+                  onUpdateTextPos?.(activeKey, { left: Math.min(100, currentPos.left + 5), top: currentPos.top });
+                }}
+                className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition"
+                title="Mover a la derecha (→)"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => {
+                  const currentPos = slide.textPos?.[activeKey] || { left: 50, top: 50 };
+                  onUpdateTextPos?.(activeKey, { left: currentPos.left, top: Math.max(0, currentPos.top - 5) });
+                }}
+                className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition"
+                title="Mover arriba (↑)"
+              >
+                <ChevronUp className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => {
+                  const currentPos = slide.textPos?.[activeKey] || { left: 50, top: 50 };
+                  onUpdateTextPos?.(activeKey, { left: currentPos.left, top: Math.min(100, currentPos.top + 5) });
+                }}
+                className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition"
+                title="Mover abajo (↓)"
+              >
+                <ChevronDown className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Presets Horizontales rápidos */}
+            <div className="flex items-center gap-0.5 bg-slate-900 border border-slate-800 rounded-lg p-0.5 text-[10px] font-bold">
+              <button
+                onClick={() => {
+                  const currentPos = slide.textPos?.[activeKey] || { left: 50, top: 50 };
+                  onUpdateTextPos?.(activeKey, { left: 25, top: currentPos.top });
+                }}
+                className="px-1.5 py-0.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition"
+                title="Colocar horizontalmente a la izquierda (X: 25%)"
+              >
+                Izq
+              </button>
+              <button
+                onClick={() => {
+                  const currentPos = slide.textPos?.[activeKey] || { left: 50, top: 50 };
+                  onUpdateTextPos?.(activeKey, { left: 50, top: currentPos.top });
+                }}
+                className="px-1.5 py-0.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition"
+                title="Centrar horizontalmente (X: 50%)"
+              >
+                Centro
+              </button>
+              <button
+                onClick={() => {
+                  const currentPos = slide.textPos?.[activeKey] || { left: 50, top: 50 };
+                  onUpdateTextPos?.(activeKey, { left: 75, top: currentPos.top });
+                }}
+                className="px-1.5 py-0.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition"
+                title="Colocar horizontalmente a la derecha (X: 75%)"
+              >
+                Der
+              </button>
+            </div>
+
+            {/* Presets Verticales rápidos */}
+            <div className="flex items-center gap-0.5 bg-slate-900 border border-slate-800 rounded-lg p-0.5 text-[10px] font-bold">
+              <button
+                onClick={() => {
+                  const currentPos = slide.textPos?.[activeKey] || { left: 50, top: 50 };
+                  onUpdateTextPos?.(activeKey, { left: currentPos.left, top: 22 });
+                }}
+                className="px-1.5 py-0.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition"
+                title="Colocar arriba (Y: 22%)"
+              >
+                Arriba
+              </button>
+              <button
+                onClick={() => {
+                  const currentPos = slide.textPos?.[activeKey] || { left: 50, top: 50 };
+                  onUpdateTextPos?.(activeKey, { left: currentPos.left, top: 50 });
+                }}
+                className="px-1.5 py-0.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition"
+                title="Centrar verticalmente (Y: 50%)"
+              >
+                Medio
+              </button>
+              <button
+                onClick={() => {
+                  const currentPos = slide.textPos?.[activeKey] || { left: 50, top: 50 };
+                  onUpdateTextPos?.(activeKey, { left: currentPos.left, top: 78 });
+                }}
+                className="px-1.5 py-0.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition"
+                title="Colocar abajo (Y: 78%)"
+              >
+                Abajo
+              </button>
+            </div>
+
+            {slide.textPos?.[activeKey] && (
+              <span className="text-[10px] font-mono text-slate-400 px-1 bg-slate-900 border border-slate-800 rounded">
+                X:{Math.round(slide.textPos[activeKey].left)}% Y:{Math.round(slide.textPos[activeKey].top)}%
+              </span>
+            )}
+
             {slide.textPos?.[activeKey] && (
               <button
                 onClick={() => onUpdateTextPos?.(activeKey, null)}
-                className="text-[9px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded font-bold ml-0.5 transition"
-                title="Restablecer posición por defecto"
+                className="text-[9px] bg-slate-800 hover:bg-rose-900 text-slate-300 hover:text-rose-200 px-1.5 py-0.5 rounded font-bold transition"
+                title="Restablecer posición original"
               >
                 Reset
               </button>
@@ -203,48 +286,20 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
           </div>
         )}
 
-        {/* Accent Color Dot & Picker (Acento a continuación de Mover) */}
-        <div className="flex items-center gap-1.5 bg-slate-950 px-2 py-1 rounded-xl border border-slate-800 shrink-0">
-          <span className="text-[11px] font-bold text-slate-400">Acento:</span>
-          <input
-            type="color"
-            value={primaryColor}
-            onChange={(e) => onUpdateSlideAccentColor?.(e.target.value)}
-            className="w-4 h-4 rounded cursor-pointer bg-transparent border-0"
-            title="Color de acento de la diapositiva"
-          />
-        </div>
-
-        {/* Selector de Idioma y Traductor (A continuación de Acento) */}
-        {onChangeLanguage && (
-          <div className="flex items-center gap-1 bg-slate-950 px-2 py-1 rounded-xl border border-slate-800 text-xs shrink-0">
-            <Languages className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-            <select
-              value={language || 'es'}
-              onChange={(e) => onChangeLanguage(e.target.value as any)}
-              className="bg-transparent text-slate-200 font-bold text-xs focus:outline-none cursor-pointer pr-0.5"
-              title="Seleccionar idioma"
-            >
-              <option value="es" className="bg-slate-900 text-white">ES</option>
-              <option value="pt" className="bg-slate-900 text-white">PT</option>
-              <option value="en" className="bg-slate-900 text-white">EN</option>
-            </select>
-
-            {onTranslateCarousel && (
-              <button
-                onClick={() => onTranslateCarousel(language || 'es')}
-                disabled={isTranslating}
-                className="p-1 hover:bg-slate-800 rounded text-rose-400 hover:text-rose-300 transition"
-                title={`Traducir carrusel a ${language === 'pt' ? 'Portugués' : language === 'en' ? 'Inglés' : 'Español'}`}
-              >
-                {isTranslating ? (
-                  <Loader2 className="w-3 h-3 animate-spin text-rose-400" />
-                ) : (
-                  <Sparkles className="w-3 h-3 text-rose-400" />
-                )}
-              </button>
-            )}
-          </div>
+        {/* Botón Objeto: Transparencia */}
+        {onToggleHideCardBoxes && (
+          <button
+            onClick={() => onToggleHideCardBoxes()}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[11px] font-bold transition shrink-0 shadow-sm ${
+              slide.hideCardBoxes
+                ? 'bg-amber-950/80 border-amber-500 text-amber-300 hover:bg-amber-900/90'
+                : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white'
+            }`}
+            title={slide.hideCardBoxes ? 'Objetos transparentes ACTIVADOS. Haz clic para restaurar fondos.' : 'Hacer que los objetos, recuadros y cajas sean transparentes para no tapar fotos.'}
+          >
+            <Blend className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <span>Objeto</span>
+          </button>
         )}
 
       </div>
@@ -313,30 +368,53 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
             </button>
           </div>
 
-          {/* Color Presets */}
+          {/* Paleta de Colores con Color de Acento Integrado */}
           {(() => {
             const currentColor = (isBrandKey(activeKey)
               ? brand.textStyle?.[activeKey]?.color
               : slide.textStyle?.[activeKey]?.color) || getDefaultColorForKey(activeKey, primaryColor);
+
+            const paletteColors = [
+              primaryColor,
+              ...PRESET_COLORS.filter((c) => c.toLowerCase() !== primaryColor.toLowerCase()),
+            ];
+
             return (
               <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-lg px-1.5 py-1 shrink-0">
-                {PRESET_COLORS.slice(0, 5).map((c) => (
-                  <button
-                    key={c}
-                    onClick={() => onUpdateStyle(activeKey, { color: c })}
-                    className={`w-3.5 h-3.5 rounded-full border transition ${
-                      currentColor.toLowerCase() === c.toLowerCase() ? 'ring-2 ring-rose-500 scale-110 border-white' : 'border-slate-700 hover:scale-110'
-                    }`}
-                    style={{ backgroundColor: c }}
-                    title={c}
-                  />
-                ))}
+                <span className="text-[10px] font-bold text-slate-400 mr-0.5">Color:</span>
+                {paletteColors.slice(0, 6).map((c, i) => {
+                  const isAccent = i === 0 || c.toLowerCase() === primaryColor.toLowerCase();
+                  const isSelected = currentColor.toLowerCase() === c.toLowerCase();
+                  return (
+                    <button
+                      key={c + i}
+                      onClick={() => onUpdateStyle(activeKey, { color: c })}
+                      className={`w-3.5 h-3.5 rounded-full border transition relative ${
+                        isSelected
+                          ? 'ring-2 ring-rose-500 scale-110 border-white'
+                          : 'border-slate-700 hover:scale-110'
+                      }`}
+                      style={{ backgroundColor: c }}
+                      title={isAccent ? `Color de Acento (${c})` : c}
+                    >
+                      {isAccent && (
+                        <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-rose-500 rounded-full border border-slate-950" title="Acento de marca" />
+                      )}
+                    </button>
+                  );
+                })}
                 <input
                   type="color"
                   value={currentColor.startsWith('#') && currentColor.length === 7 ? currentColor : '#ffffff'}
-                  onChange={(e) => onUpdateStyle(activeKey, { color: e.target.value })}
+                  onChange={(e) => {
+                    const newCol = e.target.value;
+                    onUpdateStyle(activeKey, { color: newCol });
+                    if (onUpdateSlideAccentColor && (activeKey === 'badge' || activeKey === 'subtag' || activeKey === 'cta-pill')) {
+                      onUpdateSlideAccentColor(newCol);
+                    }
+                  }}
                   className="w-4 h-4 rounded cursor-pointer bg-transparent border-0 ml-0.5"
-                  title="Color personalizado"
+                  title="Color personalizado (actualiza acento si editas badge o botón)"
                 />
               </div>
             );
@@ -365,6 +443,44 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
             >
               <AlignRight className="w-3 h-3" />
             </button>
+          </div>
+
+          {/* Ancho del Recuadro o Elemento */}
+          <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 shrink-0 text-slate-300" title="Ancho del recuadro o elemento (reduce el ancho para colocarlo a un lado y no tapar personas)">
+            <span className="text-[11px] font-bold text-slate-400">Ancho:</span>
+            {[
+              { label: '100%', val: 100 },
+              { label: '80%', val: 80 },
+              { label: '65%', val: 65 },
+              { label: '50%', val: 50 },
+            ].map((preset) => {
+              const curWidth = isBrandKey(activeKey)
+                ? brand.textStyle?.[activeKey]?.width
+                : slide.textStyle?.[activeKey]?.width;
+              const isSelected = curWidth === preset.val;
+              return (
+                <button
+                  key={preset.val}
+                  onClick={() => onUpdateStyle(activeKey, { width: preset.val })}
+                  className={`text-[10px] font-bold px-1.5 py-0.5 rounded transition ${
+                    isSelected
+                      ? 'bg-rose-600 text-white shadow-sm'
+                      : 'hover:bg-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {preset.label}
+                </button>
+              );
+            })}
+            {((isBrandKey(activeKey) ? brand.textStyle?.[activeKey]?.width : slide.textStyle?.[activeKey]?.width)) && (
+              <button
+                onClick={() => onUpdateStyle(activeKey, { width: undefined })}
+                className="text-[9px] text-slate-500 hover:text-rose-300 hover:bg-slate-800 px-1 py-0.5 rounded transition font-bold"
+                title="Restablecer ancho automático"
+              >
+                Auto
+              </button>
+            )}
           </div>
 
           {/* Negrita / Cursiva */}

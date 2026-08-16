@@ -99,10 +99,14 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
     const startX = e.clientX;
     const startY = e.clientY;
 
-    const currentPos = slide.textPos?.[key] || {
-      left: Math.round(((e.clientX - containerRect.left) / containerRect.width) * 100),
-      top: Math.round(((e.clientY - containerRect.top) / containerRect.height) * 100),
-    };
+    // Find the exact DOM element to measure initial visual center relative to containerRef
+    const targetEl = (e.currentTarget.closest(`[data-drag-key="${key}"]`) || e.currentTarget) as HTMLElement;
+    const elemRect = targetEl.getBoundingClientRect();
+    const elemCenterX = elemRect.left + elemRect.width / 2;
+    const elemCenterY = elemRect.top + elemRect.height / 2;
+
+    const initialLeftPct = slide.textPos?.[key]?.left ?? (((elemCenterX - containerRect.left) / containerRect.width) * 100);
+    const initialTopPct = slide.textPos?.[key]?.top ?? (((elemCenterY - containerRect.top) / containerRect.height) * 100);
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
       const deltaX = moveEvent.clientX - startX;
@@ -111,8 +115,9 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
       const deltaXPct = (deltaX / containerRect.width) * 100;
       const deltaYPct = (deltaY / containerRect.height) * 100;
 
-      const newLeft = Math.max(5, Math.min(95, Math.round(currentPos.left + deltaXPct)));
-      const newTop = Math.max(5, Math.min(95, Math.round(currentPos.top + deltaYPct)));
+      // Unconstrained freeform movement across entire canvas
+      const newLeft = Math.max(-10, Math.min(110, Math.round((initialLeftPct + deltaXPct) * 10) / 10));
+      const newTop = Math.max(-10, Math.min(110, Math.round((initialTopPct + deltaYPct) * 10) / 10));
 
       onUpdateTextPos?.(key, { left: newLeft, top: newTop });
     };
@@ -126,7 +131,13 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
     window.addEventListener('pointerup', handlePointerUp);
   };
 
-  const renderActiveControls = (key: string) => {
+  const isCardBoxTransparent = (key?: string) => {
+    if (slide.hideCardBoxes) return true;
+    if (key && slide.textStyle?.[key]?.transparentBox) return true;
+    return false;
+  };
+
+  const renderActiveControls = (key: string, label?: string) => {
     if (activeElementKey !== key || isExportMode) return null;
     const hasPos = Boolean(slide.textPos && slide.textPos[key]);
 
@@ -138,10 +149,10 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
         <div
           onPointerDown={(e) => startDrag(key, e)}
           className="flex items-center gap-1 cursor-grab active:cursor-grabbing text-rose-300 hover:text-white px-1 py-0.5 transition"
-          title="Mantén presionado y arrastra para mover este texto libremente por la diapositiva"
+          title="Mantén presionado y arrastra para mover libremente por la diapositiva"
         >
           <Move className="w-3 h-3 text-rose-400" />
-          <span>Mover</span>
+          <span>{label || 'Mover'}</span>
         </div>
         {hasPos && (
           <button
@@ -263,14 +274,51 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
       styleObj.textShadow = shadowParts.join(', ');
     }
 
+    if (custom.width) {
+      styleObj.width = typeof custom.width === 'number'
+        ? (custom.width <= 100 ? `${custom.width}%` : `${custom.width}px`)
+        : custom.width;
+      styleObj.maxWidth = '100%';
+    }
+
     if (pos) {
       styleObj.position = 'absolute';
       styleObj.left = `${pos.left}%`;
       styleObj.top = `${pos.top}%`;
       styleObj.transform = 'translate(-50%, -50%)';
       styleObj.zIndex = 30;
-      const isInline = ['brandName', 'brandHandle', 'brandWeb', 'badge', 'cta', 'cta-pill', 'comp-leftTag', 'comp-rightTag', 'quote-author', 'quote-role'].includes(key) || key.startsWith('bullet-');
-      styleObj.width = styleObj.width || (isInline ? 'auto' : '85%');
+
+      // Prevent squishing: maintain generous proportional width when dragged freely
+      if (!custom.width) {
+        if (key.startsWith('bullet-')) {
+          styleObj.width = '88%';
+          styleObj.maxWidth = '92%';
+        } else if (['title', 'cta-headline'].includes(key)) {
+          styleObj.width = '90%';
+          styleObj.maxWidth = '94%';
+        } else if (['body', 'stat-subtext', 'cta-subheadline'].includes(key)) {
+          styleObj.width = '88%';
+          styleObj.maxWidth = '92%';
+        } else if (['comp-grid', 'stat-container', 'quote-container', 'checklist-container', 'cta-container', 'bullets-container'].includes(key)) {
+          styleObj.width = '92%';
+          styleObj.maxWidth = '96%';
+        } else if (['comp-left-card', 'comp-right-card'].includes(key)) {
+          styleObj.width = '46%';
+          styleObj.maxWidth = '48%';
+        } else if (['stat-subtext-box', 'cta-subheadline-card'].includes(key)) {
+          styleObj.width = '88%';
+          styleObj.maxWidth = '92%';
+        } else if (['brandName', 'brandHandle', 'brandWeb', 'badge', 'subtag', 'cta', 'cta-pill', 'comp-leftTag', 'comp-rightTag', 'quote-author', 'quote-role'].includes(key)) {
+          styleObj.width = 'auto';
+          styleObj.whiteSpace = 'nowrap';
+          styleObj.maxWidth = '90%';
+        } else {
+          styleObj.width = '85%';
+          styleObj.maxWidth = '90%';
+        }
+      }
+    } else if (activeElementKey === key) {
+      styleObj.position = 'relative';
     }
 
     return styleObj;
@@ -349,8 +397,9 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
       )}
 
       {/* Top Header Bar */}
-      <div className="relative z-10 w-full p-5 sm:p-6 pb-2 flex items-center justify-between gap-3 border-b border-slate-800/50">
+      <div className="z-10 w-full p-5 sm:p-6 pb-2 flex items-center justify-between gap-3 border-b border-slate-800/50">
         <div
+          data-drag-key="brandName"
           className={`group relative flex items-center gap-2 cursor-pointer transition rounded-xl px-2 py-1 ${
             activeElementKey === 'brandName' ? 'ring-2 ring-rose-500 bg-slate-900/80' : 'hover:bg-slate-900/40'
           }`}
@@ -395,6 +444,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
         </div>
 
         <div
+          data-drag-key="brandHandle"
           className={`group relative flex items-center gap-1.5 cursor-pointer transition rounded-xl px-2 py-1 ${
             activeElementKey === 'brandHandle' ? 'ring-2 ring-rose-500 bg-slate-900/80' : 'hover:bg-slate-900/40'
           }`}
@@ -420,17 +470,17 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
       </div>
 
       {/* Main Content Body: Adaptive by Layout Template */}
-      <div className={`relative z-10 w-full flex-1 px-5 sm:px-6 py-3 flex flex-col ${
+      <div className={`z-10 w-full flex-1 px-5 sm:px-6 py-3 flex flex-col ${
         slide.contentAlign === 'top' ? 'justify-start' : slide.contentAlign === 'bottom' ? 'justify-end' : 'justify-center'
-      } overflow-y-auto scrollbar-none`}>
-        
-        {/* ==================================================================== */}
-        {/* LAYOUT 1: STANDARD (Title + Subtag + Body + Bullets) */}
+      } overflow-visible`}>
+           {/* ==================================================================== */}
+        {/* LAYOUT 1: STANDARD (Título + Puntos/Cuerpo) */}
         {/* ==================================================================== */}
         {layout === 'standard' && (
           <div className="space-y-3 my-auto w-full">
             {slide.badge && (
               <div
+                data-drag-key="badge"
                 className={`group relative inline-block cursor-pointer transition rounded-lg ${
                   activeElementKey === 'badge' ? 'ring-2 ring-rose-500' : ''
                 }`}
@@ -467,6 +517,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
 
             {slide.subtag && (
               <div
+                data-drag-key="subtag"
                 className={`group relative cursor-pointer transition rounded-md p-1 ${
                   activeElementKey === 'subtag' ? 'ring-2 ring-rose-500 bg-slate-900/60' : 'hover:bg-slate-900/30'
                 }`}
@@ -501,6 +552,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
             )}
 
             <div
+              data-drag-key="title"
               className={`group relative cursor-pointer transition rounded-xl p-1.5 ${
                 activeElementKey === 'title' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/40'
               }`}
@@ -523,6 +575,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
 
             {slide.body && (
               <div
+                data-drag-key="body"
                 className={`group relative cursor-pointer transition rounded-xl p-1.5 ${
                   activeElementKey === 'body' ? 'ring-2 ring-rose-500 bg-slate-900/60' : 'hover:bg-slate-900/30'
                 }`}
@@ -557,11 +610,27 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
             )}
 
             {slide.bullets && slide.bullets.length > 0 && (
-              <div className="space-y-2 pt-1">
+              <div
+                data-drag-key="bullets-container"
+                className="space-y-2 pt-1"
+                style={getStyleFor('bullets-container')}
+                onClick={(e) => {
+                  if (e.target === e.currentTarget) {
+                    e.stopPropagation();
+                    onSelectElement('bullets-container');
+                  }
+                }}
+              >
+                {renderActiveControls('bullets-container', 'Mover Lista')}
                 {slide.bullets.map((bullet, idx) => (
                   <div
                     key={idx}
-                    className={`group relative flex items-center gap-2.5 bg-slate-900/80 border border-slate-800 rounded-xl px-3.5 py-2 cursor-pointer shadow-sm transition ${
+                    data-drag-key={`bullet-${idx}`}
+                    className={`group relative flex items-center gap-2.5 rounded-xl px-3.5 py-2 cursor-pointer shadow-sm transition ${
+                      isCardBoxTransparent(`bullet-${idx}`)
+                        ? 'bg-transparent border border-slate-700/40 shadow-none'
+                        : 'bg-slate-900/80 border border-slate-800'
+                    } ${
                       activeElementKey === `bullet-${idx}` ? 'ring-2 ring-rose-500' : 'hover:border-slate-700'
                     }`}
                     onClick={(e) => {
@@ -619,7 +688,6 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
         )}
 
         {/* ==================================================================== */}
-        {/* ==================================================================== */}
         {/* LAYOUT 2: SPLIT COMPARISON (Antes vs Después / Error vs Solución) */}
         {/* ==================================================================== */}
         {layout === 'split_comparison' && (
@@ -627,6 +695,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
             <div className="text-center space-y-1">
               {slide.badge && (
                 <div
+                  data-drag-key="badge"
                   className={`group relative inline-block cursor-pointer transition rounded-lg ${
                     activeElementKey === 'badge' ? 'ring-2 ring-rose-500' : ''
                   }`}
@@ -649,6 +718,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                 </div>
               )}
               <div
+                data-drag-key="title"
                 className={`group relative cursor-pointer transition rounded-xl p-1 ${
                   activeElementKey === 'title' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/40'
                 }`}
@@ -670,144 +740,226 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2.5">
-              {/* Left Column (Mistake / Before) */}
-              <div className="bg-red-950/40 border border-red-800/50 rounded-2xl p-3 space-y-1.5 text-left relative">
+            {/* Comparison Grid (Movable Grid) */}
+            <div
+              data-drag-key="comp-grid"
+              className={`group/grid transition-all rounded-2xl ${
+                activeElementKey === 'comp-grid' ? 'ring-2 ring-rose-500 bg-slate-900/30' : ''
+              }`}
+              onClick={(e) => {
+                if (e.target === e.currentTarget) {
+                  e.stopPropagation();
+                  onSelectElement('comp-grid');
+                }
+              }}
+              style={getStyleFor('comp-grid')}
+            >
+              {renderActiveControls('comp-grid', 'Mover Comparativa')}
+
+              <div className="grid grid-cols-2 gap-2.5">
+                {/* Left Column (Mistake / Before) */}
                 <div
-                  className={`group relative inline-flex items-center gap-1.5 cursor-pointer rounded p-0.5 ${
-                    activeElementKey === 'comp-leftTag' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
-                  }`}
+                  data-drag-key="comp-left-card"
+                  className={`rounded-2xl p-3 space-y-1.5 text-left transition group/card ${
+                    isCardBoxTransparent('comp-left-card')
+                      ? 'bg-transparent border border-red-500/30 shadow-none'
+                      : 'bg-red-950/40 border border-red-800/50 backdrop-blur-xs'
+                  } ${activeElementKey === 'comp-left-card' ? 'ring-2 ring-rose-500' : 'hover:border-red-500/60'}`}
                   onClick={(e) => {
-                    e.stopPropagation();
-                    onSelectElement('comp-leftTag');
+                    if (e.target === e.currentTarget) {
+                      e.stopPropagation();
+                      onSelectElement('comp-left-card');
+                    }
                   }}
-                  style={getStyleFor('comp-leftTag')}
+                  style={getStyleFor('comp-left-card')}
                 >
-                  {renderActiveControls('comp-leftTag')}
-                  <XCircle className="w-4 h-4 shrink-0" />
-                  <span
-                    contentEditable
-                    suppressContentEditableWarning
-                    onBlur={(e) => onUpdateComparison?.({ leftTag: e.currentTarget.innerText })}
-                    className="outline-none"
+                  {renderActiveControls('comp-left-card', 'Mover Recuadro')}
+
+                  {/* Drag Handle on hover for the card */}
+                  <div
+                    onPointerDown={(e) => startDrag('comp-left-card', e)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectElement('comp-left-card');
+                    }}
+                    className="no-export absolute top-1 right-1 opacity-0 group-hover/card:opacity-100 p-1 rounded bg-slate-900/80 hover:bg-rose-600 text-slate-300 hover:text-white cursor-grab active:cursor-grabbing transition"
+                    title="Arrastrar recuadro izquierdo"
                   >
-                    {slide.comparison?.leftTag || loc.comparison.leftTag}
-                  </span>
+                    <Move className="w-2.5 h-2.5" />
+                  </div>
+
+                  <div
+                    data-drag-key="comp-leftTag"
+                    className={`group relative inline-flex items-center gap-1.5 cursor-pointer rounded p-0.5 ${
+                      activeElementKey === 'comp-leftTag' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
+                    }`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectElement('comp-leftTag');
+                    }}
+                    style={getStyleFor('comp-leftTag')}
+                  >
+                    {renderActiveControls('comp-leftTag')}
+                    <XCircle className="w-4 h-4 shrink-0 text-red-400" />
+                    <span
+                      contentEditable
+                      suppressContentEditableWarning
+                      onBlur={(e) => onUpdateComparison?.({ leftTag: e.currentTarget.innerText })}
+                      className="outline-none"
+                    >
+                      {slide.comparison?.leftTag || loc.comparison.leftTag}
+                    </span>
+                  </div>
+
+                  <div
+                    data-drag-key="comp-leftTitle"
+                    className={`group relative cursor-pointer rounded p-0.5 transition ${
+                      activeElementKey === 'comp-leftTitle' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
+                    }`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectElement('comp-leftTitle');
+                    }}
+                    style={getStyleFor('comp-leftTitle')}
+                  >
+                    {renderActiveControls('comp-leftTitle')}
+                    <h4
+                      contentEditable
+                      suppressContentEditableWarning
+                      onBlur={(e) => onUpdateComparison?.({ leftTitle: e.currentTarget.innerText })}
+                      className="outline-none"
+                    >
+                      {slide.comparison?.leftTitle || loc.comparison.leftTitle}
+                    </h4>
+                  </div>
+
+                  <div
+                    data-drag-key="comp-leftText"
+                    className={`group relative cursor-pointer rounded p-0.5 transition ${
+                      activeElementKey === 'comp-leftText' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
+                    }`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectElement('comp-leftText');
+                    }}
+                    style={getStyleFor('comp-leftText')}
+                  >
+                    {renderActiveControls('comp-leftText')}
+                    <p
+                      contentEditable
+                      suppressContentEditableWarning
+                      onBlur={(e) => onUpdateComparison?.({ leftText: e.currentTarget.innerText })}
+                      className="outline-none"
+                    >
+                      {slide.comparison?.leftText || loc.comparison.leftText}
+                    </p>
+                  </div>
                 </div>
 
+                {/* Right Column (Solution / After) */}
                 <div
-                  className={`group relative cursor-pointer rounded p-0.5 transition ${
-                    activeElementKey === 'comp-leftTitle' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
-                  }`}
+                  data-drag-key="comp-right-card"
+                  className={`rounded-2xl p-3 space-y-1.5 text-left transition group/card ${
+                    isCardBoxTransparent('comp-right-card')
+                      ? 'bg-transparent border border-emerald-500/30 shadow-none'
+                      : 'bg-emerald-950/40 border border-emerald-700/60 backdrop-blur-xs'
+                  } ${activeElementKey === 'comp-right-card' ? 'ring-2 ring-rose-500' : 'hover:border-emerald-500/60'}`}
                   onClick={(e) => {
-                    e.stopPropagation();
-                    onSelectElement('comp-leftTitle');
+                    if (e.target === e.currentTarget) {
+                      e.stopPropagation();
+                      onSelectElement('comp-right-card');
+                    }
                   }}
-                  style={getStyleFor('comp-leftTitle')}
+                  style={getStyleFor('comp-right-card')}
                 >
-                  {renderActiveControls('comp-leftTitle')}
-                  <h4
-                    contentEditable
-                    suppressContentEditableWarning
-                    onBlur={(e) => onUpdateComparison?.({ leftTitle: e.currentTarget.innerText })}
-                    className="outline-none"
-                  >
-                    {slide.comparison?.leftTitle || loc.comparison.leftTitle}
-                  </h4>
-                </div>
+                  {renderActiveControls('comp-right-card', 'Mover Recuadro')}
 
-                <div
-                  className={`group relative cursor-pointer rounded p-0.5 transition ${
-                    activeElementKey === 'comp-leftText' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
-                  }`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onSelectElement('comp-leftText');
-                  }}
-                  style={getStyleFor('comp-leftText')}
-                >
-                  {renderActiveControls('comp-leftText')}
-                  <p
-                    contentEditable
-                    suppressContentEditableWarning
-                    onBlur={(e) => onUpdateComparison?.({ leftText: e.currentTarget.innerText })}
-                    className="outline-none"
+                  {/* Drag Handle on hover for the card */}
+                  <div
+                    onPointerDown={(e) => startDrag('comp-right-card', e)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectElement('comp-right-card');
+                    }}
+                    className="no-export absolute top-1 right-1 opacity-0 group-hover/card:opacity-100 p-1 rounded bg-slate-900/80 hover:bg-emerald-600 text-slate-300 hover:text-white cursor-grab active:cursor-grabbing transition"
+                    title="Arrastrar recuadro derecho"
                   >
-                    {slide.comparison?.leftText || loc.comparison.leftText}
-                  </p>
-                </div>
-              </div>
+                    <Move className="w-2.5 h-2.5" />
+                  </div>
 
-              {/* Right Column (Solution / After) */}
-              <div className="bg-emerald-950/40 border border-emerald-700/60 rounded-2xl p-3 space-y-1.5 text-left relative">
-                <div
-                  className={`group relative inline-flex items-center gap-1.5 cursor-pointer rounded p-0.5 ${
-                    activeElementKey === 'comp-rightTag' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
-                  }`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onSelectElement('comp-rightTag');
-                  }}
-                  style={getStyleFor('comp-rightTag')}
-                >
-                  {renderActiveControls('comp-rightTag')}
-                  <CheckCircle2 className="w-4 h-4 shrink-0" />
-                  <span
-                    contentEditable
-                    suppressContentEditableWarning
-                    onBlur={(e) => onUpdateComparison?.({ rightTag: e.currentTarget.innerText })}
-                    className="outline-none"
+                  <div
+                    data-drag-key="comp-rightTag"
+                    className={`group relative inline-flex items-center gap-1.5 cursor-pointer rounded p-0.5 ${
+                      activeElementKey === 'comp-rightTag' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
+                    }`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectElement('comp-rightTag');
+                    }}
+                    style={getStyleFor('comp-rightTag')}
                   >
-                    {slide.comparison?.rightTag || loc.comparison.rightTag}
-                  </span>
-                </div>
+                    {renderActiveControls('comp-rightTag')}
+                    <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                    <span
+                      contentEditable
+                      suppressContentEditableWarning
+                      onBlur={(e) => onUpdateComparison?.({ rightTag: e.currentTarget.innerText })}
+                      className="outline-none"
+                    >
+                      {slide.comparison?.rightTag || loc.comparison.rightTag}
+                    </span>
+                  </div>
 
-                <div
-                  className={`group relative cursor-pointer rounded p-0.5 transition ${
-                    activeElementKey === 'comp-rightTitle' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
-                  }`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onSelectElement('comp-rightTitle');
-                  }}
-                  style={getStyleFor('comp-rightTitle')}
-                >
-                  {renderActiveControls('comp-rightTitle')}
-                  <h4
-                    contentEditable
-                    suppressContentEditableWarning
-                    onBlur={(e) => onUpdateComparison?.({ rightTitle: e.currentTarget.innerText })}
-                    className="outline-none"
+                  <div
+                    data-drag-key="comp-rightTitle"
+                    className={`group relative cursor-pointer rounded p-0.5 transition ${
+                      activeElementKey === 'comp-rightTitle' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
+                    }`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectElement('comp-rightTitle');
+                    }}
+                    style={getStyleFor('comp-rightTitle')}
                   >
-                    {slide.comparison?.rightTitle || loc.comparison.rightTitle}
-                  </h4>
-                </div>
+                    {renderActiveControls('comp-rightTitle')}
+                    <h4
+                      contentEditable
+                      suppressContentEditableWarning
+                      onBlur={(e) => onUpdateComparison?.({ rightTitle: e.currentTarget.innerText })}
+                      className="outline-none"
+                    >
+                      {slide.comparison?.rightTitle || loc.comparison.rightTitle}
+                    </h4>
+                  </div>
 
-                <div
-                  className={`group relative cursor-pointer rounded p-0.5 transition ${
-                    activeElementKey === 'comp-rightText' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
-                  }`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onSelectElement('comp-rightText');
-                  }}
-                  style={getStyleFor('comp-rightText')}
-                >
-                  {renderActiveControls('comp-rightText')}
-                  <p
-                    contentEditable
-                    suppressContentEditableWarning
-                    onBlur={(e) => onUpdateComparison?.({ rightText: e.currentTarget.innerText })}
-                    className="outline-none"
+                  <div
+                    data-drag-key="comp-rightText"
+                    className={`group relative cursor-pointer rounded p-0.5 transition ${
+                      activeElementKey === 'comp-rightText' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
+                    }`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectElement('comp-rightText');
+                    }}
+                    style={getStyleFor('comp-rightText')}
                   >
-                    {slide.comparison?.rightText || loc.comparison.rightText}
-                  </p>
+                    {renderActiveControls('comp-rightText')}
+                    <p
+                      contentEditable
+                      suppressContentEditableWarning
+                      onBlur={(e) => onUpdateComparison?.({ rightText: e.currentTarget.innerText })}
+                      className="outline-none"
+                    >
+                      {slide.comparison?.rightText || loc.comparison.rightText}
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
 
             {slide.body && (
               <div
+                data-drag-key="body"
                 className={`group relative cursor-pointer transition rounded-xl p-1 text-center ${
                   activeElementKey === 'body' ? 'ring-2 ring-rose-500 bg-slate-900/60' : 'hover:bg-slate-900/30'
                 }`}
@@ -832,11 +984,21 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
         )}
 
         {/* ==================================================================== */}
-        {/* ==================================================================== */}
         {/* LAYOUT 3: QUOTE / TESTIMONIAL (Cita de Autoridad) */}
         {/* ==================================================================== */}
         {layout === 'quote' && (
-          <div className="space-y-4 my-auto text-center px-2 w-full">
+          <div
+            data-drag-key="quote-container"
+            className="space-y-4 my-auto text-center px-2 w-full"
+            style={getStyleFor('quote-container')}
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                e.stopPropagation();
+                onSelectElement('quote-container');
+              }
+            }}
+          >
+            {renderActiveControls('quote-container', 'Mover Cita')}
             <div className="flex justify-center">
               <div
                 className="w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-xl"
@@ -847,7 +1009,12 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
             </div>
 
             <div
+              data-drag-key="quote-text"
               className={`group relative cursor-pointer transition rounded-2xl p-2 ${
+                isCardBoxTransparent('quote-text')
+                  ? 'bg-transparent border-0'
+                  : ''
+              } ${
                 activeElementKey === 'quote-text' || activeElementKey === 'body'
                   ? 'ring-2 ring-rose-500 bg-slate-900/60'
                   : 'hover:bg-slate-900/30'
@@ -874,6 +1041,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
 
             <div className="pt-2 border-t border-slate-800/80 inline-block px-4 space-y-0.5">
               <div
+                data-drag-key="quote-author"
                 className={`group relative cursor-pointer transition rounded-md p-1 ${
                   activeElementKey === 'quote-author' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
                 }`}
@@ -895,6 +1063,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
               </div>
 
               <div
+                data-drag-key="quote-role"
                 className={`group relative cursor-pointer transition rounded-md p-1 ${
                   activeElementKey === 'quote-role' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
                 }`}
@@ -922,9 +1091,21 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
         {/* LAYOUT 4: BIG STAT / MÉTRICA */}
         {/* ==================================================================== */}
         {layout === 'big_number' && (
-          <div className="space-y-3.5 my-auto text-center w-full">
+          <div
+            data-drag-key="stat-container"
+            className="space-y-3.5 my-auto text-center w-full"
+            style={getStyleFor('stat-container')}
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                e.stopPropagation();
+                onSelectElement('stat-container');
+              }
+            }}
+          >
+            {renderActiveControls('stat-container', 'Mover Métrica')}
             {slide.badge && (
               <div
+                data-drag-key="badge"
                 className={`group relative inline-block cursor-pointer transition rounded-lg ${
                   activeElementKey === 'badge' ? 'ring-2 ring-rose-500' : ''
                 }`}
@@ -949,6 +1130,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
 
             <div className="py-1 space-y-1">
               <div
+                data-drag-key="stat-number"
                 className={`group relative cursor-pointer transition rounded-2xl p-1 inline-block ${
                   activeElementKey === 'stat-number' ? 'ring-2 ring-rose-500 bg-slate-900/60' : 'hover:bg-slate-900/30'
                 }`}
@@ -970,6 +1152,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
               </div>
 
               <div
+                data-drag-key="stat-label"
                 className={`group relative cursor-pointer transition rounded-xl p-1 ${
                   activeElementKey === 'stat-label' ? 'ring-2 ring-rose-500 bg-slate-900/60' : 'hover:bg-slate-900/30'
                 }`}
@@ -991,8 +1174,24 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
               </div>
             </div>
 
-            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-3.5 text-left relative">
+            <div
+              data-drag-key="stat-subtext-box"
+              className={`rounded-2xl p-3.5 text-left transition ${
+                isCardBoxTransparent('stat-subtext-box')
+                  ? 'bg-transparent border border-slate-700/40 shadow-none'
+                  : 'bg-slate-900/80 border border-slate-800'
+              }`}
+              style={getStyleFor('stat-subtext-box')}
+              onClick={(e) => {
+                if (e.target === e.currentTarget) {
+                  e.stopPropagation();
+                  onSelectElement('stat-subtext-box');
+                }
+              }}
+            >
+              {renderActiveControls('stat-subtext-box', 'Mover Recuadro')}
               <div
+                data-drag-key="stat-subtext"
                 className={`group relative cursor-pointer transition rounded-xl p-1 ${
                   activeElementKey === 'stat-subtext' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/40'
                 }`}
@@ -1020,10 +1219,22 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
         {/* LAYOUT 5: CHECKLIST / STEPS (Paso a Paso) */}
         {/* ==================================================================== */}
         {layout === 'checklist' && (
-          <div className="space-y-3 my-auto w-full">
+          <div
+            data-drag-key="checklist-container"
+            className="space-y-3 my-auto w-full"
+            style={getStyleFor('checklist-container')}
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                e.stopPropagation();
+                onSelectElement('checklist-container');
+              }
+            }}
+          >
+            {renderActiveControls('checklist-container', 'Mover Pasos')}
             <div className="space-y-1 text-center">
               {slide.badge && (
                 <div
+                  data-drag-key="badge"
                   className={`group relative inline-block cursor-pointer transition rounded-lg ${
                     activeElementKey === 'badge' ? 'ring-2 ring-rose-500' : ''
                   }`}
@@ -1046,6 +1257,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                 </div>
               )}
               <div
+                data-drag-key="title"
                 className={`group relative cursor-pointer transition rounded-xl p-1 ${
                   activeElementKey === 'title' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/40'
                 }`}
@@ -1074,7 +1286,12 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
               ).map((bullet, idx, arr) => (
                 <div
                   key={idx}
-                  className={`group relative flex items-start gap-3 bg-slate-900/85 border border-slate-800 rounded-2xl p-3 shadow-sm cursor-pointer transition ${
+                  data-drag-key={`bullet-${idx}`}
+                  className={`group relative flex items-start gap-3 rounded-2xl p-3 shadow-sm cursor-pointer transition ${
+                    isCardBoxTransparent(`bullet-${idx}`)
+                      ? 'bg-transparent border border-slate-700/40 shadow-none'
+                      : 'bg-slate-900/85 border border-slate-800'
+                  } ${
                     activeElementKey === `bullet-${idx}` ? 'ring-2 ring-rose-500 bg-slate-900' : 'hover:border-slate-700'
                   }`}
                   onClick={(e) => {
@@ -1139,7 +1356,18 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
         {/* LAYOUT 6: CTA FINAL / CONVERSIÓN */}
         {/* ==================================================================== */}
         {layout === 'cta_final' && (
-          <div className="space-y-4 my-auto text-center w-full">
+          <div
+            data-drag-key="cta-container"
+            className="space-y-4 my-auto text-center w-full"
+            style={getStyleFor('cta-container')}
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                e.stopPropagation();
+                onSelectElement('cta-container');
+              }
+            }}
+          >
+            {renderActiveControls('cta-container', 'Mover CTA')}
             {/* Avatar or Logo Icon */}
             <div className="flex justify-center">
               {brand.logo ? (
@@ -1161,6 +1389,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
             <div className="space-y-1.5">
               {slide.badge && (
                 <div
+                  data-drag-key="badge"
                   className={`group relative inline-block cursor-pointer transition rounded-lg ${
                     activeElementKey === 'badge' ? 'ring-2 ring-rose-500' : ''
                   }`}
@@ -1184,6 +1413,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
               )}
 
               <div
+                data-drag-key="cta-headline"
                 className={`group relative cursor-pointer transition rounded-xl p-1 ${
                   activeElementKey === 'cta-headline' || activeElementKey === 'title'
                     ? 'ring-2 ring-rose-500 bg-slate-900/70'
@@ -1207,8 +1437,24 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
               </div>
             </div>
 
-            <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 space-y-2 relative">
+            <div
+              data-drag-key="cta-subheadline-card"
+              className={`rounded-2xl p-3.5 space-y-2 transition ${
+                isCardBoxTransparent('cta-subheadline-card')
+                  ? 'bg-transparent border border-slate-700/40 shadow-none'
+                  : 'bg-slate-900/90 border border-slate-800'
+              }`}
+              style={getStyleFor('cta-subheadline-card')}
+              onClick={(e) => {
+                if (e.target === e.currentTarget) {
+                  e.stopPropagation();
+                  onSelectElement('cta-subheadline-card');
+                }
+              }}
+            >
+              {renderActiveControls('cta-subheadline-card', 'Mover Recuadro')}
               <div
+                data-drag-key="cta-subheadline"
                 className={`group relative cursor-pointer transition rounded-xl p-1 ${
                   activeElementKey === 'cta-subheadline' || activeElementKey === 'body'
                     ? 'ring-2 ring-rose-500 bg-slate-900/70'
@@ -1233,6 +1479,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
 
               {/* Action Trigger Button Simulation */}
               <div
+                data-drag-key="cta-pill"
                 className={`group relative cursor-pointer transition rounded-xl ${
                   activeElementKey === 'cta-pill' ? 'ring-2 ring-rose-500' : ''
                 }`}
@@ -1268,6 +1515,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
             {slide.customTexts.map((custom) => (
               <div
                 key={custom.id}
+                data-drag-key={custom.id}
                 className={`group relative cursor-pointer transition rounded-xl p-2 bg-slate-900/60 border border-slate-800/80 shadow-sm ${
                   activeElementKey === custom.id ? 'ring-2 ring-rose-500 bg-slate-900/90' : 'hover:bg-slate-900/80'
                 }`}
@@ -1306,8 +1554,9 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
       </div>
 
       {/* Bottom Footer Bar (CTA & Web) */}
-      <div className="relative z-10 w-full p-5 sm:p-6 pt-2 flex items-center justify-between gap-3 border-t border-slate-800/50 text-xs">
+      <div className="z-10 w-full p-5 sm:p-6 pt-2 flex items-center justify-between gap-3 border-t border-slate-800/50 text-xs">
         <div
+          data-drag-key="cta"
           className={`group relative cursor-pointer transition rounded-lg px-2 py-0.5 ${
             activeElementKey === 'cta' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/40'
           }`}
@@ -1329,6 +1578,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
         </div>
 
         <div
+          data-drag-key="brandWeb"
           className={`group relative cursor-pointer transition rounded-lg px-2 py-0.5 ${
             activeElementKey === 'brandWeb' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/40'
           }`}

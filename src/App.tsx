@@ -580,6 +580,18 @@ export default function App() {
     handleUpdateSlideField('contentAlign', align);
   };
 
+  const handleToggleHideCardBoxes = () => {
+    setSlides((prev) => {
+      const copy = [...prev];
+      if (!copy[currentIndex]) return prev;
+      copy[currentIndex] = {
+        ...copy[currentIndex],
+        hideCardBoxes: !copy[currentIndex].hideCardBoxes,
+      };
+      return copy;
+    });
+  };
+
   const handleUpdateTextPos = (key: string, pos: { left: number; top: number } | null) => {
     setSlides((prev) => {
       const copy = [...prev];
@@ -764,6 +776,9 @@ export default function App() {
         selectedClientName={selectedClient?.name}
         selectedClientColor={selectedClient?.brand_color}
         language={language}
+        onChangeLanguage={setLanguage}
+        onTranslateCarousel={handleTranslateCarousel}
+        isTranslating={isTranslating}
         onOpenClientSelector={() => setIsClientSelectorOpen(true)}
         onResetCarousel={handleResetCarousel}
       />
@@ -912,6 +927,8 @@ export default function App() {
                 onUpdateSlideOverlayType={handleUpdateSlideOverlayType}
                 onUpdateSlideAccentColor={handleUpdateSlideAccentColor}
                 onUpdateTextPos={handleUpdateTextPos}
+                onUpdateSlideContentAlign={handleUpdateSlideContentAlign}
+                onToggleHideCardBoxes={handleToggleHideCardBoxes}
               />
 
               {/* Main Interactive Canvas - Spacious and Centered */}

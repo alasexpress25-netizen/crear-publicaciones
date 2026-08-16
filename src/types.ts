@@ -29,6 +29,8 @@ export interface TextStyleItem {
   letterSpacing?: string;
   lineHeight?: number;
   textTransform?: 'uppercase' | 'none' | 'capitalize';
+  transparentBox?: boolean;
+  backgroundColor?: string;
 }
 
 export interface TextPosition {
@@ -102,6 +104,8 @@ export interface Slide {
   posY?: number;
   overlayIntensity?: number; // 0 - 100
   overlayType?: 'gradient' | 'solid' | 'card' | 'cinematic';
+  cardBackground?: 'translucent' | 'transparent' | 'solid';
+  hideCardBoxes?: boolean;
   accentColor?: string;
   imageSuggestion?: string;
   mediaSearchKeywords?: string[]; // Media Director Keywords (English/Spanish) for auto stock photo matching
