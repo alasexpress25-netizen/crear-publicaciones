@@ -37,20 +37,8 @@ export function formatAllSlidesForCanva(slides: Slide[], brand: BrandInfo): stri
  * Capture an actual DOM slide element directly so all fonts, shadows, colors,
  * drag coordinates and layout templates match the editor with 100% pixel fidelity.
  */
-export async function captureSlideDomToBlob(
-  element: HTMLElement,
-  targetWidth: number = 1080,
-  targetHeight: number = 1350
-): Promise<Blob> {
-  // Determine the exact scale factor to hit the target pixel dimensions
-  const rect = element.getBoundingClientRect();
-  const currentW = rect.width || 540;
-  const currentH = rect.height || (currentW * (targetHeight / targetWidth));
-  const scale = targetWidth / currentW;
-
+export async function captureSlideDomToBlob(element: HTMLElement, scale: number = 2): Promise<Blob> {
   const blob = await toBlob(element, {
-    width: currentW,
-    height: currentH,
     pixelRatio: scale,
     cacheBust: true,
     skipFonts: true,
