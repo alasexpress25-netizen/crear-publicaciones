@@ -120,13 +120,22 @@ export async function renderSlideToCanvas(
         }
 
         const zoom = slide.zoom || 1;
-        drawW *= zoom;
-        drawH *= zoom;
+        const blur = slide.blur || 0;
+        const effectiveZoom = blur > 0 ? zoom * 1.06 : zoom;
+        drawW *= effectiveZoom;
+        drawH *= effectiveZoom;
 
-        const posX = (slide.posX !== undefined ? slide.posX : 50) / 100;
-        const posY = (slide.posY !== undefined ? slide.posY : 50) / 100;
-        const dx = (width - drawW) * posX;
-        const dy = (height - drawH) * posY;
+        const posX = (slide.posX !== undefined ? slide.posX : 50);
+        const posY = (slide.posY !== undefined ? slide.posY : 50);
+        
+        // Exact center alignment offset with translate shift
+        const baseX = (width - drawW) / 2;
+        const baseY = (height - drawH) / 2;
+        const shiftX = ((posX - 50) / 50) * (drawW / 2) * 0.5 * Math.max(1, effectiveZoom);
+        const shiftY = ((posY - 50) / 50) * (drawH / 2) * 0.5 * Math.max(1, effectiveZoom);
+        
+        const dx = baseX - shiftX;
+        const dy = baseY - shiftY;
 
         if (slide.blur && slide.blur > 0) {
           ctx.filter = `blur(${slide.blur * (scale / 2)}px)`;

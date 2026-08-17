@@ -289,7 +289,8 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
       key.includes('-card') ||
       key.includes('-box') ||
       key.includes('-container') ||
-      key.includes('grid');
+      key.includes('grid') ||
+      key === 'cta-avatar';
 
     const styleObj: React.CSSProperties = {
       ...def,
@@ -441,7 +442,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
         } else if (['stat-subtext-box', 'cta-subheadline-card'].includes(key)) {
           styleObj.width = '88%';
           styleObj.maxWidth = '92%';
-        } else if (['brandName', 'brandHandle', 'brandWeb', 'badge', 'subtag', 'cta', 'cta-pill', 'comp-leftTag', 'comp-rightTag', 'quote-author', 'quote-role'].includes(key)) {
+        } else if (['brandName', 'brandHandle', 'brandWeb', 'badge', 'subtag', 'cta', 'cta-pill', 'comp-leftTag', 'comp-rightTag', 'quote-author', 'quote-role', 'cta-avatar'].includes(key)) {
           styleObj.width = 'auto';
           styleObj.whiteSpace = 'nowrap';
           styleObj.maxWidth = '90%';
@@ -483,31 +484,36 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
     >
       {/* Background Media */}
       {slide.mediaType === 'video' && slide.image ? (
-        <video
-          src={slide.image}
-          autoPlay
-          loop
-          muted
-          playsInline
-          className="absolute inset-0 w-full h-full pointer-events-none transition-all duration-200"
-          style={{
-            objectFit: bgFit,
-            objectPosition: `${bgPosX}% ${bgPosY}%`,
-            transform: `scale(${effectiveZoom})`,
-            filter: bgBlur > 0 ? `blur(${bgBlur}px)` : undefined,
-          }}
-        />
+        <div className="absolute inset-0 w-full h-full overflow-hidden pointer-events-none">
+          <video
+            src={slide.image}
+            autoPlay
+            loop
+            muted
+            playsInline
+            className="w-full h-full object-cover pointer-events-none transition-all duration-150"
+            style={{
+              transformOrigin: `${bgPosX}% ${bgPosY}%`,
+              transform: `scale(${effectiveZoom}) translate(${(bgPosX - 50) * -0.5 * Math.max(1, effectiveZoom)}%, ${(bgPosY - 50) * -0.5 * Math.max(1, effectiveZoom)}%)`,
+              filter: bgBlur > 0 ? `blur(${bgBlur}px)` : undefined,
+            }}
+          />
+        </div>
       ) : slide.image ? (
-        <div
-          className="absolute inset-0 w-full h-full pointer-events-none bg-center bg-no-repeat transition-all duration-200"
-          style={{
-            backgroundImage: `url("${slide.image}")`,
-            backgroundSize: bgFit,
-            backgroundPosition: `${bgPosX}% ${bgPosY}%`,
-            transform: `scale(${effectiveZoom})`,
-            filter: bgBlur > 0 ? `blur(${bgBlur}px)` : undefined,
-          }}
-        />
+        <div className="absolute inset-0 w-full h-full overflow-hidden pointer-events-none">
+          <img
+            src={slide.image}
+            alt=""
+            crossOrigin="anonymous"
+            className="w-full h-full object-cover pointer-events-none transition-all duration-150"
+            style={{
+              objectPosition: `${bgPosX}% ${bgPosY}%`,
+              transformOrigin: `${bgPosX}% ${bgPosY}%`,
+              transform: `scale(${effectiveZoom}) translate(${(bgPosX - 50) * -0.5 * Math.max(1, effectiveZoom)}%, ${(bgPosY - 50) * -0.5 * Math.max(1, effectiveZoom)}%)`,
+              filter: bgBlur > 0 ? `blur(${bgBlur}px)` : undefined,
+            }}
+          />
+        </div>
       ) : (
         <div
           className="absolute inset-0"
@@ -1508,17 +1514,40 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
           >
             {renderActiveControls('cta-container', 'Mover CTA')}
             {/* Avatar or Logo Icon */}
-            <div className="flex justify-center">
+            <div
+              data-drag-key="cta-avatar"
+              className={`group relative inline-flex justify-center cursor-pointer transition rounded-3xl mx-auto ${
+                activeElementKey === 'cta-avatar' ? 'ring-2 ring-rose-500' : 'hover:opacity-90'
+              }`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectElement('cta-avatar');
+              }}
+              style={getStyleFor('cta-avatar')}
+            >
+              {renderActiveControls('cta-avatar', 'Mover Logo')}
               {brand.logo ? (
                 <img
                   src={brand.logo}
                   alt={brand.name}
-                  className="w-16 h-16 rounded-3xl object-cover border-2 border-white/20 shadow-xl"
+                  className="w-16 h-16 rounded-3xl object-cover transition-all"
+                  style={{
+                    boxShadow: getStyleFor('cta-avatar').boxShadow || '0 20px 25px -5px rgba(0, 0, 0, 0.5)',
+                    borderColor: getStyleFor('cta-avatar').borderColor || 'rgba(255, 255, 255, 0.2)',
+                    borderWidth: getStyleFor('cta-avatar').borderWidth || '2px',
+                    borderStyle: (getStyleFor('cta-avatar').borderStyle as any) || 'solid',
+                  }}
                 />
               ) : (
                 <div
-                  className="w-16 h-16 rounded-3xl flex items-center justify-center text-2xl font-black text-white shadow-2xl"
-                  style={{ backgroundColor: primaryColor }}
+                  className="w-16 h-16 rounded-3xl flex items-center justify-center text-2xl font-black text-white transition-all"
+                  style={{
+                    backgroundColor: getStyleFor('cta-avatar').backgroundColor || primaryColor,
+                    boxShadow: getStyleFor('cta-avatar').boxShadow || '0 25px 50px -12px rgba(0, 0, 0, 0.6)',
+                    borderColor: getStyleFor('cta-avatar').borderColor || 'rgba(255, 255, 255, 0.2)',
+                    borderWidth: getStyleFor('cta-avatar').borderWidth || '2px',
+                    borderStyle: (getStyleFor('cta-avatar').borderStyle as any) || 'solid',
+                  }}
                 >
                   {brand.name ? brand.name.charAt(0).toUpperCase() : '★'}
                 </div>

@@ -33,7 +33,11 @@ import {
   Film,
   Sparkle,
   Aperture,
-  Focus
+  Focus,
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
+  RotateCcw
 } from 'lucide-react';
 import { Slide, AspectRatio, BrandInfo } from '../types';
 import { AgencyClient } from '../services/supabase';
@@ -1865,54 +1869,149 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
           </div>
         </div>
 
-        {/* Row 3: Zoom & Position Coordinates */}
-        <div className="grid grid-cols-3 gap-3 pt-1">
-          {/* Zoom Slider */}
-          <div>
-            <div className="flex justify-between text-[10px] text-slate-400 mb-1">
-              <span>Zoom</span>
-              <span className="font-mono">{zoom}%</span>
+        {/* Row 3: Escala / Zoom y Encuadre Manual de la Imagen */}
+        <div className="bg-slate-950/70 p-3 rounded-2xl border border-slate-800 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-200">
+              <ZoomIn className="w-3.5 h-3.5 text-rose-400" />
+              <span>Zoom y Encuadre de la Imagen:</span>
             </div>
-            <input
-              type="range"
-              min={fit === 'cover' ? 100 : 50}
-              max="250"
-              value={zoom}
-              onChange={(e) => onUpdateSlide({ zoom: parseInt(e.target.value, 10) / 100 })}
-              className="w-full accent-rose-600 cursor-pointer h-1 bg-slate-800 rounded-lg"
-            />
+            
+            <div className="flex items-center gap-1">
+              {/* Botón Reset */}
+              <button
+                type="button"
+                onClick={() => onUpdateSlide({ zoom: 1, posX: 50, posY: 50 })}
+                className="text-[10px] bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white px-2 py-0.5 rounded-lg border border-slate-800 flex items-center gap-1 transition"
+                title="Restablecer zoom y posición a valores originales (100% centrado)"
+              >
+                <RotateCcw className="w-2.5 h-2.5" />
+                <span>Restablecer</span>
+              </button>
+            </div>
           </div>
 
-          {/* Pan X Slider */}
-          <div>
-            <div className="flex justify-between text-[10px] text-slate-400 mb-1">
-              <span>Posición X</span>
-              <span className="font-mono">{posX}%</span>
+          {/* Control Directo de Zoom con Botones - y + */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="text-slate-400 flex items-center gap-1">
+                <span>Nivel de Zoom / Tamaño:</span>
+              </span>
+              <div className="flex items-center gap-1.5">
+                <span className="font-mono text-xs font-bold text-rose-400 bg-slate-900 px-2 py-0.5 rounded-md border border-slate-800">
+                  {zoom}%
+                </span>
+              </div>
             </div>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={posX}
-              onChange={(e) => onUpdateSlide({ posX: parseInt(e.target.value, 10) })}
-              className="w-full accent-rose-600 cursor-pointer h-1 bg-slate-800 rounded-lg"
-            />
+
+            <div className="flex items-center gap-2">
+              {/* Botón achicar / Zoom Out */}
+              <button
+                type="button"
+                onClick={() => {
+                  const newZoom = Math.max(50, zoom - 10);
+                  onUpdateSlide({ zoom: newZoom / 100 });
+                }}
+                className="p-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg border border-slate-800 transition flex items-center justify-center shrink-0"
+                title="Achicar imagen (-10%)"
+              >
+                <ZoomOut className="w-3.5 h-3.5" />
+              </button>
+
+              {/* Slider de Zoom continuo (50% a 300%) */}
+              <input
+                type="range"
+                min="50"
+                max="300"
+                step="5"
+                value={zoom}
+                onChange={(e) => onUpdateSlide({ zoom: parseInt(e.target.value, 10) / 100 })}
+                className="flex-1 accent-rose-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
+              />
+
+              {/* Botón agrandar / Zoom In */}
+              <button
+                type="button"
+                onClick={() => {
+                  const newZoom = Math.min(300, zoom + 10);
+                  onUpdateSlide({ zoom: newZoom / 100 });
+                }}
+                className="p-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg border border-slate-800 transition flex items-center justify-center shrink-0"
+                title="Agrandar imagen (+10%)"
+              >
+                <ZoomIn className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Presets Rápidos de Zoom */}
+            <div className="flex items-center gap-1 pt-0.5">
+              <span className="text-[9px] text-slate-500 uppercase font-semibold">Atajos:</span>
+              {[
+                { val: 75, label: '75%' },
+                { val: 100, label: '100% (Normal)' },
+                { val: 125, label: '125%' },
+                { val: 150, label: '150%' },
+                { val: 200, label: '200%' },
+              ].map((pz) => (
+                <button
+                  key={pz.val}
+                  type="button"
+                  onClick={() => onUpdateSlide({ zoom: pz.val / 100 })}
+                  className={`text-[10px] px-2 py-0.5 rounded-lg border transition ${
+                    zoom === pz.val
+                      ? 'bg-rose-600 text-white border-rose-500 font-bold shadow-sm'
+                      : 'bg-slate-900 hover:bg-slate-800 text-slate-400 border-slate-800 hover:text-slate-200'
+                  }`}
+                >
+                  {pz.label}
+                </button>
+              ))}
+            </div>
           </div>
 
-          {/* Pan Y Slider */}
-          <div>
-            <div className="flex justify-between text-[10px] text-slate-400 mb-1">
-              <span>Posición Y</span>
-              <span className="font-mono">{posY}%</span>
+          {/* Posición X e Y (Encuadre Manual) */}
+          <div className="grid grid-cols-2 gap-3 pt-1.5 border-t border-slate-850">
+            {/* Pan X Slider */}
+            <div className="space-y-1">
+              <div className="flex justify-between text-[10px] text-slate-400">
+                <span>Posición Horizontal (X)</span>
+                <span className="font-mono text-slate-300 font-bold">{posX}%</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={posX}
+                onChange={(e) => onUpdateSlide({ posX: parseInt(e.target.value, 10) })}
+                className="w-full accent-rose-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
+              />
+              <div className="flex justify-between text-[9px] text-slate-500">
+                <button type="button" onClick={() => onUpdateSlide({ posX: 0 })} className="hover:text-rose-400 transition">Izq (0%)</button>
+                <button type="button" onClick={() => onUpdateSlide({ posX: 50 })} className="hover:text-rose-400 transition">Centro (50%)</button>
+                <button type="button" onClick={() => onUpdateSlide({ posX: 100 })} className="hover:text-rose-400 transition">Der (100%)</button>
+              </div>
             </div>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={posY}
-              onChange={(e) => onUpdateSlide({ posY: parseInt(e.target.value, 10) })}
-              className="w-full accent-rose-600 cursor-pointer h-1 bg-slate-800 rounded-lg"
-            />
+
+            {/* Pan Y Slider */}
+            <div className="space-y-1">
+              <div className="flex justify-between text-[10px] text-slate-400">
+                <span>Posición Vertical (Y)</span>
+                <span className="font-mono text-slate-300 font-bold">{posY}%</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={posY}
+                onChange={(e) => onUpdateSlide({ posY: parseInt(e.target.value, 10) })}
+                className="w-full accent-rose-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
+              />
+              <div className="flex justify-between text-[9px] text-slate-500">
+                <button type="button" onClick={() => onUpdateSlide({ posY: 0 })} className="hover:text-rose-400 transition">Arriba (0%)</button>
+                <button type="button" onClick={() => onUpdateSlide({ posY: 50 })} className="hover:text-rose-400 transition">Centro (50%)</button>
+                <button type="button" onClick={() => onUpdateSlide({ posY: 100 })} className="hover:text-rose-400 transition">Abajo (100%)</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>

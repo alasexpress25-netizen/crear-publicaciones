@@ -67,7 +67,8 @@ const isContainerKey = (key: string | null) => {
     key.includes('-card') ||
     key.includes('-box') ||
     key.includes('-container') ||
-    key.includes('grid')
+    key.includes('grid') ||
+    key === 'cta-avatar'
   );
 };
 
