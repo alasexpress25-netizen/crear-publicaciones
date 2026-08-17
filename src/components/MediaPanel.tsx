@@ -673,6 +673,10 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
         imageSuggestion: abstractIdea,
         brief: clientIndustry || brief,
         escenasYaUsadas,
+        clientInfo: client,
+        brand,
+        targetAudience,
+        slide,
       });
 
       const resolvedScene = resEscena || abstractIdea;
@@ -755,6 +759,10 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
           imageSuggestion: abstractIdea,
           brief: clientIndustry || brief,
           escenasYaUsadas: previousScenes,
+          clientInfo: client,
+          brand,
+          targetAudience,
+          slide: curSlide,
         });
 
         newScenesMap[curKey] = escena;

@@ -114,6 +114,10 @@ export async function apiBuildConcreteScene(params: {
   imageSuggestion: string;
   brief: string;
   escenasYaUsadas: string[];
+  clientInfo?: any;
+  brand?: any;
+  targetAudience?: string;
+  slide?: any;
 }): Promise<string> {
   const res = await fetch('/api/build-concrete-scene', {
     method: 'POST',

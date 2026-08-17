@@ -694,29 +694,75 @@ Devuelve EXCLUSIVAMENTE un JSON válido con la estructura exacta:
   });
 
   // 4. PASO B — Director de Arte: Convierte una idea abstracta en UNA ESCENA CONCRETA (máx 25 palabras)
-  // con memoria del carrusel completo para evitar repetir sujeto, acción o entorno.
+  // anclada 100% al nicho, industria y operaciones del cliente activo con memoria para no repetir escenas.
   app.post("/api/build-concrete-scene", async (req, res) => {
     try {
       const {
         imageSuggestion = "",
         brief = "",
         escenasYaUsadas = [],
+        clientInfo,
+        brand,
+        targetAudience,
+        slide,
       } = req.body;
+
+      const clientName = clientInfo?.name || brand?.name || "Cliente";
+      const clientIndustry = clientInfo?.industry || clientInfo?.business_type || brief || "Servicios Profesionales";
+      const clientAudience = clientInfo?.target_audience || targetAudience || "Clientes potenciales o empresas";
+      const clientOffers = Array.isArray(clientInfo?.offers) ? clientInfo.offers.join(", ") : clientInfo?.offers || "";
+      const clientPains = Array.isArray(clientInfo?.pain_points) ? clientInfo.pain_points.join(", ") : clientInfo?.pain_points || "";
+      const clientTone = clientInfo?.tone || clientInfo?.brand_voice || "Profesional y de alto impacto";
 
       const escenasList = Array.isArray(escenasYaUsadas) && escenasYaUsadas.length > 0
         ? `Estas son las escenas YA usadas en otras diapositivas de este mismo carrusel — tu escena nueva NO puede repetir el mismo sujeto, la misma acción ni el mismo entorno que ninguna de estas:\n${escenasYaUsadas.map((e: string, idx: number) => `${idx + 1}. ${e}`).join("\n")}`
         : "No hay escenas previas registradas aún para este carrusel.";
 
-      const prompt = `Sos el "Director de Arte" de una agencia de marketing: tu único trabajo es convertir una idea ABSTRACTA de qué imagen poner en UNA ESCENA CONCRETA de una sola frase, en español, de máximo 25 palabras. Rubro/negocio real (ancla siempre a esto, nunca a una interpretación genérica del beneficio): ${brief || "Servicios profesionales"}. ${escenasList}
+      const slideContext = slide ? `
+CONTENIDO DE ESTA DIAPOSITIVA:
+- Título: ${slide.title || ""}
+- Subtítulo/Gancho: ${slide.subtag || ""}
+- Badge: ${slide.badge || ""}
+- Cuerpo: ${slide.body || ""}
+` : "";
 
-Una escena concreta tiene SIEMPRE estas 4 partes en la misma frase: (1) un sujeto específico (no "una persona", sí "una vendedora" / "un cliente" / "el dueño del local"), (2) una acción específica y puntual (no "usando el producto", sí "entregando una bolsa en el mostrador"), (3) un entorno específico real de ese rubro (no "un lugar", sí "el mostrador del local" / "la vereda del gimnasio"), y (4) la prueba visual del beneficio (qué se ve en la imagen que demuestra, sin texto, que el beneficio es real).
+      const prompt = `Actúas como Director de Arte Publicitario y Diseñador Visual de Élite.
+Tu misión es diseñar UNA SOLA ESCENA FOTOGRÁFICA CONCRETA, en español, de máximo 25 palabras, que ilustre el mensaje de la diapositiva ANCLADA 100% AL NEGOCIO Y RUBRO REAL DEL CLIENTE.
 
-PROHIBIDO devolver algo abstracto tipo "representa la idea del ahorro" o "mostrar el producto de forma clara". PROHIBIDO usar clichés genéricos de banco de imágenes: apretón de manos de stock, gente sonriendo a cámara sin contexto, oficina con laptop sin relación al rubro, iconos o elementos flotantes. PROHIBIDO repetir el sujeto/acción/entorno de las escenas ya usadas listadas arriba.
+FICHA DEL CLIENTE REAL:
+- Empresa / Marca: ${clientName}
+- Rubro / Industria Exacta: ${clientIndustry}
+- Qué ofrece / Servicios: ${clientOffers || clientIndustry}
+- Dolores / Problemas que resuelve: ${clientPains || "Optimización, ventas y resultados"}
+- Público Objetivo: ${clientAudience}
+- Tono: ${clientTone}
+${slideContext}
+${escenasList}
 
-IDEA ABSTRACTA O CONTENIDO DE LA DIAPOSITIVA:
-"${imageSuggestion || brief || "Profesional trabajando en su rubro"}"
+REGLAS DE ORO DE ADAPTACIÓN POR RUBRO:
+1. SI EL CLIENTE ES DE TECNOLOGÍA / SOFTWARE / SAAS / AUTOMATIZACIÓN (ej: desarrollo de sistemas, ERP, código, datos):
+   -> La escena DEBE ocurrir en un entorno tech, centros de monitoreo, servidores, desarrolladores resolviendo cuellos de botella en pantallas, o empresarios revisando paneles operativos eficientes.
+2. SI EL CLIENTE ES UNA AGENCIA DE MARKETING / PUBLICIDAD:
+   -> La escena ocurrirá en estudios creativos, sesiones de fotos, análisis de campañas o pizarras de branding.
+3. SI EL CLIENTE ES DE SALUD / DENTAL / ESTÉTICA:
+   -> La escena ocurrirá en consultorios médicos, sillón odontológico, laboratorio o atención clínica.
+4. SI EL CLIENTE ES INMOBILIARIO / ARQUITECTURA / CONSTRUCCIÓN:
+   -> La escena ocurrirá en propiedades, obras, planos arquitectónicos o entrega de llaves.
+5. SI EL CLIENTE ES FITNESS / GASTRONOMÍA / COMERCIO / LEGAL / FINANZAS:
+   -> La escena DEBE ocurrir en el hábitat natural de ese rubro (gimnasio, cocina/restaurante, mostrador comercial, estudio contable/legal).
 
-Respondé SOLO con la escena final (una frase, sin comillas, sin explicaciones, sin prefijos tipo "Escena:").`;
+¡PROHIBICIÓN ESTRICTA!: NO inventes personajes de "agencia de marketing" o "publicistas" a menos que el cliente activo pertenezca literalmente a ese rubro. Adapta los personajes, ropa, herramientas y entorno al negocio del cliente (${clientName} - ${clientIndustry}).
+
+Una escena concreta tiene SIEMPRE 4 partes en una sola frase:
+(1) Sujeto del rubro del cliente (ej: ingeniero de software, dueña de negocio, médica, transportista).
+(2) Acción física y puntual (ej: configurando un script en doble monitor, analizando un dashboard logístico en tablet).
+(3) Entorno real del rubro (ej: sala de servidores moderna, oficina de operaciones, clínica luminosa).
+(4) Prueba visual del resultado o tensión sin texto.
+
+IDEA ABSTRACTA O MENSAJE A ILUSTRAR:
+"${imageSuggestion || slide?.title || clientIndustry}"
+
+Responde ÚNICAMENTE con la escena final (una sola frase concisa, sin comillas, sin explicaciones, sin prefijos tipo "Escena:").`;
 
       const response = await executeWithFallback((ai, modelName) =>
         ai.models.generateContent({
