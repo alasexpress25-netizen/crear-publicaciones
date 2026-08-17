@@ -262,12 +262,10 @@ export default function App() {
     }
 
     // Update Brief & Audience
-    if (client.business_type || client.industry) {
-      setBrief(
-        `${client.name} - ${client.business_type || client.industry}. ${
-          client.knowledge_base ? client.knowledge_base.slice(0, 200) : ''
-        }`
-      );
+    if (client.business_type || client.industry || client.knowledge_base) {
+      const defaultTopic = client.topics && client.topics.length > 0 ? client.topics[0] : '';
+      const briefContent = defaultTopic || `${client.name} - ${client.business_type || client.industry}${client.knowledge_base ? `. ${client.knowledge_base}` : ''}`;
+      setBrief(briefContent);
     }
     if (client.target_audience) {
       setTargetAudience(client.target_audience);

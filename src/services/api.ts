@@ -33,6 +33,8 @@ export async function apiGenerateCarousel(params: {
   technicalTerms?: string[];
   brand: BrandInfo;
   language?: string;
+  clientInfo?: any;
+  clientMemory?: any;
 }): Promise<CarouselGenerationResponse> {
   const res = await fetch('/api/generate-carousel', {
     method: 'POST',
@@ -118,6 +120,7 @@ export async function apiBuildConcreteScene(params: {
   brand?: any;
   targetAudience?: string;
   slide?: any;
+  clientMemory?: any;
 }): Promise<string> {
   const res = await fetch('/api/build-concrete-scene', {
     method: 'POST',
@@ -152,6 +155,7 @@ export async function apiEnhanceImagePrompt(params: {
   artDirectionMode?: string;
   isVideo?: boolean;
   aspect?: string;
+  clientMemory?: any;
 }): Promise<EnhanceImagePromptResult> {
   const res = await fetch('/api/enhance-image-prompt', {
     method: 'POST',
@@ -178,6 +182,7 @@ export async function apiEnhanceAllImagePrompts(params: {
   artDirectionMode?: string;
   isVideo?: boolean;
   aspect?: string;
+  clientMemory?: any;
 }): Promise<{
   slides: Array<{
     slideIndex: number;

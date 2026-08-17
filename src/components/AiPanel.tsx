@@ -23,7 +23,20 @@ import {
 import { MarketingDocument, BrandInfo, CarouselPostMeta } from '../types';
 import { AgencyClient } from '../services/supabase';
 import { apiGenerateCarousel } from '../services/api';
-import { safeAlert } from '../utils/notifications';
+import { safeAlert, safeConfirm } from '../utils/notifications';
+import {
+  getClientMemory,
+  loadClientMemoryFromDB,
+  recordCarouselGeneration,
+  clearClientMemory,
+  ClientMemory,
+} from '../services/clientMemoryStorage';
+import {
+  Brain,
+  History,
+  Trash,
+  CheckCircle2,
+} from 'lucide-react';
 
 interface AiPanelProps {
   brief: string;
@@ -97,7 +110,28 @@ export const AiPanel: React.FC<AiPanelProps> = ({
   const [copiedPost, setCopiedPost] = useState(false);
   const [generationRationale, setGenerationRationale] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showMemoryModal, setShowMemoryModal] = useState(false);
   const recognitionRef = React.useRef<any>(null);
+
+  const activeClientName = selectedClient?.name || brand?.name || 'Cliente';
+  const [clientMem, setClientMem] = useState<ClientMemory>(() =>
+    getClientMemory(activeClientName)
+  );
+
+  // Sincronizar memoria al cambiar de cliente (cargando de IndexedDB)
+  React.useEffect(() => {
+    setClientMem(getClientMemory(activeClientName));
+    loadClientMemoryFromDB(activeClientName).then((mem) => {
+      setClientMem(mem);
+    });
+  }, [activeClientName]);
+
+  const handleClearMemory = () => {
+    if (safeConfirm(`¿Estás seguro de reiniciar la memoria de "${activeClientName}"? Ambas IAs volverán a empezar con el historial en blanco.`)) {
+      clearClientMemory(activeClientName);
+      setClientMem(getClientMemory(activeClientName));
+    }
+  };
 
   const handleCopyFullPost = async () => {
     if (!postMeta?.caption) return;
@@ -189,6 +223,8 @@ export const AiPanel: React.FC<AiPanelProps> = ({
       const docTerms = activeDocuments.flatMap((d) => d.technicalTerms || []);
       const combinedTerms = Array.from(new Set([...clientTerms, ...docTerms]));
 
+      const currentMemory = getClientMemory(activeClientName);
+
       const response = await apiGenerateCarousel({
         brief: textToUse,
         slideCount,
@@ -199,9 +235,19 @@ export const AiPanel: React.FC<AiPanelProps> = ({
         technicalTerms: combinedTerms,
         brand,
         language,
+        clientInfo: selectedClient,
+        clientMemory: currentMemory,
       });
 
       if (response.slides && response.slides.length > 0) {
+        // Guardar automáticamente en la memoria del cliente
+        const updatedMem = recordCarouselGeneration(activeClientName, {
+          topic: textToUse,
+          slides: response.slides,
+          prompts: response.slides.map((s: any) => s.imageSuggestion || ''),
+        });
+        setClientMem(updatedMem);
+
         onApplyGeneratedCarousel(response.slides, response.post, response.hookRationale || response.strategySummary);
         setGenerationRationale(response.hookRationale || response.strategySummary || 'Carrusel generado con éxito');
       }
@@ -233,7 +279,16 @@ export const AiPanel: React.FC<AiPanelProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 flex-wrap justify-end">
+          <button
+            onClick={() => setShowMemoryModal(true)}
+            className="flex items-center gap-1 bg-amber-950/50 hover:bg-amber-900/60 border border-amber-700/50 text-amber-300 px-2.5 py-1 rounded-xl text-xs font-semibold transition"
+            title="Memoria anti-repetición de este cliente"
+          >
+            <Brain className="w-3.5 h-3.5 text-amber-400" />
+            <span>Memoria ({clientMem.history.length})</span>
+          </button>
+
           {onOpenClientSelector && (
             <button
               onClick={onOpenClientSelector}
@@ -584,6 +639,138 @@ export const AiPanel: React.FC<AiPanelProps> = ({
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Modal de Memoria Anti-Repetición del Cliente */}
+      {showMemoryModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+            {/* Modal Header */}
+            <div className="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/50">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                  <Brain className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    Memoria Inteligente Anti-Repetición
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Cliente activo: <span className="text-amber-300 font-semibold">{activeClientName}</span>
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowMemoryModal(false)}
+                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-4 sm:p-5 space-y-4 overflow-y-auto custom-scrollbar flex-1 text-xs">
+              <div className="bg-amber-950/20 border border-amber-800/30 rounded-2xl p-3.5 space-y-1.5 text-slate-300">
+                <div className="flex items-center gap-1.5 font-bold text-amber-300">
+                  <CheckCircle2 className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>¿Cómo funciona la memoria de las 2 IAs?</span>
+                </div>
+                <p className="text-[11px] leading-relaxed text-slate-300">
+                  Cada vez que generas un carrusel o un prompt visual para este cliente, la IA almacena de forma segura en la base de datos <strong>IndexedDB</strong> de tu navegador el registro de <strong>ganchos/titulares</strong> y <strong>escenas visuales</strong>. Al generar nuevos contenidos, ambas IAs consultan este historial y tienen <strong>estrictamente prohibido</strong> repetir los mismos temas, composiciones o imágenes.
+                </p>
+              </div>
+
+              {/* Estadísticas de memoria */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="bg-slate-950 border border-slate-800 rounded-2xl p-3 text-center">
+                  <div className="text-lg font-black text-white">{clientMem.history.length}</div>
+                  <div className="text-[10px] text-slate-400 font-semibold uppercase">Carruseles</div>
+                </div>
+                <div className="bg-slate-950 border border-slate-800 rounded-2xl p-3 text-center">
+                  <div className="text-lg font-black text-rose-400">{clientMem.usedHooks.length}</div>
+                  <div className="text-[10px] text-slate-400 font-semibold uppercase">Ganchos</div>
+                </div>
+                <div className="bg-slate-950 border border-slate-800 rounded-2xl p-3 text-center">
+                  <div className="text-lg font-black text-indigo-400">{clientMem.usedVisualScenes.length}</div>
+                  <div className="text-[10px] text-slate-400 font-semibold uppercase">Escenas de Imagen</div>
+                </div>
+                <div className="bg-slate-950 border border-slate-800 rounded-2xl p-3 text-center">
+                  <div className="text-lg font-black text-amber-400">{clientMem.usedTopics.length}</div>
+                  <div className="text-[10px] text-slate-400 font-semibold uppercase">Temas Tocados</div>
+                </div>
+              </div>
+
+              {/* Ganchos y Titulares Registrados */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-200 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                    <History className="w-3.5 h-3.5 text-rose-400" />
+                    <span>Ganchos & Titulares ya abordados ({clientMem.usedHooks.length})</span>
+                  </span>
+                </div>
+                {clientMem.usedHooks.length > 0 ? (
+                  <div className="bg-slate-950/80 border border-slate-800/80 rounded-2xl p-3 max-h-36 overflow-y-auto custom-scrollbar space-y-1.5">
+                    {clientMem.usedHooks.map((hook, idx) => (
+                      <div key={idx} className="flex items-start gap-2 text-slate-300 text-[11px]">
+                        <span className="text-rose-500 font-bold">•</span>
+                        <span>{hook}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-3 bg-slate-950/40 border border-dashed border-slate-800 rounded-2xl text-center text-slate-500 text-[11px]">
+                    No hay ganchos previos registrados aún para este cliente.
+                  </div>
+                )}
+              </div>
+
+              {/* Escenas Visuales Registradas */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-200 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Escenas Visuales Registradas ({clientMem.usedVisualScenes.length})</span>
+                  </span>
+                </div>
+                {clientMem.usedVisualScenes.length > 0 ? (
+                  <div className="bg-slate-950/80 border border-slate-800/80 rounded-2xl p-3 max-h-36 overflow-y-auto custom-scrollbar space-y-1.5">
+                    {clientMem.usedVisualScenes.map((scene, idx) => (
+                      <div key={idx} className="flex items-start gap-2 text-slate-300 text-[11px]">
+                        <span className="text-indigo-500 font-bold">•</span>
+                        <span>{scene}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-3 bg-slate-950/40 border border-dashed border-slate-800 rounded-2xl text-center text-slate-500 text-[11px]">
+                    No hay escenas visuales previas registradas aún.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-slate-800 bg-slate-950/50 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={handleClearMemory}
+                className="flex items-center gap-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 px-3 py-1.5 rounded-xl border border-rose-800/30 text-xs font-semibold transition"
+                title="Borrar todo el historial de este cliente"
+              >
+                <Trash className="w-3.5 h-3.5" />
+                <span>Reiniciar Memoria</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowMemoryModal(false)}
+                className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-1.5 rounded-xl text-xs font-bold transition"
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

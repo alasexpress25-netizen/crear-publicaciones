@@ -1,10 +1,11 @@
 import { SavedCarouselProject } from '../types';
 
 const DB_NAME = 'LaVisualMK_CarouselDB';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE_PROJECTS = 'projects';
 const STORE_META = 'metadata';
 const STORE_LOGOS = 'client_logos';
+const STORE_CLIENT_MEMORY = 'client_memory';
 const LEGACY_STORAGE_KEY = 'lavisualmk_saved_projects_v2';
 
 export function openAppDB(): Promise<IDBDatabase> {
@@ -30,6 +31,11 @@ export function openAppDB(): Promise<IDBDatabase> {
         const logoStore = db.createObjectStore(STORE_LOGOS, { keyPath: 'id' });
         logoStore.createIndex('clientName', 'clientName', { unique: false });
         logoStore.createIndex('createdAt', 'createdAt', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(STORE_CLIENT_MEMORY)) {
+        const memoryStore = db.createObjectStore(STORE_CLIENT_MEMORY, { keyPath: 'clientKey' });
+        memoryStore.createIndex('clientName', 'clientName', { unique: false });
+        memoryStore.createIndex('lastUpdated', 'lastUpdated', { unique: false });
       }
     };
 
@@ -219,6 +225,70 @@ export async function getMetaDB<T = any>(key: string): Promise<T | null> {
   } catch (err) {
     console.warn('Error leyendo metadata de IndexedDB:', err);
     return null;
+  }
+}
+
+/**
+ * Guarda o actualiza la memoria de un cliente en IndexedDB
+ */
+export async function saveClientMemoryDB(memory: any): Promise<void> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_CLIENT_MEMORY, 'readwrite');
+      const store = transaction.objectStore(STORE_CLIENT_MEMORY);
+      const clientKey = (memory.clientName || 'default_client').trim().toLowerCase().replace(/[^a-z0-9_]/gi, '_');
+      const record = {
+        clientKey,
+        ...memory,
+      };
+      const request = store.put(record);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  } catch (err) {
+    console.warn('Error guardando memoria en IndexedDB:', err);
+  }
+}
+
+/**
+ * Obtiene la memoria de un cliente desde IndexedDB
+ */
+export async function getClientMemoryDB(clientName: string): Promise<any | null> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_CLIENT_MEMORY, 'readonly');
+      const store = transaction.objectStore(STORE_CLIENT_MEMORY);
+      const clientKey = (clientName || 'default_client').trim().toLowerCase().replace(/[^a-z0-9_]/gi, '_');
+      const request = store.get(clientKey);
+      request.onsuccess = () => {
+        resolve(request.result || null);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  } catch (err) {
+    console.warn('Error leyendo memoria de IndexedDB:', err);
+    return null;
+  }
+}
+
+/**
+ * Elimina la memoria de un cliente en IndexedDB
+ */
+export async function deleteClientMemoryDB(clientName: string): Promise<void> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_CLIENT_MEMORY, 'readwrite');
+      const store = transaction.objectStore(STORE_CLIENT_MEMORY);
+      const clientKey = (clientName || 'default_client').trim().toLowerCase().replace(/[^a-z0-9_]/gi, '_');
+      const request = store.delete(clientKey);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  } catch (err) {
+    console.warn('Error eliminando memoria de IndexedDB:', err);
   }
 }
 

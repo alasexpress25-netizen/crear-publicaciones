@@ -63,12 +63,35 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   }
 }
 
-// Safely register Service Worker for PWA support
-if ('serviceWorker' in navigator && import.meta.env.PROD) {
+// Global error listeners to catch cross-origin issues and unhandled rejections gracefully
+if (typeof window !== 'undefined') {
+  window.addEventListener('error', (event) => {
+    if (event.message === 'Script error.' || event.message === 'Script error') {
+      event.preventDefault?.();
+      console.warn('[Global Notice] Cross-origin script error captured and handled gracefully.');
+      return;
+    }
+    console.error('[Global Error]', event.error || event.message);
+  });
+
+  window.addEventListener('unhandledrejection', (event) => {
+    console.warn('[Global Unhandled Rejection]', event.reason);
+    event.preventDefault?.();
+  });
+}
+
+// Safely register Service Worker for PWA support only when running top-level outside iframes
+if (typeof window !== 'undefined' && 'serviceWorker' in navigator && import.meta.env.PROD) {
   try {
-    // Only register if window is top or allows it
-    const isTop = window.self === window.top;
-    if (isTop) {
+    const isTopLevel = (() => {
+      try {
+        return window.self === window.parent;
+      } catch {
+        return false;
+      }
+    })();
+
+    if (isTopLevel) {
       window.addEventListener('load', () => {
         navigator.serviceWorker
           .register('/sw.js')

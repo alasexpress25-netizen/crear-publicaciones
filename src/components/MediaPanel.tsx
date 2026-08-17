@@ -41,6 +41,7 @@ import { CURATED_STOCK_PHOTOS } from '../data/marketingPlaybooks';
 import { apiBuildConcreteScene, apiEnhanceImagePrompt, EnhanceImagePromptResult } from '../services/api';
 import { checkSceneSimilarity } from '../utils/sceneSimilarity';
 import { safeAlert } from '../utils/notifications';
+import { getClientMemory, recordVisualScene } from '../services/clientMemoryStorage';
 
 interface MediaPanelProps {
   slide: Slide;
@@ -658,6 +659,8 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
     setSimilarityWarning(null);
     const modeToUse = customStyleMode || artDirectionMode;
     const currentSlideKey = slide._uid || slide.id || slideIndex;
+    const activeClientName = client?.name || brand?.name || '';
+    const currentMemory = getClientMemory(activeClientName);
 
     try {
       // 1. Gather scenes already used in other slides of this carousel
@@ -677,6 +680,7 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
         brand,
         targetAudience,
         slide,
+        clientMemory: currentMemory,
       });
 
       const resolvedScene = resEscena || abstractIdea;
@@ -708,11 +712,15 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
         artDirectionMode: modeToUse,
         isVideo,
         aspect: aspectRatio,
+        clientMemory: currentMemory,
       });
 
       setEnhancedPrompt(res.enhancedPrompt);
       setArtDirectionNotes(res.artDirectionNotes || null);
       setAlternativeConcepts(res.alternativeConcepts || []);
+
+      // Registrar en memoria permanente del cliente
+      recordVisualScene(activeClientName, resolvedScene, res.enhancedPrompt);
 
       const updates: Partial<Slide> = {
         imageSuggestion: res.enhancedPrompt,
@@ -737,6 +745,8 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
     if (!slides || slides.length === 0 || !onUpdateAllSlides) return;
     setIsEnhancingAll(true);
     setEnhancingStatusText('Iniciando dirección visual en cadena para todo el carrusel...');
+    const activeClientName = client?.name || brand?.name || '';
+    const currentMemory = getClientMemory(activeClientName);
 
     try {
       const newScenesMap: Record<string | number, string> = { ...(escenasPorDiapositiva || {}) };
@@ -763,6 +773,7 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
           brand,
           targetAudience,
           slide: curSlide,
+          clientMemory: currentMemory,
         });
 
         newScenesMap[curKey] = escena;
@@ -782,7 +793,10 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
           artDirectionMode,
           isVideo,
           aspect: aspectRatio,
+          clientMemory: currentMemory,
         });
+
+        recordVisualScene(activeClientName, escena, promptRes.enhancedPrompt);
 
         updatedSlides[i] = {
           ...curSlide,
@@ -831,8 +845,12 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
   // Open Gemini / Veo in named reusable tab
   const handleOpenGemini = () => {
     const targetUrl = isVideo ? 'https://deepmind.google/technologies/veo/' : 'https://gemini.google.com/';
-    const tabName = isVideo ? 'veo_video_generator_tab' : 'gemini_art_director_tab';
-    window.open(targetUrl, tabName);
+    const tabName = isVideo ? '_blank' : 'gemini_art_director_tab';
+    try {
+      window.open(targetUrl, tabName, 'noopener,noreferrer');
+    } catch {
+      window.location.href = targetUrl;
+    }
   };
 
   return (

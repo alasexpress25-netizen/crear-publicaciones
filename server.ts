@@ -119,30 +119,27 @@ async function executeWithFallback<T>(fn: (ai: GoogleGenAI, modelName: string) =
 
 // Built-in marketing expert knowledge base injected into system prompts
 const MARKETING_PSYCHOLOGY_FRAMEWORK = `
-ERES UN DIRECTOR ESTRATÉGICO DE MARKETING Y COPYWRITER SENIOR DE RESPUESTA DIRECTA.
-Tu especialidad es crear publicaciones y carruseles para redes sociales (Instagram, LinkedIn, TikTok) que DETIENEN EL SCROLL en el primer segundo y convierten desconocidos en clientes.
+ERES UNA DIRECTORA EJECUTIVA DE MARKETING Y COPYWRITER SENIOR DE RESPUESTA DIRECTA CON ABSOLUTA LIBERTAD CREATIVA, IMAGINACIÓN ESTRATÉGICA Y MEMORIA ACTIVA.
+Tu especialidad es conectar los problemas reales del cliente con las emociones profundas de su audiencia, concibiendo carruseles para redes sociales (Instagram, LinkedIn) que DETIENEN EL SCROLL, generan autoridad genuina y provocan acción.
 
-FILOSOFÍA DEL "MARKETING DE CONFIANZA Y PSICOLOGÍA DEL SCROLL":
-1. En redes, nadie entra a ver anuncios genéricos ("Vendemos esto", "Somos los mejores", "Conoce nuestros servicios"). El usuario promedio scrollea a 2 metros de pantalla por minuto.
-2. Si la DIAPOSITIVA 1 suena a vendedor tradicional, el usuario se va en 0.5 segundos.
-3. La DIAPOSITIVA 1 TIENE UN SOLO TRABAJO: Romper el patrón mental, generar tensión, tocar un dolor latente o abrir una brecha de curiosidad irresistible que OBLIGUE a deslizar a la siguiente diapositiva.
-4. ESTRUCTURAS DE GANCHO PARA LA DIAPOSITIVA 1 (SCROLL-STOPPERS):
-   - 🎯 PREGUNTA DE REFLEXIÓN / DEDO EN LA LLAGA: No "¿Quieres vender más?", sino "¿Por qué tu competencia vende el doble cobrando más caro?", "¿Por qué publicas todos los días y nadie te pregunta el precio?", "¿Por qué tus clientes desaparecen cuando les pasas el presupuesto?".
-   - ⚠️ ERRORES COSTOSOS Y TRAMPAS: "Cometes alguno de estos 4 errores al cotizar?", "El error silencioso que hace que tu negocio parezca amateur", "3 cosas que estás haciendo que espantan a tus mejores clientes".
-   - ⚡ QUIEBRE DE CREENCIA (CONTRARIAN): "Tener más seguidores no te va a salvar", "El contenido de valor ya no funciona como antes (a menos que hagas esto)", "Dejá de bajar tus precios para competir".
-   - 🔄 CONTRASTE ANTES VS DESPUÉS / EL ABISMO: "Muchos buscan likes. Los negocios reales buscan facturación.", "La diferencia entre un negocio que sobrevive y uno que escala".
-   - ♟️ ANALOGÍA DE ALTO IMPACTO: "Hacer marketing sin estrategia es como jugar ajedrez a oscuras: solo te das cuenta del error en el jaque mate."
-   - 🧪 CASO DE ESTUDIO / EXPERIMENTO: "Analizamos 50 negocios de tu rubro: esto es lo único que tenían en común los que crecían."
+PRINCIPIOS FUNDAMENTALES DE TU TRABAJO COMO DIRECTORA:
+1. LIBERTAD CREATIVA E IMAGINACIÓN ILIMITADA:
+   - No estás atada a plantillas genéricas ni fórmulas trilladas.
+   - Analizas qué necesita escuchar el cliente ideal hoy: ¿un ángulo provocador, una historia real, una analogía inesperada, un error costoso o una guía paso a paso?
+   - Tienes total soltura para variar el tono, el ritmo y la narrativa para que cada proyecto sea una obra única y memorable.
 
-REGLAS DE FORMATO Y REDACCIÓN PARA CADA DIAPOSITIVA:
-- Brevedad implacable: Esto se lee en pantallas de celular. Textos concisos, de alto impacto.
-- Título (title): 3 a 8 palabras en MAYÚSCULAS o impacto.
-- Subtítulo / Gancho secundario (subtag): 2 a 6 palabras.
-- Cuerpo (body): 1 a 2 frases contundentes (máximo 15 palabras).
-- Insignia (badge): Etiqueta corta opcional (ej: "ERROR COMÚN", "SECRETO", "GUÍA", "ATENCIÓN").
-- Puntos clave (bullets): Opcional para diapositivas de tips/pasos, frases directas de 3 a 6 palabras.
-- Llamado a la acción (cta): Claro, conversacional y motivador.
-- imageSuggestion: Descripción exacta en español de la escena fotográfica o visual para esa diapositiva.
+2. INTELIGENCIA DE CONTEXTO (MÉTRICAS & DATOS DE SUPABASE):
+   - Conoces a fondo qué hace el cliente, qué servicios vende, qué problemas resuelve y el lenguaje técnico de su sector.
+   - Hablas como una verdadera especialista del nicho, usando términos reales y situaciones verosímiles, jamás como un redactor genérico de IA.
+
+3. CONSULTA OBLIGATORIA DE MEMORIA ANTI-REPETICIÓN:
+   - Siempre revisas tu historial de ganchos, temas, dolores y escenas visuales ya usadas para este cliente.
+   - Si una idea o dolor ya fue expresado en proyectos previos, tu mente creadora lo DESCARTA y explora un dolor secundario, una objeción oculta, un caso de estudio o una perspectiva fresca.
+
+4. ARQUITECTURA DE ATENCIÓN PARA CELULARES (ARCO NARRATIVO PARA ## DIAPOSITIVAS):
+   - Diapositiva 1: Gancho irresistible de 4 a 8 palabras en MAYÚSCULAS que frene el pulgar al instante.
+   - Diapositivas de desarrollo: Tensión progresiva, claridad meridiana, frases cortas y revelaciones de valor.
+   - Diapositiva final: Llamado a la acción (CTA) natural, claro y orientado al objetivo comercial del proyecto.
 `;
 
 async function startServer() {
@@ -238,85 +235,103 @@ Devuelve un JSON con:
         knowledgeBase = "",
         technicalTerms = [],
         brand = { name: "LA VISUAL MK", web: "lavisualmk.com" },
-        language = "es"
+        language = "es",
+        clientInfo,
+        clientMemory,
       } = req.body;
 
       const languageName = language === "pt" ? "Portugués (Brasil - pt-BR)" : language === "en" ? "English (US - en-US)" : "Español (es)";
       
+      const clientName = clientInfo?.name || brand?.name || "Cliente";
+      const clientIndustry = clientInfo?.industry || clientInfo?.business_type || "";
+      const clientOffers = Array.isArray(clientInfo?.offers) ? clientInfo.offers.join(", ") : (clientInfo?.offers || "");
+      const clientPains = Array.isArray(clientInfo?.pain_points) ? clientInfo.pain_points.join(", ") : (clientInfo?.pain_points || "");
+      const clientTopics = Array.isArray(clientInfo?.topics) ? clientInfo.topics.join("; ") : (clientInfo?.topics || "");
+      const clientKB = clientInfo?.knowledge_base || "";
+      const clientAudience = clientInfo?.target_audience || targetAudience || "Clientes potenciales que buscan solucionar un problema real";
+
+      // Memoria acumulada del cliente para garantizar contenido 100% fresco y no repetitivo
+      const usedHooks = Array.isArray(clientMemory?.usedHooks) ? clientMemory.usedHooks.slice(0, 15) : [];
+      const usedTopics = Array.isArray(clientMemory?.usedTopics) ? clientMemory.usedTopics.slice(0, 15) : [];
+      const usedHeadlines = Array.isArray(clientMemory?.usedHeadlines) ? clientMemory.usedHeadlines.slice(0, 20) : [];
+      const usedScenes = Array.isArray(clientMemory?.usedVisualScenes) ? clientMemory.usedVisualScenes.slice(0, 15) : [];
+
+      const memorySection = (usedHooks.length > 0 || usedTopics.length > 0 || usedHeadlines.length > 0 || usedScenes.length > 0) ? `
+======================================================
+🧠 MEMORIA DE PROYECTOS PREVIOS DE ${clientName.toUpperCase()} (¡ESTRICTAMENTE PROHIBIDO REPETIR!):
+======================================================
+Los siguientes ganchos, temas y escenas YA FUERON UTILIZADOS en carruseles anteriores para este cliente.
+Tu nuevo carrusel DEBE ser 100% original, atacando un dolor diferente, un ángulo nuevo o un servicio distinto:
+
+${usedHooks.length > 0 ? `• GANCHOS / TITULARES YA USADOS ANTERIORMENTE (NO REPETIR):\n${usedHooks.map(h => `  - "${h}"`).join('\n')}` : ''}
+${usedTopics.length > 0 ? `• TEMAS O ENFOQUES YA TOCADOS (NO REPETIR):\n${usedTopics.map(t => `  - ${t}`).join('\n')}` : ''}
+${usedScenes.length > 0 ? `• ESCENAS VISUALES YA CREADAS (NO REPETIR SUJETOS/ACCIONES):\n${usedScenes.map(s => `  - "${s}"`).join('\n')}` : ''}
+` : '';
+
       const technicalTermsList = Array.isArray(technicalTerms) && technicalTerms.length > 0
         ? technicalTerms.join(", ")
-        : (brand.technicalTerms && brand.technicalTerms.length > 0 ? brand.technicalTerms.join(", ") : "");
+        : (clientInfo?.technical_terms && clientInfo.technical_terms.length > 0
+            ? clientInfo.technical_terms.join(", ")
+            : (brand.technicalTerms && brand.technicalTerms.length > 0 ? brand.technicalTerms.join(", ") : ""));
 
       const prompt = `
-CREAR UN CARRUSEL DE REDES SOCIALES ESTRATÉGICO DE EXACTAMENTE ${slideCount} DIAPOSITIVAS.
+ACTÚAS COMO DIRECTORA EJECUTIVA DE MARKETING Y COPYWRITER SENIOR DE RESPUESTA DIRECTA.
+Tu misión es conceptualizar y redactar un carrusel de exactamente ${slideCount} diapositivas para redes sociales con total libertad de creación, imaginación estratégica, criterio profesional y memoria inteligente.
 
-DATOS DEL NEGOCIO / BRIEF:
-${brief}
-
-AUDIENCIA OBJETIVO:
-${targetAudience || "Clientes potenciales que buscan solucionar un problema real"}
-
-DOCUMENTOS / CONOCIMIENTO DE MARKETING AGREGADO:
-${knowledgeBase || "Sin documentos adicionales"}
-
-${technicalTermsList ? `VOCABULARIO TÉCNICO, JERGA O TÉRMINOS OBLIGATORIOS DEL SECTOR A INCLUIR NATURALMENTE:
-${technicalTermsList}
--> INSTRUCCIÓN CRÍTICA DE VOCABULARIO: Incorpora de 2 a 4 de estos términos técnicos especializados de forma orgánica en los títulos, bullets o cuerpo de las diapositivas para transmitir autoridad, dominio profesional y experiencia real en el nicho.` : ''}
-
-OBJETIVO DEL CARRUSEL:
-${objective} (ventas, interacción/comentarios, guardados/tips, autoridad/marca, o alcance)
-
-TIPO DE GANCHO PRIORITARIO PARA LA DIAPOSITIVA 1:
-${hookType} (pregunta_reflexiva, error_costoso, quiebre_creencia, contraste_antes_despues, analogia, caso_revelado)
-
-NOMBRE DE MARCA: ${brand.name} | WEB: ${brand.web}
+==============================================
+FICHA DEL CLIENTE (MÉTRICAS & DATOS DE SUPABASE):
+==============================================
+- NOMBRE DEL CLIENTE / MARCA: ${clientName}
+- RUBRO / QUÉ HACE EXACTAMENTE: ${clientIndustry || "Empresa de servicios especializados"}
+- PÚBLICO OBJETIVO: ${clientAudience}
+${clientOffers ? `- QUÉ OFRECE / PRODUCTOS O SERVICIOS: ${clientOffers}` : ''}
+${clientPains ? `- DOLORES O PROBLEMAS QUE RESUELVE: ${clientPains}` : ''}
+${clientTopics ? `- TEMAS / PILARES DE CONTENIDO REGISTRADOS: ${clientTopics}` : ''}
+${clientKB ? `- BASE DE CONOCIMIENTO EXTENDIDA DEL CLIENTE:\n${clientKB}` : ''}
+${memorySection}
+OBJETIVO DEL PROYECTO: ${objective}
+TEMA / BRIEF ESPECÍFICO DE ESTE CARRUSEL: ${brief}
+${knowledgeBase ? `DOCUMENTOS ADICIONALES DE REFERENCIA:\n${knowledgeBase}` : ''}
+${technicalTermsList ? `VOCABULARIO TÉCNICO DEL SECTOR A INTEGRAR NATURALMENTE: ${technicalTermsList}` : ''}
+ENFOQUE INICIAL DE GANCHO (GUÍA SUGERIDA): ${hookType}
 IDIOMA DE REDACCIÓN OBLIGATORIO: ${languageName}
-¡TODOS los textos (títulos, subtítulos, cuerpo, badges, bullets, cta, caption y hashtags) DEBEN ESTAR EN ${languageName}!
 
-REQUISITOS CRÍTICOS:
-1. DIAPOSITIVA 1 (EL SCROLL-STOPPER):
-   - Debe frenar el scroll de inmediato.
-   - NADA de "Vendemos esto" ni frases genéricas.
-   - Debe usar preguntas reflexivas que duelan o generen intriga (Ej: "¿Por qué no tienes clientes?", "¿Cometes alguno de estos errores al vender?", "¿Por qué tu competencia cobra el doble?").
-   - Título impactante de 4 a 8 palabras en MAYÚSCULAS.
-2. DIAPOSITIVAS INTERMEDIAS (EL DESARROLLO DEL VALOR / TENSIÓN):
-   - Desarrollan la idea con lógica implacable, datos concretos, errores específicos o pasos accionables.
-   - Si corresponde, usar "bullets" con 2 a 3 puntos concisos.
-   - Usa la jerga o términos del sector para diferenciar este contenido de contenido genérico de novatos.
-3. DIAPOSITIVA FINAL (EL CIERRE / CTA):
-   - Llamado a la acción inequívoco y natural para ${objective}.
-4. DIRECTOR DE MEDIOS & FONDOS VISUALES ESPECÍFICOS PARA CADA DIAPOSITIVA (STOCK & IA):
-   - ¡PROHIBIDO REPETIR PROMPTS O PALABRAS CLAVE ENTRE DIAPOSITIVAS!
-   - CADA DIAPOSITIVA ES UN ESCENARIO VISUAL DISTINTO:
-     * Slide 1: Gancho de alta tensión / emoción / duda / metáfora que frena el scroll.
-     * Slides intermedias: Problema específico, error en acción, datos, herramientas de trabajo, personas debatiendo o analizando el proceso del nicho.
-     * Slide final: Cierre, éxito, claridad, llamada a la acción o resultado satisfactorio.
-   - "imageSuggestion": Prompt fotográfico fotorrealista/cinematográfico ÚNICO y altamente personalizado para ESTA diapositiva, de 2 a 3 frases describiendo la escena, personajes, iluminación, colores y ambiente del rubro "${brand.name} / ${brief}". SIEMPRE terminar con "sin texto en la imagen, sin marcas de agua, fotorrealismo premium".
-   - "mediaSearchKeywords": 3 a 4 palabras clave en INGLÉS precisas para Pixabay acordes a la escena específica de esta diapositiva (ej: para Slide 1 de error: ["frustrated business owner", "dark office desk", "financial stress"]; para Slide de crecimiento: ["modern skyscraper interior", "confident professional", "sunset window"]).
-5. POST CAPTION & HASHTAGS:
-   - Redactar el texto completo para el pie de foto de Instagram/LinkedIn con gancho de lectura, espaciado elegante y llamada a la acción.
-   - Lista de 5-10 hashtags ultra-específicos del nicho (sin el caracter #, en minúsculas).
+TU PROCESO MENTAL COMO DIRECTORA DE MARKETING:
+1. IMAGINA CON LIBERTAD TOTAL:
+   - Conecta con la realidad viva de la audiencia de ${clientName} y lo que hace en su día a día.
+   - Diseña un arco dramático y educativo perfecto para estas ${slideCount} diapositivas: ¿Qué conflicto real, mito costoso, caso práctico o revelación técnica los detendrá en seco?
+   - Trabaja con soltura, autenticidad y elegancia. Cero clichés corporativos ni frases huecas.
 
-Devuelve EXCLUSIVAMENTE un JSON con esta estructura exacta:
+2. VERIFICA TU MEMORIA (FILTRO ANTI-REPETICIÓN):
+   - Examina minuciosamente la lista de ganchos, temas, dolores y escenas previas registradas para este cliente.
+   - Si la idea, el gancho o el dolor que concebiste ya fue expresado en proyectos anteriores, DESCÁRTALO DE INMEDIATO y crea un ángulo completamente fresco, una objeción oculta o un dolor secundario diferente.
+
+3. ARQUITECTURA VISUAL Y TEXTUAL PARA CELULARES (EXACTAMENTE ${slideCount} SLIDES):
+   - Diapositiva 1 (Gancho): Título contundente de 4 a 8 palabras en MAYÚSCULAS con alto magnetismo.
+   - Diapositivas 2 a ${slideCount - 1} (Desarrollo): Frases directas, revelaciones, datos del sector y ritmo ágil.
+   - Diapositiva ${slideCount} (Cierre & CTA): Llamado a la acción natural y persuasivo alineado al objetivo (${objective}).
+   - Dirección visual ("imageSuggestion"): Describe una escena cinematográfica única y fotorrealista para cada diapositiva, terminando con "sin texto en la imagen, sin marcas de agua, fotorrealismo premium".
+
+Devuelve EXCLUSIVAMENTE un JSON con esta estructura:
 {
-  "strategySummary": "Explicación de 1 frase del ángulo psicológico utilizado",
-  "hookRationale": "Por qué este gancho de la Diapositiva 1 detiene el scroll",
+  "strategySummary": "Explicación de 1 frase del ángulo psicológico y creativo utilizado",
+  "hookRationale": "Por qué este gancho de la Diapositiva 1 detiene el scroll y resulta 100% fresco",
   "slides": [
     {
       "id": 1,
       "badge": "ETIQUETA CORTA O VACÍO",
       "subtag": "Subtítulo de tensión",
       "title": "TÍTULO GANCHO EN MAYÚSCULAS",
-      "body": "Cuerpo de 1 frase concisa o vacío si el título es autosuficiente",
-      "cta": "Desliza para ver la verdad 👉",
+      "body": "Cuerpo conciso o vacío si el título es autosuficiente",
+      "cta": "Desliza para descubrirlo 👉",
       "bullets": [],
-      "imageSuggestion": "Descripción concreta de la escena visual/foto profesional única para esta diapositiva",
-      "mediaSearchKeywords": ["dark office", "businessman thinking", "cinematic lighting"]
+      "imageSuggestion": "Descripción visual cinematográfica única para esta diapositiva, sin texto en la imagen, sin marcas de agua, fotorrealismo premium",
+      "mediaSearchKeywords": ["keyword1", "keyword2", "keyword3"]
     }
   ],
   "post": {
-    "caption": "Texto completo del post para redes con saltos de línea...",
-    "hashtags": ["marketingdigital", "negocios", "ventasonline"]
+    "caption": "Texto completo del post para Instagram/LinkedIn con gancho, desarrollo y CTA...",
+    "hashtags": ["hashtag1", "hashtag2", "hashtag3"]
   }
 }
 `;
@@ -328,7 +343,7 @@ Devuelve EXCLUSIVAMENTE un JSON con esta estructura exacta:
           config: {
             responseMimeType: "application/json",
             systemInstruction: MARKETING_PSYCHOLOGY_FRAMEWORK,
-            temperature: 0.7,
+            temperature: 0.85,
           },
         })
       );
@@ -348,12 +363,13 @@ Devuelve EXCLUSIVAMENTE un JSON con esta estructura exacta:
           const isFinal = slideNum === total;
 
           if (!promptText || seenPrompts.has(promptText.toLowerCase()) || promptText.length < 25) {
+            const industryDescriptor = clientIndustry || brief || "tecnología y negocios";
             if (isHook) {
-              promptText = `Fotografía cinematográfica dramática de alto impacto para ${brief}. Persona profesional con expresión de profunda reflexión frente a un problema crucial en su negocio o trabajo, luz lateral de claroscuro, fondo de oficina moderna en desenfoque suave, sin texto en la imagen, sin tipografías, sin marcas de agua, fotorrealismo premium.`;
+              promptText = `Fotografía cinematográfica con iluminación de claroscuro para ${clientName} en el sector de ${industryDescriptor}. Composición dramática enfocada en un detalle conceptual o momento de alta concentración profesional sin clichés de stock, espacio negativo limpio, sin texto en la imagen, sin marcas de agua, fotorrealismo 8k.`;
             } else if (isFinal) {
-              promptText = `Fotografía publicitaria luminosa y triunfante para ${brief}. Profesional o cliente satisfecho en un entorno de éxito y claridad, luz natural cálida de atardecer, atmósfera de confianza y solución lograda, sin texto en la imagen, sin marcas de agua, 8k fotorrealista.`;
+              promptText = `Fotografía publicitaria de alta gama para ${clientName}. Entorno moderno, luminoso y sofisticado con luz natural de ventana, atmósfera de claridad, innovación y resultado completado, sin texto en la imagen, sin marcas de agua, estilo editorial premium.`;
             } else {
-              promptText = `Fotografía editorial fotorrealista capturando la acción de "${headline.slice(0, 60)}" en el rubro de ${brief}. Enfoque nítido en el proceso y detalles auténticos del oficio, iluminación equilibrada de estudio, sin texto en la imagen, sin tipografías, estilo publicitario de alta gama.`;
+              promptText = `Fotografía documental técnica capturando la acción de "${headline.slice(0, 60)}" en el rubro de ${clientName} (${industryDescriptor}). Enfoque nítido en el proceso, herramientas especializadas y detalles auténticos, iluminación cinematográfica suave, sin texto en la imagen, sin tipografías.`;
             }
           }
           seenPrompts.add(promptText.toLowerCase());
@@ -366,7 +382,7 @@ Devuelve EXCLUSIVAMENTE un JSON con esta estructura exacta:
               .split(' ')
               .filter((w: string) => w.length > 3)
               .slice(0, 3);
-            keywords = baseWords.length > 0 ? baseWords : (isHook ? ['business strategy', 'thinking', 'stress'] : isFinal ? ['success', 'handshake', 'growth'] : ['workspace', 'teamwork', 'analytics']);
+            keywords = baseWords.length > 0 ? baseWords : (isHook ? ['technology concept', 'minimalist focus', 'dark aesthetic'] : isFinal ? ['modern architecture', 'clarity', 'workspace'] : ['software coding', 'hardware detail', 'technical engineering']);
           }
 
           return {
@@ -575,20 +591,28 @@ REGLAS:
   // 3. Generate 5-6 Scroll-Stopping Hook Variations for Slide 1
   app.post("/api/generate-hooks", async (req, res) => {
     try {
-      const { brief, targetAudience, knowledgeBase, language = "es" } = req.body;
+      const { brief, targetAudience, knowledgeBase, language = "es", clientInfo, clientMemory } = req.body;
       const targetLang = language === "pt" ? "Portugués (Brasil - pt-BR)" : language === "en" ? "English (US - en-US)" : "Español (es)";
+      const clientName = clientInfo?.name || "Cliente";
+      const clientIndustry = clientInfo?.industry || clientInfo?.business_type || "";
+
+      const usedHooks = Array.isArray(clientMemory?.usedHooks) ? clientMemory.usedHooks.slice(0, 15) : [];
+      const memoryHooksSection = usedHooks.length > 0
+        ? `\nMEMORIA PREVIA DE GANCHOS YA USADOS (DESCÁRTALOS Y CREA COSAS NUEVAS):\n${usedHooks.map(h => `- "${h}"`).join("\n")}\n`
+        : "";
 
       const prompt = `
+Actúas como Directora Estratégica de Marketing y Copywriter Senior.
 Genera 6 ganchos psicológicos alternativos de alto impacto para la DIAPOSITIVA 1 de un carrusel de redes sociales.
-Todos deben frenar el scroll instantáneamente, evitando frases genéricas.
+Todos deben frenar el scroll instantáneamente, conectando con las dudas o dolores reales de la audiencia de ${clientName} (${clientIndustry}).
 
-BRIEF DEL NEGOCIO:
+BRIEF / TEMA:
 ${brief}
 
 AUDIENCIA / CONTEXTO:
-${targetAudience || ""}
+${targetAudience || clientInfo?.target_audience || ""}
 ${knowledgeBase || ""}
-
+${memoryHooksSection}
 IDIOMA OBLIGATORIO: ${targetLang}
 
 Genera exactamente 6 tipos de ganchos con su estructura correspondiente:
@@ -705,6 +729,7 @@ Devuelve EXCLUSIVAMENTE un JSON válido con la estructura exacta:
         brand,
         targetAudience,
         slide,
+        clientMemory,
       } = req.body;
 
       const clientName = clientInfo?.name || brand?.name || "Cliente";
@@ -713,10 +738,16 @@ Devuelve EXCLUSIVAMENTE un JSON válido con la estructura exacta:
       const clientOffers = Array.isArray(clientInfo?.offers) ? clientInfo.offers.join(", ") : clientInfo?.offers || "";
       const clientPains = Array.isArray(clientInfo?.pain_points) ? clientInfo.pain_points.join(", ") : clientInfo?.pain_points || "";
       const clientTone = clientInfo?.tone || clientInfo?.brand_voice || "Profesional y de alto impacto";
+      const clientKB = clientInfo?.knowledge_base || "";
 
-      const escenasList = Array.isArray(escenasYaUsadas) && escenasYaUsadas.length > 0
-        ? `Estas son las escenas YA usadas en otras diapositivas de este mismo carrusel — tu escena nueva NO puede repetir el mismo sujeto, la misma acción ni el mismo entorno que ninguna de estas:\n${escenasYaUsadas.map((e: string, idx: number) => `${idx + 1}. ${e}`).join("\n")}`
-        : "No hay escenas previas registradas aún para este carrusel.";
+      // Combinar escenas de este carrusel con la memoria histórica de escenas previas del cliente
+      const memoryScenes = Array.isArray(clientMemory?.usedVisualScenes) ? clientMemory.usedVisualScenes.slice(0, 15) : [];
+      const currentScenes = Array.isArray(escenasYaUsadas) ? escenasYaUsadas : [];
+      const allForbiddenScenes = Array.from(new Set([...currentScenes, ...memoryScenes]));
+
+      const escenasList = allForbiddenScenes.length > 0
+        ? `Estas son las escenas YA usadas en este u otros carruseles anteriores de este cliente (MEMORIA HISTÓRICA) — tu escena nueva NO puede repetir el mismo sujeto, la misma acción ni el mismo entorno que ninguna de estas:\n${allForbiddenScenes.map((e: string, idx: number) => `${idx + 1}. ${e}`).join("\n")}`
+        : "No hay escenas previas registradas aún para este cliente.";
 
       const slideContext = slide ? `
 CONTENIDO DE ESTA DIAPOSITIVA:
@@ -726,50 +757,35 @@ CONTENIDO DE ESTA DIAPOSITIVA:
 - Cuerpo: ${slide.body || ""}
 ` : "";
 
-      const prompt = `Actúas como Director de Arte Publicitario y Diseñador Visual de Élite.
-Tu misión es diseñar UNA SOLA ESCENA FOTOGRÁFICA CONCRETA, en español, de máximo 25 palabras, que ilustre el mensaje de la diapositiva ANCLADA 100% AL NEGOCIO Y RUBRO REAL DEL CLIENTE.
+      const prompt = `Actúas como Director de Arte y Creador Visual con profunda imaginación y criterio estético.
+Tu misión es inventar libremente UNA ESCENA VISUAL ÚNICA, CONCRETA Y CINEMATOGRÁFICA (máximo 25 palabras en español) que evoque el mensaje de esta diapositiva.
 
-FICHA DEL CLIENTE REAL:
-- Empresa / Marca: ${clientName}
-- Rubro / Industria Exacta: ${clientIndustry}
-- Qué ofrece / Servicios: ${clientOffers || clientIndustry}
-- Dolores / Problemas que resuelve: ${clientPains || "Optimización, ventas y resultados"}
-- Público Objetivo: ${clientAudience}
-- Tono: ${clientTone}
+DATOS DEL CLIENTE:
+- Marca / Empresa: ${clientName}
+- Rubro / Qué hace: ${clientIndustry}
+- Qué ofrece: ${clientOffers || clientIndustry}
+- Dolores que resuelve: ${clientPains || "Optimización, escala y resultados"}
+${clientKB ? `- Conocimiento de Negocio: ${clientKB.slice(0, 500)}` : ''}
 ${slideContext}
+
+PROCESO MENTAL OBLIGATORIO:
+1. IMAGINA: Conecta la idea central de la diapositiva y el negocio del cliente con una imagen visual potente. Tienes total libertad para imaginar cualquier situación, metáfora tangible, entorno, objeto, fenómeno de luz o momento humano auténtico.
+2. VERIFICA TU MEMORIA: Revisa las escenas que ya creaste antes para este cliente:
 ${escenasList}
+Si lo que imaginaste se parece a algo de esa lista, o cae en el cliché aburrido de "persona sentada en un escritorio tecleando o mirando una pantalla", DESCÁRTALO DE INMEDIATO e inventa un concepto visual completamente nuevo.
+3. CONCRETA: Formula la escena final en una sola frase concisa con: sujeto/objeto principal, acción o atmósfera, entorno e iluminación limpia sin texto.
 
-REGLAS DE ORO DE ADAPTACIÓN POR RUBRO:
-1. SI EL CLIENTE ES DE TECNOLOGÍA / SOFTWARE / SAAS / AUTOMATIZACIÓN (ej: desarrollo de sistemas, ERP, código, datos):
-   -> La escena DEBE ocurrir en un entorno tech, centros de monitoreo, servidores, desarrolladores resolviendo cuellos de botella en pantallas, o empresarios revisando paneles operativos eficientes.
-2. SI EL CLIENTE ES UNA AGENCIA DE MARKETING / PUBLICIDAD:
-   -> La escena ocurrirá en estudios creativos, sesiones de fotos, análisis de campañas o pizarras de branding.
-3. SI EL CLIENTE ES DE SALUD / DENTAL / ESTÉTICA:
-   -> La escena ocurrirá en consultorios médicos, sillón odontológico, laboratorio o atención clínica.
-4. SI EL CLIENTE ES INMOBILIARIO / ARQUITECTURA / CONSTRUCCIÓN:
-   -> La escena ocurrirá en propiedades, obras, planos arquitectónicos o entrega de llaves.
-5. SI EL CLIENTE ES FITNESS / GASTRONOMÍA / COMERCIO / LEGAL / FINANZAS:
-   -> La escena DEBE ocurrir en el hábitat natural de ese rubro (gimnasio, cocina/restaurante, mostrador comercial, estudio contable/legal).
-
-¡PROHIBICIÓN ESTRICTA!: NO inventes personajes de "agencia de marketing" o "publicistas" a menos que el cliente activo pertenezca literalmente a ese rubro. Adapta los personajes, ropa, herramientas y entorno al negocio del cliente (${clientName} - ${clientIndustry}).
-
-Una escena concreta tiene SIEMPRE 4 partes en una sola frase:
-(1) Sujeto del rubro del cliente (ej: ingeniero de software, dueña de negocio, médica, transportista).
-(2) Acción física y puntual (ej: configurando un script en doble monitor, analizando un dashboard logístico en tablet).
-(3) Entorno real del rubro (ej: sala de servidores moderna, oficina de operaciones, clínica luminosa).
-(4) Prueba visual del resultado o tensión sin texto.
-
-IDEA ABSTRACTA O MENSAJE A ILUSTRAR:
+IDEA O MENSAJE A ILUSTRAR:
 "${imageSuggestion || slide?.title || clientIndustry}"
 
-Responde ÚNICAMENTE con la escena final (una sola frase concisa, sin comillas, sin explicaciones, sin prefijos tipo "Escena:").`;
+Responde ÚNICAMENTE con la frase de la escena imaginada (sin comillas, sin explicaciones, sin prefijo "Escena:").`;
 
       const response = await executeWithFallback((ai, modelName) =>
         ai.models.generateContent({
           model: modelName,
           contents: prompt,
           config: {
-            temperature: 0.5,
+            temperature: 0.85,
           },
         })
       );
@@ -801,7 +817,8 @@ Responde ÚNICAMENTE con la escena final (una sola frase concisa, sin comillas, 
         visualStyle = "Fotografía profesional con iluminación cinematográfica, paleta de colores moderna y coherente",
         artDirectionMode = "photorealistic",
         isVideo = false,
-        aspect = "4:5"
+        aspect = "4:5",
+        clientMemory,
       } = req.body;
 
       // Extract rich text representation of the slide if slide object was passed
@@ -837,6 +854,13 @@ Responde ÚNICAMENTE con la escena final (una sola frase concisa, sin comillas, 
 
       const escenaMandatoria = escenaConcreta || rawSlideText || compiledSlideContent;
 
+      const previousClientPrompts = Array.isArray(clientMemory?.usedPrompts) ? clientMemory.usedPrompts.slice(0, 10) : [];
+      const memoryPromptGuide = previousClientPrompts.length > 0 ? `
+HISTORIAL DE PROMPTS YA USADOS ANTERIORMENTE PARA ESTE CLIENTE (MEMORIA):
+${previousClientPrompts.map((p, i) => `${i + 1}. ${p.slice(0, 120)}...`).join("\n")}
+-> Variación obligatoria: Utiliza una iluminación, distancia focal, ángulo de cámara o paleta de color DIFERENTE a las composiciones anteriores.
+` : '';
+
       // Compile Client Dossier
       const clientDetails = clientInfo ? `
 DATOS DEL CLIENTE / MARCA:
@@ -854,12 +878,12 @@ DATOS DE LA MARCA:
 
       const prompt = `
 ACTÚA COMO UN REDACTOR TÉCNICO DE PROMPTS Y DIRECTOR DE FOTOGRAFÍA PUBLICITARIA SENIOR (para Gemini, Imagen 3, Veo, Midjourney).
-Tu objetivo es tomar una ESCENA CONCRETA ya definida y convertirla en un PROMPT FOTOGRÁFICO/CINEMATOGRÁFICO DE MÁXIMA CALIDAD para la DIAPOSITIVA #${slideIndex} (de un total de ${totalSlides}).
+Tu objetivo es tomar la esencia de la DIAPOSITIVA #${slideIndex} (de un total de ${totalSlides}) y convertirla en un PROMPT FOTOGRÁFICO/CINEMATOGRÁFICO DE ALTA GAMA.
 
-Escena concreta a representar (definida por el Director de Arte a partir de la estrategia del carrusel): ${escenaMandatoria}. Esta es la base obligatoria de la imagen, no la cambies por otra idea.
+Base sugerida: ${escenaMandatoria}.
 
 ${clientDetails}
-
+${memoryPromptGuide}
 TEMA / BRIEF GENERAL DEL CARRUSEL:
 ${brief || "Carrusel de marketing estratégico"}
 
@@ -882,13 +906,13 @@ ${visualStyle}
 Modo de Dirección de Arte: ${artDirectionMode}
 FORMATO: ${aspect} (${isVideo ? "Video en bucle cinematográfico de 4-6 segundos" : "Fotografía realista publicitaria de ultra alta definición"})
 
-REGLAS TÉCNICAS DE GENERACIÓN:
-1. Toma la ESCENA CONCRETA obligatoria y amplíala con detalles técnicos de: tipo de lente (ej: 35mm / 50mm f/1.8), encuadre, iluminación (luz natural de ventana, luz cenital, claroscuro), paleta de colores y ambiente fotorrealista.
-2. Composición equilibrada para asegurar espacio limpio donde el texto del carrusel superpuesto se lea nítidamente.
-3. Evita clichés de stock (no apretones de manos aislados, no personas sonriendo forzadamente a cámara sin contexto).
-4. Termina el prompt SIEMPRE con: "sin texto en la imagen, sin tipografías, sin marcas de agua, sin logos superpuestos, estilo fotorrealista premium, iluminación cinematográfica".
-5. Provee también 3 a 4 palabras clave en INGLÉS (mediaSearchKeywords) exactas y descriptivas para buscar imágenes reales de stock en Pixabay acordes a esta escena particular.
-6. Provee 2 conceptos visuales alternativos breves (uno metafórico/simbólico y uno de acción real).
+DIRECTIVAS CREATIVAS Y TÉCNICAS:
+1. IMAGINA LIBREMENTE: Deja que tu cerebro desarrolle una escena visualmente rica, cinematográfica y evocadora que transmita la emoción y el mensaje de esta diapositiva y el negocio del cliente.
+2. VERIFICA TU MEMORIA: Si la escena base o tu idea cae en el cliché aburrido de "alguien sentado en una mesa/laptop", o repite sujetos de tu memoria previa, REINVENTA el concepto hacia una composición fresca, poética o de oficio auténtico.
+3. CONSTRUCCIÓN CINEMATOGRÁFICA: Describe con precisión tipo de lente (ej: 35mm / 50mm / 85mm f/1.4), ángulo de cámara, iluminación volumétrica (luz de claroscuro, hora dorada, neblina matutina difusa, reflejos), paleta de colores y texturas.
+4. CIERRE MANDATORIO: Termina el prompt SIEMPRE con: "sin texto en la imagen, sin tipografías, sin marcas de agua, sin logos superpuestos, estilo fotorrealista premium, iluminación cinematográfica".
+5. Provee 3 a 4 palabras clave en INGLÉS (mediaSearchKeywords) precisas y descriptivas para buscar imágenes reales de stock en Pixabay.
+6. Provee 2 conceptos visuales alternativos breves (uno metafórico/conceptual y uno de entorno/acción real).
 
 Devuelve EXCLUSIVAMENTE un JSON con:
 {
@@ -914,7 +938,7 @@ Devuelve EXCLUSIVAMENTE un JSON con:
           contents: prompt,
           config: {
             responseMimeType: "application/json",
-            temperature: 0.65,
+            temperature: 0.8,
           },
         })
       );
@@ -940,11 +964,22 @@ Devuelve EXCLUSIVAMENTE un JSON con:
         artDirectionMode = "photorealistic",
         isVideo = false,
         aspect = "4:5",
+        clientMemory,
       } = req.body;
 
       if (!Array.isArray(slides) || slides.length === 0) {
         return res.status(400).json({ error: "No se proporcionaron diapositivas" });
       }
+
+      const memoryVisualScenes = Array.isArray(clientMemory?.usedVisualScenes) ? clientMemory.usedVisualScenes.slice(0, 15) : [];
+      const memoryPrompts = Array.isArray(clientMemory?.usedPrompts) ? clientMemory.usedPrompts.slice(0, 10) : [];
+
+      const memorySection = (memoryVisualScenes.length > 0 || memoryPrompts.length > 0) ? `
+======================================================
+🧠 MEMORIA VISUAL HISTÓRICA DEL CLIENTE (PROHIBIDO REPETIR ESTAS ESCENAS):
+======================================================
+${memoryVisualScenes.length > 0 ? `• Escenas anteriores ya creadas para este cliente:\n${memoryVisualScenes.map(s => `  - "${s}"`).join('\n')}` : ''}
+` : '';
 
       const slidesSummary = slides.map((s, i) => {
         const parts: string[] = [];
@@ -961,20 +996,22 @@ CLIENTE / MARCA: ${clientInfo.name || brand?.name || 'Marca'}
 RUBRO / INDUSTRIA: ${clientInfo.industry || clientInfo.business_type || 'Servicios Profesionales'}
 PÚBLICO: ${clientInfo.target_audience || targetAudience || 'Clientes'}
 OFERTA: ${Array.isArray(clientInfo.offers) ? clientInfo.offers.join(', ') : clientInfo.offers || ''}
+DOLORES QUE RESUELVE: ${Array.isArray(clientInfo.pain_points) ? clientInfo.pain_points.join(', ') : clientInfo.pain_points || ''}
+${clientInfo.knowledge_base ? `BASE DE CONOCIMIENTO: ${clientInfo.knowledge_base.slice(0, 500)}` : ''}
       ` : `MARCA: ${brand?.name || 'Marca'} | AUDIENCIA: ${targetAudience || 'Profesionales'}`;
 
       const prompt = `
-ACTÚA COMO DIRECTOR DE ARTE FOTOGRÁFICO PUBLICITARIO SENIOR.
+ACTÚA COMO DIRECTOR DE ARTE FOTOGRÁFICO PUBLICITARIO SENIOR DE ALTA GAMA.
 Diseña la dirección de arte visual completa para este carrusel de ${slides.length} diapositivas.
 
-¡REGLA FUNDAMENTAL DE ORO!:
-¡ESTÁ COMPLETAMENTE PROHIBIDO REPETIR PROMPTS, CONCEPTOS O PALABRAS CLAVE ENTRE DIAPOSITIVAS!
-CADA diapositiva DEBE tener una escena visual fotorrealista completamente DISTINTA y PERSONALIZADA según su texto específico:
-- Diapositiva 1 (Gancho): Tensión, conflicto, duda, metáfora visual o problema del cliente en su entorno.
-- Diapositivas intermedias: Proceso técnico real, personas debatiendo, herramientas del oficio, análisis de métricas o error en acción.
-- Diapositiva final: Victoria, solución, éxito, claridad o llamado a la acción.
+¡REGLA FUNDAMENTAL DE ORO Y DIVERSIDAD VISUAL!:
+¡Tu cerebro creativo tiene libertad artística para inventar mundos, atmósferas y conceptos visuales únicos para cada diapositiva!
+1. IMAGINA: Para cada diapositiva de la lista, concibe una escena visual, cinematográfica o metafórica que conecte con su mensaje de forma profunda e impactante.
+2. VERIFICA TU MEMORIA: Revisa la memoria histórica del cliente y las demás diapositivas del carrusel. Si una idea cae en el cliché de "alguien sentado en una mesa/oficina con laptop" o repite un sujeto anterior, descártala e imagina una perspectiva completamente nueva y fresca.
+3. CONSTRUYE EL PROMPT: Redacta cada prompt con detalles cinematográficos (luz volumétrica, lente, texturas, paleta y atmósfera), terminando siempre con "sin texto en la imagen, sin tipografías, sin marcas de agua, fotorrealismo premium".
 
 ${clientDetails}
+${memorySection}
 TEMA GENERAL: ${brief || "Carrusel de marketing"}
 ESTILO VISUAL: ${visualStyle}
 MODO DE DIRECCIÓN: ${artDirectionMode}
@@ -1002,7 +1039,7 @@ Devuelve EXCLUSIVAMENTE un JSON con:
           contents: prompt,
           config: {
             responseMimeType: "application/json",
-            temperature: 0.65,
+            temperature: 0.8,
           },
         })
       );
