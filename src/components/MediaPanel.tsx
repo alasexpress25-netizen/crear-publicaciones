@@ -896,8 +896,8 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
         </div>
       </div>
 
-      {/* Tabs Navigation */}
-      <div className="flex items-center gap-1.5 border-b border-slate-800 pb-2 text-xs overflow-x-auto scrollbar-none">
+      {/* Tabs Navigation - Autoajustable y con envoltura flexible para que siempre se vean todas las opciones */}
+      <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-800 pb-2.5 text-xs">
         <button
           onClick={() => setTab('pixabay')}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold transition whitespace-nowrap ${
@@ -949,8 +949,8 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
           onClick={() => setTab('music')}
           className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition whitespace-nowrap ${
             tab === 'music'
-              ? 'bg-emerald-950 text-emerald-300 border border-emerald-700 shadow'
-              : 'bg-slate-950 hover:bg-slate-800 text-emerald-400 border border-emerald-950/60'
+              ? 'bg-emerald-600 text-white border border-emerald-500 shadow-lg shadow-emerald-950'
+              : 'bg-slate-950 hover:bg-emerald-950/60 text-emerald-400 border border-emerald-900/60'
           }`}
         >
           <Music className="w-3.5 h-3.5" />

@@ -60,6 +60,7 @@ export const FloatingMediaModal: React.FC<FloatingMediaModalProps> = ({
     return { x: 500, y: 75 };
   });
 
+  const [isExpanded, setIsExpanded] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef<{ mouseX: number; mouseY: number; posX: number; posY: number }>({
@@ -73,7 +74,7 @@ export const FloatingMediaModal: React.FC<FloatingMediaModalProps> = ({
   useEffect(() => {
     const handleResize = () => {
       setPosition((prev) => {
-        const maxX = Math.max(10, window.innerWidth - 300);
+        const maxX = Math.max(10, window.innerWidth - 320);
         const maxY = Math.max(10, window.innerHeight - 100);
         return {
           x: Math.min(Math.max(10, prev.x), maxX),
@@ -106,7 +107,7 @@ export const FloatingMediaModal: React.FC<FloatingMediaModalProps> = ({
       const deltaX = e.clientX - dragStartRef.current.mouseX;
       const deltaY = e.clientY - dragStartRef.current.mouseY;
 
-      const modalWidth = isMinimized ? 240 : 540;
+      const modalWidth = isMinimized ? 280 : isExpanded ? 760 : 580;
       const modalHeight = isMinimized ? 50 : 600;
 
       const newX = Math.max(10, Math.min(window.innerWidth - modalWidth, dragStartRef.current.posX + deltaX));
@@ -127,21 +128,25 @@ export const FloatingMediaModal: React.FC<FloatingMediaModalProps> = ({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging, isMinimized]);
+  }, [isDragging, isMinimized, isExpanded]);
 
   if (!isOpen) return null;
+
+  const modalWidth = isMinimized ? '280px' : isExpanded ? 'min(780px, calc(100vw - 20px))' : 'min(580px, calc(100vw - 20px))';
+  const modalHeight = isMinimized ? 'auto' : isExpanded ? 'calc(100vh - 40px)' : 'min(840px, calc(100vh - 50px))';
 
   return (
     <div
       id="floating-media-modal"
-      className="fixed z-50 select-none shadow-2xl rounded-2xl border border-slate-700/90 bg-slate-900/95 backdrop-blur-xl flex flex-col transition-shadow duration-200"
+      className="fixed z-50 select-none shadow-2xl rounded-2xl border border-slate-700/90 bg-slate-900/95 backdrop-blur-xl flex flex-col transition-all duration-150"
       style={{
-        left: `${position.x}px`,
-        top: `${position.y}px`,
-        width: isMinimized ? '280px' : '540px',
+        left: isExpanded ? '50%' : `${position.x}px`,
+        top: isExpanded ? '20px' : `${position.y}px`,
+        transform: isExpanded ? 'translateX(-50%)' : 'none',
+        width: modalWidth,
         maxWidth: 'calc(100vw - 20px)',
-        height: isMinimized ? 'auto' : 'min(800px, calc(100vh - 70px))',
-        maxHeight: isMinimized ? 'auto' : 'calc(100vh - 70px)',
+        height: modalHeight,
+        maxHeight: isMinimized ? 'auto' : 'calc(100vh - 30px)',
         boxShadow: isDragging
           ? '0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 20px rgba(225, 29, 72, 0.3)'
           : '0 20px 40px -15px rgba(0, 0, 0, 0.6)',
@@ -169,13 +174,24 @@ export const FloatingMediaModal: React.FC<FloatingMediaModalProps> = ({
         </div>
 
         <div className="flex items-center gap-1 shrink-0 ml-2">
-          {/* Minimize / Expand Button */}
+          {/* Maximize / Expand width toggle */}
+          {!isMinimized && (
+            <button
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="p-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition"
+              title={isExpanded ? 'Restaurar tamaño normal' : 'Expandir ventana para más espacio'}
+            >
+              {isExpanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+            </button>
+          )}
+
+          {/* Minimize / Restore Button */}
           <button
             onClick={() => setIsMinimized(!isMinimized)}
             className="p-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition"
             title={isMinimized ? 'Expandir ventana de medios' : 'Minimizar ventana para ver más lienzo'}
           >
-            {isMinimized ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
+            {isMinimized ? <Maximize2 className="w-3.5 h-3.5" /> : <Layers className="w-3.5 h-3.5" />}
           </button>
 
           {/* Close Button */}
