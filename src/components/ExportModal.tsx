@@ -65,14 +65,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     } catch {}
   };
 
-  const aspectDimensions = {
-    '4:5': { width: 1080, height: 1350 },
-    '1:1': { width: 1080, height: 1080 },
-    '9:16': { width: 1080, height: 1920 },
-    '16:9': { width: 1920, height: 1080 },
-  };
-  const targetDim = aspectDimensions[aspectRatio] || aspectDimensions['4:5'];
-
   const handleDownloadCurrentPng = async () => {
     setIsExportingPng(true);
     try {
@@ -83,7 +75,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
       let blob: Blob | null = null;
       if (targetDom) {
-        blob = await captureSlideDomToBlob(targetDom, targetDim.width, targetDim.height);
+        blob = await captureSlideDomToBlob(targetDom, 2.5);
       } else {
         const canvas = await renderSlideToCanvas(currentSlide, brand, aspectRatio, 2);
         blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/png'));
@@ -123,7 +115,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         let slideBlob: Blob | null = null;
 
         if (domEl) {
-          slideBlob = await captureSlideDomToBlob(domEl, targetDim.width, targetDim.height).catch(() => null);
+          slideBlob = await captureSlideDomToBlob(domEl, 2.5).catch(() => null);
         }
 
         if (!slideBlob) {
