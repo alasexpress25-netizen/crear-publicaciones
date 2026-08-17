@@ -84,10 +84,10 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
 
   // Aspect ratio map
   const aspectClassMap = {
-    '4:5': 'aspect-[4/5] max-w-[450px]',
-    '1:1': 'aspect-square max-w-[450px]',
-    '9:16': 'aspect-[9/16] max-w-[370px]',
-    '16:9': 'aspect-[16/9] max-w-[550px]',
+    '4:5': isExportMode ? 'aspect-[4/5] w-full' : 'aspect-[4/5] max-w-[450px]',
+    '1:1': isExportMode ? 'aspect-square w-full' : 'aspect-square max-w-[450px]',
+    '9:16': isExportMode ? 'aspect-[9/16] w-full' : 'aspect-[9/16] max-w-[370px]',
+    '16:9': isExportMode ? 'aspect-[16/9] w-full' : 'aspect-[16/9] max-w-[550px]',
   };
 
   const startDrag = (key: string, e: React.PointerEvent) => {
@@ -476,7 +476,9 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
       ref={containerRef}
       id={isExportMode ? undefined : 'active-canvas-slide-container'}
       data-slide-id={slide.id}
-      className={`relative w-full ${aspectClassMap[aspectRatio] || aspectClassMap['4:5']} mx-auto rounded-2xl overflow-hidden shadow-2xl border border-slate-800 bg-slate-950 select-none transition-transform duration-150 flex flex-col justify-between`}
+      className={`relative w-full ${aspectClassMap[aspectRatio] || aspectClassMap['4:5']} mx-auto ${
+        isExportMode ? 'rounded-none border-0 shadow-none' : 'rounded-2xl shadow-2xl border border-slate-800'
+      } overflow-hidden bg-slate-950 select-none transition-transform duration-150 flex flex-col justify-between`}
       style={{
         transform: `scale(${zoomLevel})`,
         transformOrigin: 'top center',
