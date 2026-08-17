@@ -982,7 +982,8 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
               <button
                 onClick={() => handleSearchPixabay()}
                 disabled={isSearchingPixabay}
-                className="bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1 shrink-0"
+                style={{ width: '109px', height: '50px', paddingLeft: '5px', paddingRight: '5px' }}
+                className="bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 shrink-0"
               >
                 {isSearchingPixabay ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
                 <span>Buscar</span>
@@ -1127,37 +1128,39 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
         <div className="space-y-3.5 bg-slate-950/60 p-3.5 sm:p-4 rounded-2xl border border-slate-800">
           
           {/* Active Slide Psychological Context Banner */}
-          <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-black uppercase px-2 py-0.5 rounded-md bg-rose-950/80 text-rose-300 border border-rose-800/60">
-                  Diapositiva #{currentSlideNumber} de {totalSlides}
-                </span>
-                <span className="text-xs font-bold text-white truncate max-w-[280px]">
+          <div className="p-2.5 sm:p-3 bg-slate-900 border border-slate-800 rounded-xl space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <div className="flex flex-col items-center justify-center px-2 py-0.5 rounded-lg bg-rose-950/80 text-rose-300 border border-rose-800/60 shrink-0 leading-tight">
+                  <span className="text-[8px] font-bold uppercase tracking-wider text-rose-400">Diapositiva</span>
+                  <span className="text-[10px] font-black text-white">#{currentSlideNumber} de {totalSlides}</span>
+                </div>
+                <span className="text-[11px] font-bold text-white truncate flex-1 min-w-0" title={slideHeadline}>
                   {slideHeadline}
                 </span>
               </div>
-              <p className="text-[10px] text-slate-400">
-                {currentSlideNumber === 1
-                  ? '🎯 Momento Gancho: Tensión, curiosidad y quiebre de creencia para detener el scroll.'
-                  : currentSlideNumber === totalSlides
-                  ? '🏁 Momento Cierre: Claridad, éxito, solución y llamada a la acción.'
-                  : '💡 Momento Desarrollo: Explicación del problema, método, datos o contraste del cliente.'}
-              </p>
+
+              {/* Batch generation button if all slides available */}
+              {slides.length > 1 && onUpdateAllSlides && (
+                <button
+                  onClick={handleEnhanceAllPrompts}
+                  disabled={isEnhancingAll || isEnhancing}
+                  className="text-[10px] bg-gradient-to-r from-amber-600/90 to-rose-600/90 hover:from-amber-500 hover:to-rose-500 text-white font-bold px-2.5 py-1 rounded-lg border border-amber-500/40 shadow-sm flex items-center gap-1 transition shrink-0 whitespace-nowrap disabled:opacity-50"
+                  title="Genera escenas y prompts únicos para cada diapositiva en cadena, recordando las escenas anteriores para no repetirlas jamás"
+                >
+                  {isEnhancingAll ? <RefreshCw className="w-3 h-3 animate-spin text-white" /> : <Sparkles className="w-3 h-3 text-amber-300" />}
+                  <span>{isEnhancingAll ? 'Generando...' : 'Prompts T/Proyecto'}</span>
+                </button>
+              )}
             </div>
 
-            {/* Batch generation button if all slides available */}
-            {slides.length > 1 && onUpdateAllSlides && (
-              <button
-                onClick={handleEnhanceAllPrompts}
-                disabled={isEnhancingAll || isEnhancing}
-                className="text-[10px] bg-gradient-to-r from-amber-600/90 to-rose-600/90 hover:from-amber-500 hover:to-rose-500 text-white font-bold px-3 py-1.5 rounded-xl border border-amber-500/40 shadow-sm flex items-center gap-1.5 transition shrink-0 self-start sm:self-auto disabled:opacity-50"
-                title="Genera escenas y prompts únicos para cada diapositiva en cadena, recordando las escenas anteriores para no repetirlas jamás"
-              >
-                {isEnhancingAll ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" /> : <Sparkles className="w-3.5 h-3.5 text-amber-300" />}
-                <span>{isEnhancingAll ? 'Creando todo el carrusel...' : '✨ Prompts Únicos para Todo el Carrusel'}</span>
-              </button>
-            )}
+            <p className="text-[10px] text-slate-400 leading-snug">
+              {currentSlideNumber === 1
+                ? '🎯 Momento Gancho: Tensión, curiosidad y quiebre de creencia para detener el scroll.'
+                : currentSlideNumber === totalSlides
+                ? '🏁 Momento Cierre: Claridad, éxito, solución y llamada a la acción.'
+                : '💡 Momento Desarrollo: Explicación del problema, método, datos o contraste del cliente.'}
+            </p>
           </div>
 
           {/* Active Generation Progress Indicator */}
@@ -1214,7 +1217,7 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
               </p>
             ) : (
               <p className="text-[11px] text-slate-500 italic">
-                Presiona "Generar para Slide" o "Prompts Únicos para Todo el Carrusel" para que el Director de Arte resuelva la escena específica sin clichés de oficina.
+                Presiona "Generar para Slide" o "Prompts T/Proyecto" para que el Director de Arte resuelva la escena específica sin clichés de oficina.
               </p>
             )}
           </div>
