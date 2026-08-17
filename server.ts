@@ -990,7 +990,6 @@ Devuelve EXCLUSIVAMENTE un JSON con:
         return res.status(400).json({ error: "La URL ingresada no es un enlace válido de YouTube." });
       }
 
-      console.log(`[YouTube MP3] Procesando enlace: ${cleanUrl}`);
       const info = await ytdl.getInfo(cleanUrl);
       const rawTitle = info.videoDetails?.title || "youtube_audio";
       const cleanTitle = rawTitle.replace(/[^\w\s-]/gi, "").trim() || "youtube_audio";
@@ -1006,17 +1005,18 @@ Devuelve EXCLUSIVAMENTE un JSON con:
       });
 
       audioStream.on("error", (streamErr) => {
-        console.error("Error en streaming de audio:", streamErr);
+        console.warn("[YouTube Stream Notice]:", streamErr?.message);
         if (!res.headersSent) {
-          res.status(500).json({ error: `Error extrayendo audio: ${streamErr.message}` });
+          res.status(422).json({ error: `Extracción directa no disponible: ${streamErr.message}` });
         }
       });
 
       audioStream.pipe(res);
     } catch (err: any) {
-      console.error("Error en /api/convert-youtube-mp3:", err);
-      res.status(500).json({
-        error: err.message || "No se pudo extraer el audio de YouTube desde el servidor en la nube.",
+      console.warn("[YouTube API Notice]: YouTube requiere verificación o servidor local:", err?.message);
+      res.status(422).json({
+        error: "YouTube requiere descarga local (ejecuta yt2mp3_server.py en tu PC) o usar el convertidor web directo.",
+        isBotProtected: true,
       });
     }
   });

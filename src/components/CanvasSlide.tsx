@@ -464,7 +464,11 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
   const bgPosX = slide.posX !== undefined ? slide.posX : 50;
   const bgPosY = slide.posY !== undefined ? slide.posY : 50;
   const bgFit = slide.fit || 'cover';
+  const bgBlur = slide.blur !== undefined ? slide.blur : 0;
   const layout = slide.layoutTemplate || 'standard';
+
+  // Apply slight scale bump when blurred so outer edges don't show gradient/white blur bleed
+  const effectiveZoom = bgBlur > 0 ? bgZoom * 1.06 : bgZoom;
 
   return (
     <div
@@ -489,7 +493,8 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
           style={{
             objectFit: bgFit,
             objectPosition: `${bgPosX}% ${bgPosY}%`,
-            transform: `scale(${bgZoom})`,
+            transform: `scale(${effectiveZoom})`,
+            filter: bgBlur > 0 ? `blur(${bgBlur}px)` : undefined,
           }}
         />
       ) : slide.image ? (
@@ -499,7 +504,8 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
             backgroundImage: `url("${slide.image}")`,
             backgroundSize: bgFit,
             backgroundPosition: `${bgPosX}% ${bgPosY}%`,
-            transform: `scale(${bgZoom})`,
+            transform: `scale(${effectiveZoom})`,
+            filter: bgBlur > 0 ? `blur(${bgBlur}px)` : undefined,
           }}
         />
       ) : (

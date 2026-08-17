@@ -31,7 +31,9 @@ import {
   Camera,
   Compass,
   Film,
-  Sparkle
+  Sparkle,
+  Aperture,
+  Focus
 } from 'lucide-react';
 import { Slide, AspectRatio, BrandInfo } from '../types';
 import { AgencyClient } from '../services/supabase';
@@ -63,18 +65,60 @@ const DEFAULT_PIXABAY_KEY = '48866504-20b1dbd83f36a58bc283f5c71';
 const PIXABAY_STORAGE_KEY = 'lavisualmk_pixabay_api_key';
 const YT2MP3_LOCAL_SERVER = 'http://localhost:5057';
 
+const LOCAL_BAT_SCRIPT_CODE = `@echo off
+title La Visual MK - Servidor Local YouTube a MP3
+color 0A
+cls
+echo ========================================================
+echo   LA VISUAL MK - INICIADOR AUTOMATICO DE SERVIDOR MP3
+echo ========================================================
+echo.
+echo 1. Comprobando y actualizando yt-dlp a la ultima version anti-403...
+python -m pip install --upgrade yt-dlp flask flask-cors
+echo.
+echo ========================================================
+echo 2. Iniciando servidor en http://127.0.0.1:5057 ...
+echo    (Manten esta ventana abierta mientras usas la app)
+echo ========================================================
+echo.
+python yt2mp3_server.py
+if %ERRORLEVEL% NEQ 0 (
+    echo.
+    echo [!] Hubo un problema al iniciar el servidor.
+    echo Asegurate de tener Python instalado y anadido al PATH de Windows.
+    pause
+)
+`;
+
 const LOCAL_PYTHON_SCRIPT_CODE = `#!/usr/bin/env python3
+"""
+====================================================================
+La Visual MK - Servidor Local de Conversión de YouTube a MP3
+====================================================================
+
+Requisitos en tu PC:
+  1. Instalar dependencias en la terminal:
+       pip install -U yt-dlp flask flask-cors
+
+  2. Tener instalado ffmpeg en tu sistema (si no lo tienes: choco install ffmpeg / brew install ffmpeg / descargar de https://ffmpeg.org/)
+
+  3. Ejecutar con doble clic: iniciar_servidor_mp3.bat o en consola: python yt2mp3_server.py
+
+Abre http://127.0.0.1:5057 en tu navegador para descargar MP3 directamente a tu PC.
+"""
+
 import os
 import re
 import tempfile
 import sys
-from flask import Flask, request, send_file, jsonify
+from pathlib import Path
+from flask import Flask, request, send_file, jsonify, render_template_string
 from flask_cors import CORS
 
 try:
     import yt_dlp
 except ImportError:
-    print("\\n[!] Falta yt-dlp. Instálalo con: pip install yt-dlp flask flask-cors\\n")
+    print("\\n[!] Falta yt-dlp. Instálalo con: pip install -U yt-dlp flask flask-cors\\n")
     sys.exit(1)
 
 app = Flask(__name__)
@@ -93,11 +137,73 @@ def sanitize_filename(name):
     clean = re.sub(r'[^\\w\\s-]', '', name).strip()
     return re.sub(r'[-\\s]+', '_', clean).lower()
 
+HTML_PAGE = """<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>La Visual MK - Descargador Local MP3</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 flex items-center justify-center min-h-screen p-4 font-sans">
+  <div class="max-w-md w-full bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl space-y-5">
+    <div class="flex items-center gap-3 border-b border-slate-800 pb-4">
+      <div class="w-10 h-10 rounded-xl bg-rose-600/20 text-rose-500 flex items-center justify-center text-xl font-bold">🎵</div>
+      <div>
+        <h1 class="text-base font-bold text-white">La Visual MK • MP3 Local</h1>
+        <p class="text-xs text-slate-400">Servidor en tu PC (Puerto 5057)</p>
+      </div>
+    </div>
+
+    <form action="/download" method="GET" class="space-y-4">
+      <div>
+        <label class="block text-xs font-semibold text-slate-300 mb-1">Pega el enlace de YouTube:</label>
+        <input 
+          type="url" 
+          name="url" 
+          required 
+          placeholder="https://www.youtube.com/watch?v=..." 
+          class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+        />
+      </div>
+
+      <button 
+        type="submit" 
+        class="w-full bg-rose-600 hover:bg-rose-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs flex items-center justify-center gap-2 transition cursor-pointer shadow-lg shadow-rose-600/20"
+      >
+        <span>Descargar MP3 a tu PC</span>
+        <span>⬇</span>
+      </button>
+    </form>
+
+    <div class="text-[11px] text-slate-400 bg-slate-950/70 p-3 rounded-xl border border-slate-800 space-y-1.5">
+      <p class="font-semibold text-slate-300">💡 Instrucciones:</p>
+      <ol class="list-decimal list-inside space-y-1 text-slate-400">
+        <li>Pega el link y pulsa <b>Descargar MP3</b>.</li>
+        <li>Una vez descargado el archivo, ve a la app y pulsa <b>"Subir MP3 / Audio desde tu PC"</b>.</li>
+      </ol>
+    </div>
+  </div>
+</body>
+</html>
+"""
+
+@app.route('/', methods=['GET'])
+def index():
+    return render_template_string(HTML_PAGE)
+
 @app.route('/health', methods=['GET', 'OPTIONS'])
 def health():
     if request.method == 'OPTIONS':
         return ('', 204)
-    return jsonify({"status": "ok", "service": "La Visual MK - YT2MP3", "port": 5057})
+    return jsonify({"status": "ok", "service": "La Visual MK - YT2MP3 Local Server", "port": 5057})
+
+@app.route('/download', methods=['GET'])
+def download_get():
+    url = request.args.get('url', '').strip()
+    if not url:
+        return "Por favor ingresa una URL válida.", 400
+    return process_video(url)
 
 @app.route('/convert', methods=['POST', 'OPTIONS'])
 def convert_to_mp3():
@@ -109,23 +215,38 @@ def convert_to_mp3():
     if not url:
         return jsonify({"error": "Falta la URL de YouTube"}), 400
 
+    return process_video(url)
+
+def process_video(url):
     temp_dir = tempfile.mkdtemp(prefix="lavisualmk_yt_")
     out_template = os.path.join(temp_dir, '%(title)s.%(ext)s')
 
+    # Configuración anti-bloqueo 403 Forbidden con extractor args y player_client múltiple
     ydl_opts = {
         'format': 'bestaudio/best',
         'outtmpl': out_template,
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'web_creator', 'ios', 'web'],
+                'player_skip': ['webpage', 'configs'],
+            }
+        },
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+            'Accept-Language': 'es-419,es;q=0.9,en;q=0.8',
+        },
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
             'preferredquality': '192',
         }],
-        'quiet': True,
-        'no_warnings': True,
+        'quiet': False,
+        'no_warnings': False,
+        'nocheckcertificate': True,
     }
 
     try:
-        print(f"[*] Extrayendo audio de: {url}")
+        print(f"\\n[*] Procesando descarga: {url}")
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
             raw_title = info.get('title', 'youtube_audio')
@@ -147,7 +268,10 @@ def convert_to_mp3():
         )
     except Exception as e:
         print(f"[!] Error: {str(e)}")
-        return jsonify({"error": f"Error procesando video: {str(e)}"}), 500
+        return jsonify({
+            "error": f"Error procesando video: {str(e)}",
+            "solucion": "Ejecuta en tu terminal: pip install -U yt-dlp"
+        }), 500
 
 if __name__ == '__main__':
     print("=========================================================")
@@ -235,6 +359,18 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
     URL.revokeObjectURL(url);
   };
 
+  const handleDownloadBat = () => {
+    const blob = new Blob([LOCAL_BAT_SCRIPT_CODE], { type: 'application/x-bat;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'iniciar_servidor_mp3.bat';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const handleCopyScript = () => {
     navigator.clipboard.writeText(LOCAL_PYTHON_SCRIPT_CODE);
     setCopiedScript(true);
@@ -246,6 +382,7 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
   const zoom = Math.round((slide.zoom || 1) * 100);
   const posX = slide.posX !== undefined ? slide.posX : 50;
   const posY = slide.posY !== undefined ? slide.posY : 50;
+  const blur = slide.blur !== undefined ? slide.blur : 0;
   const fit = slide.fit || 'cover';
 
   const currentSlideNumber = slideIndex + 1;
@@ -1362,26 +1499,38 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
               </button>
             </div>
 
-            {/* Acceso Rápido a Convertidores Web y Descarga Inmediata */}
+            {/* Acceso Rápido a Convertidores y Servidor Local */}
             {youtubeUrl.trim() && (
-              <div className="p-2.5 bg-slate-950/80 border border-slate-800 rounded-xl flex items-center justify-between text-[11px]">
-                <span className="text-slate-400">¿Descarga externa directa?</span>
-                <div className="flex items-center gap-2">
+              <div className="p-2.5 bg-slate-950/80 border border-slate-800 rounded-xl space-y-2 text-[11px]">
+                <div className="text-slate-400 font-semibold flex items-center justify-between">
+                  <span>Descarga rápida de audio:</span>
+                  <span className="text-[10px] text-rose-400">100% libre de bloqueos</span>
+                </div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  <a
+                    href={`http://127.0.0.1:5057/download?url=${encodeURIComponent(youtubeUrl.trim())}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-center text-rose-300 hover:text-white font-bold bg-rose-950/40 hover:bg-rose-900 border border-rose-800/60 px-2 py-1.5 rounded-lg transition"
+                    title="Descarga el MP3 usando tu script Python local"
+                  >
+                    ⚡ Servidor Local ↗
+                  </a>
                   <a
                     href={`https://cobalt.tools/#${encodeURIComponent(youtubeUrl.trim())}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-emerald-400 hover:text-emerald-300 font-bold bg-slate-900 border border-emerald-500/30 px-2 py-1 rounded-lg transition"
+                    className="text-center text-emerald-300 hover:text-white font-bold bg-slate-900 hover:bg-emerald-950 border border-emerald-500/40 px-2 py-1.5 rounded-lg transition"
                   >
-                    Abrir en Cobalt.tools ↗
+                    Cobalt.tools ↗
                   </a>
                   <a
                     href={`https://y2meta.tube/en/youtube-to-mp3?url=${encodeURIComponent(youtubeUrl.trim())}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-red-400 hover:text-red-300 font-bold bg-slate-900 border border-red-500/30 px-2 py-1 rounded-lg transition"
+                    className="text-center text-amber-300 hover:text-white font-bold bg-slate-900 hover:bg-amber-950 border border-amber-500/40 px-2 py-1.5 rounded-lg transition"
                   >
-                    Abrir en Y2Meta ↗
+                    Y2Meta ↗
                   </a>
                 </div>
               </div>
@@ -1390,18 +1539,46 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
             {/* YouTube Convert Status */}
             {ytConvertStatus && (
               <div
-                className={`p-2.5 rounded-xl text-[11px] flex items-start gap-2 ${
+                className={`p-3 rounded-xl text-[11px] space-y-2 ${
                   ytConvertStatus.type === 'loading'
                     ? 'bg-blue-950/40 border border-blue-800/50 text-blue-300'
                     : ytConvertStatus.type === 'success'
                     ? 'bg-emerald-950/40 border border-emerald-800/50 text-emerald-300'
-                    : 'bg-red-950/40 border border-red-800/50 text-red-300'
+                    : 'bg-slate-900 border border-rose-800/70 text-slate-200'
                 }`}
               >
-                {ytConvertStatus.type === 'loading' && <RefreshCw className="w-3.5 h-3.5 shrink-0 mt-0.5 animate-spin text-blue-400" />}
-                {ytConvertStatus.type === 'success' && <Check className="w-3.5 h-3.5 shrink-0 mt-0.5 text-emerald-400" />}
-                {ytConvertStatus.type === 'error' && <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-red-400" />}
-                <span className="flex-1">{ytConvertStatus.message}</span>
+                <div className="flex items-start gap-2">
+                  {ytConvertStatus.type === 'loading' && <RefreshCw className="w-4 h-4 shrink-0 mt-0.5 animate-spin text-blue-400" />}
+                  {ytConvertStatus.type === 'success' && <Check className="w-4 h-4 shrink-0 mt-0.5 text-emerald-400" />}
+                  {ytConvertStatus.type === 'error' && <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />}
+                  <span className="flex-1 font-medium">{ytConvertStatus.message}</span>
+                </div>
+
+                {ytConvertStatus.type === 'error' && (
+                  <div className="pt-2 border-t border-slate-800 flex flex-wrap items-center gap-2">
+                    {youtubeUrl.trim() && (
+                      <>
+                        <a
+                          href={`http://127.0.0.1:5057/download?url=${encodeURIComponent(youtubeUrl.trim())}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="bg-rose-600 hover:bg-rose-500 text-white font-bold px-2.5 py-1 rounded-lg text-[10px] transition flex items-center gap-1"
+                        >
+                          <Download className="w-3 h-3" />
+                          <span>Descargar con tu Servidor Local</span>
+                        </a>
+                        <a
+                          href={`https://cobalt.tools/#${encodeURIComponent(youtubeUrl.trim())}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="bg-emerald-700 hover:bg-emerald-600 text-white font-bold px-2.5 py-1 rounded-lg text-[10px] transition"
+                        >
+                          Descargar con Cobalt.tools ↗
+                        </a>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -1413,15 +1590,15 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
                     <Terminal className="w-3.5 h-3.5 text-emerald-400" />
                     <span>Servidor Python Local (Puerto 5057)</span>
                   </span>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <button
                       type="button"
-                      onClick={handleCopyScript}
-                      className="flex items-center gap-1 text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-200 px-2 py-1 rounded-lg border border-slate-700 transition"
-                      title="Copiar código Python al portapapeles"
+                      onClick={handleDownloadBat}
+                      className="flex items-center gap-1 text-[10px] bg-rose-600 hover:bg-rose-500 text-white px-2.5 py-1 rounded-lg border border-rose-500 transition font-bold shadow-sm"
+                      title="Descarga el archivo iniciar_servidor_mp3.bat para ejecutar con doble clic"
                     >
-                      {copiedScript ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                      <span>{copiedScript ? 'Copiado' : 'Copiar Código'}</span>
+                      <Download className="w-3 h-3" />
+                      <span>Descargar .BAT (1 Clic)</span>
                     </button>
                     <button
                       type="button"
@@ -1429,7 +1606,16 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
                       className="flex items-center gap-1 text-[10px] bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 px-2 py-1 rounded-lg border border-emerald-700/60 transition font-bold"
                     >
                       <Download className="w-3 h-3" />
-                      <span>Descargar .py Limpio</span>
+                      <span>Descargar .py</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCopyScript}
+                      className="flex items-center gap-1 text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-200 px-2 py-1 rounded-lg border border-slate-700 transition"
+                      title="Copiar código Python al portapapeles"
+                    >
+                      {copiedScript ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                      <span>{copiedScript ? 'Copiado' : 'Copiar'}</span>
                     </button>
                   </div>
                 </div>
@@ -1551,24 +1737,91 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
         </div>
       )}
 
-      {/* Adjustments: Darkness Overlay, Zoom, Pan (Always Accessible) */}
+      {/* Adjustments: Darkness Overlay, Blur / Bokeh, Zoom, Pan (Always Accessible) */}
       <div className="space-y-3 pt-3 border-t border-slate-800">
-        <div className="flex items-center justify-between text-xs text-slate-400">
-          <span className="flex items-center gap-1.5">
-            <Sliders className="w-3.5 h-3.5 text-slate-400" />
-            <span>Oscurecido para legibilidad:</span>
-          </span>
-          <span className="font-mono text-slate-200 font-bold">{overlayIntensity}%</span>
+        
+        {/* Row 1: Darkness Overlay */}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between text-xs text-slate-400">
+            <span className="flex items-center gap-1.5">
+              <Sliders className="w-3.5 h-3.5 text-slate-400" />
+              <span>Oscurecido para legibilidad:</span>
+            </span>
+            <span className="font-mono text-slate-200 font-bold">{overlayIntensity}%</span>
+          </div>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value={overlayIntensity}
+            onChange={(e) => onUpdateSlide({ overlayIntensity: parseInt(e.target.value, 10) })}
+            className="w-full accent-rose-600 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
+          />
         </div>
-        <input
-          type="range"
-          min="0"
-          max="100"
-          value={overlayIntensity}
-          onChange={(e) => onUpdateSlide({ overlayIntensity: parseInt(e.target.value, 10) })}
-          className="w-full accent-rose-600 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
-        />
 
+        {/* Row 2: Blur / Fuera de foco (Bokeh) Slider & Presets */}
+        <div className="space-y-1.5 pt-1 bg-slate-950/60 p-2.5 rounded-2xl border border-slate-800/80">
+          <div className="flex items-center justify-between text-xs">
+            <span className="flex items-center gap-1.5 text-slate-300 font-semibold">
+              <Aperture className="w-3.5 h-3.5 text-rose-400" />
+              <span>Desenfoque / Fuera de Foco (Bokeh):</span>
+            </span>
+            <span className="font-mono text-xs font-bold text-rose-300">
+              {blur === 0 ? '0px (Nítido)' : `${blur}px (${blur <= 4 ? 'Bokeh suave' : blur <= 12 ? 'Medio' : 'Fondo difuso'})`}
+            </span>
+          </div>
+
+          <input
+            type="range"
+            min="0"
+            max="25"
+            step="1"
+            value={blur}
+            onChange={(e) => onUpdateSlide({ blur: parseInt(e.target.value, 10) })}
+            className="w-full accent-rose-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
+          />
+
+          {/* Quick Preset Buttons for Blur */}
+          <div className="flex items-center justify-between gap-1 pt-1 flex-wrap">
+            <div className="flex items-center gap-1">
+              {[
+                { val: 0, label: '0 Nítido' },
+                { val: 3, label: '3px Bokeh' },
+                { val: 8, label: '8px Medio' },
+                { val: 16, label: '16px Difuso' },
+              ].map((p) => (
+                <button
+                  key={p.val}
+                  type="button"
+                  onClick={() => onUpdateSlide({ blur: p.val })}
+                  className={`text-[10px] px-2 py-0.5 rounded-lg border transition ${
+                    blur === p.val
+                      ? 'bg-rose-600 text-white border-rose-500 font-bold shadow-sm'
+                      : 'bg-slate-900 hover:bg-slate-800 text-slate-400 border-slate-800 hover:text-slate-200'
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+
+            {slides.length > 1 && onUpdateAllSlides && (
+              <button
+                type="button"
+                onClick={() => {
+                  const updated = slides.map((s) => ({ ...s, blur }));
+                  onUpdateAllSlides(updated);
+                }}
+                className="text-[10px] text-slate-400 hover:text-rose-300 bg-slate-900 hover:bg-slate-800 px-2 py-0.5 rounded-lg border border-slate-800 transition"
+                title="Aplica este mismo nivel de desenfoque a todas las diapositivas del carrusel"
+              >
+                Aplicar desenfoque a todos
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Row 3: Zoom & Position Coordinates */}
         <div className="grid grid-cols-3 gap-3 pt-1">
           {/* Zoom Slider */}
           <div>

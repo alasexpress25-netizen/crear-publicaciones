@@ -128,7 +128,13 @@ export async function renderSlideToCanvas(
         const dx = (width - drawW) * posX;
         const dy = (height - drawH) * posY;
 
+        if (slide.blur && slide.blur > 0) {
+          ctx.filter = `blur(${slide.blur * (scale / 2)}px)`;
+        } else {
+          ctx.filter = 'none';
+        }
         ctx.drawImage(img, dx, dy, drawW, drawH);
+        ctx.filter = 'none';
       } else {
         ctx.fillStyle = '#0f172a';
         ctx.fillRect(0, 0, width, height);

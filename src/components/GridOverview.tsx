@@ -47,6 +47,8 @@ export const GridOverview: React.FC<GridOverviewProps> = ({
                 className="absolute inset-0 bg-cover bg-center transition-transform group-hover:scale-105 duration-300"
                 style={{
                   backgroundImage: `url("${slide.image}")`,
+                  filter: slide.blur ? `blur(${Math.min(slide.blur, 8)}px)` : undefined,
+                  transform: slide.blur ? 'scale(1.06)' : undefined,
                 }}
               />
             )}

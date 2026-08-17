@@ -105,6 +105,7 @@ export interface Slide {
   zoom?: number;
   posX?: number;
   posY?: number;
+  blur?: number; // 0 - 25px blur / out of focus
   overlayIntensity?: number; // 0 - 100
   overlayType?: 'gradient' | 'solid' | 'card' | 'cinematic';
   cardBackground?: 'translucent' | 'transparent' | 'solid';
