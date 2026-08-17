@@ -1340,12 +1340,27 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
                 : 'Pega el prompt en Gemini / Imagen 3 y descarga tu imagen favorita.'}
             </span>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+              {/* Upload image directly from PC button */}
+              <label
+                className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-bold text-xs px-3 py-1.5 rounded-xl border border-slate-700 cursor-pointer transition shadow-sm shrink-0"
+                title="Carga una imagen o video desde tu computadora para esta diapositiva"
+              >
+                <Upload className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Cargar desde PC</span>
+                <input
+                  type="file"
+                  accept={isVideo ? 'video/*' : 'image/*'}
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
+              </label>
+
               {/* Copy Prompt Button with 2s visual feedback */}
               <button
                 onClick={() => handleCopyPrompt()}
                 disabled={!enhancedPrompt}
-                className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white font-bold text-xs px-3 py-1.5 rounded-xl transition"
+                className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white font-bold text-xs px-3 py-1.5 rounded-xl transition shrink-0"
               >
                 {copiedPrompt ? (
                   <>
@@ -1363,7 +1378,7 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
               {/* Open Gemini / Veo Button in named tab */}
               <button
                 onClick={handleOpenGemini}
-                className="flex items-center gap-1.5 bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white font-bold text-xs px-3 py-1.5 rounded-xl shadow-md transition"
+                className="flex items-center gap-1.5 bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white font-bold text-xs px-3 py-1.5 rounded-xl shadow-md transition shrink-0"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
                 <span>{isVideo ? 'Abrir Veo' : 'Abrir Gemini'}</span>
