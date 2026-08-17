@@ -1,5 +1,4 @@
-import { SavedCarouselProject, Slide, BrandInfo, CarouselPostMeta, AspectRatio, MarketingDocument } from '../types';
-import { AgencyClient } from './supabase';
+import { SavedCarouselProject } from '../types';
 
 const DB_NAME = 'LaVisualMK_CarouselDB';
 const DB_VERSION = 2;
@@ -7,19 +6,6 @@ const STORE_PROJECTS = 'projects';
 const STORE_META = 'metadata';
 const STORE_LOGOS = 'client_logos';
 const LEGACY_STORAGE_KEY = 'lavisualmk_saved_projects_v2';
-const ACTIVE_WORKSPACE_KEY = 'lavisualmk_active_workspace_v1';
-
-export interface ActiveWorkspaceData {
-  slides: Slide[];
-  brand: BrandInfo;
-  brief: string;
-  targetAudience: string;
-  postMeta: CarouselPostMeta;
-  aspectRatio: AspectRatio;
-  documents?: MarketingDocument[];
-  selectedClient?: AgencyClient | null;
-  updatedAt: string;
-}
 
 export function openAppDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -258,34 +244,4 @@ async function syncToLocalStorageFallback() {
   } catch {
     // ignore
   }
-}
-
-/**
- * Guarda el estado activo de la mesa de trabajo (incluidas imágenes pesadas en base64 de la PC) en IndexedDB
- */
-export async function saveActiveWorkspaceDB(data: Omit<ActiveWorkspaceData, 'updatedAt'>): Promise<void> {
-  try {
-    const fullData: ActiveWorkspaceData = {
-      ...data,
-      updatedAt: new Date().toISOString(),
-    };
-    await setMetaDB(ACTIVE_WORKSPACE_KEY, fullData);
-  } catch (err) {
-    console.warn('Error guardando active workspace en IndexedDB:', err);
-  }
-}
-
-/**
- * Restaura el estado activo de la mesa de trabajo desde IndexedDB
- */
-export async function getActiveWorkspaceDB(): Promise<ActiveWorkspaceData | null> {
-  try {
-    const data = await getMetaDB<ActiveWorkspaceData>(ACTIVE_WORKSPACE_KEY);
-    if (data && data.slides && Array.isArray(data.slides) && data.slides.length > 0) {
-      return data;
-    }
-  } catch (err) {
-    console.warn('Error leyendo active workspace de IndexedDB:', err);
-  }
-  return null;
 }

@@ -3,6 +3,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
+import ytdl from "@distube/ytdl-core";
 
 dotenv.config();
 
@@ -965,6 +966,58 @@ Devuelve EXCLUSIVAMENTE un JSON con:
     } catch (err: any) {
       console.error("Error enhancing all prompts:", err);
       res.status(500).json({ error: err.message || "Error al mejorar prompts del carrusel" });
+    }
+  });
+
+  // Dedicated download route for yt2mp3_server.py
+  app.get(["/yt2mp3_server.py", "/api/download-python-script"], (_req, res) => {
+    const scriptPath = path.join(process.cwd(), "public", "yt2mp3_server.py");
+    res.setHeader("Content-Type", "text/x-python");
+    res.setHeader("Content-Disposition", 'attachment; filename="yt2mp3_server.py"');
+    res.sendFile(scriptPath);
+  });
+
+  // 6. Direct YouTube to MP3 Audio Extraction API
+  app.post("/api/convert-youtube-mp3", async (req, res) => {
+    try {
+      const { url } = req.body || {};
+      if (!url || typeof url !== "string") {
+        return res.status(400).json({ error: "Falta el enlace de YouTube" });
+      }
+
+      const cleanUrl = url.trim();
+      if (!ytdl.validateURL(cleanUrl)) {
+        return res.status(400).json({ error: "La URL ingresada no es un enlace válido de YouTube." });
+      }
+
+      console.log(`[YouTube MP3] Procesando enlace: ${cleanUrl}`);
+      const info = await ytdl.getInfo(cleanUrl);
+      const rawTitle = info.videoDetails?.title || "youtube_audio";
+      const cleanTitle = rawTitle.replace(/[^\w\s-]/gi, "").trim() || "youtube_audio";
+
+      res.setHeader("Content-Type", "audio/mpeg");
+      res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(cleanTitle)}.mp3"`);
+      res.setHeader("X-Audio-Title", encodeURIComponent(cleanTitle));
+
+      const audioStream = ytdl(cleanUrl, {
+        filter: "audioonly",
+        quality: "highestaudio",
+        highWaterMark: 1 << 25,
+      });
+
+      audioStream.on("error", (streamErr) => {
+        console.error("Error en streaming de audio:", streamErr);
+        if (!res.headersSent) {
+          res.status(500).json({ error: `Error extrayendo audio: ${streamErr.message}` });
+        }
+      });
+
+      audioStream.pipe(res);
+    } catch (err: any) {
+      console.error("Error en /api/convert-youtube-mp3:", err);
+      res.status(500).json({
+        error: err.message || "No se pudo extraer el audio de YouTube desde el servidor en la nube.",
+      });
     }
   });
 

@@ -63,6 +63,100 @@ const DEFAULT_PIXABAY_KEY = '48866504-20b1dbd83f36a58bc283f5c71';
 const PIXABAY_STORAGE_KEY = 'lavisualmk_pixabay_api_key';
 const YT2MP3_LOCAL_SERVER = 'http://localhost:5057';
 
+const LOCAL_PYTHON_SCRIPT_CODE = `#!/usr/bin/env python3
+import os
+import re
+import tempfile
+import sys
+from flask import Flask, request, send_file, jsonify
+from flask_cors import CORS
+
+try:
+    import yt_dlp
+except ImportError:
+    print("\\n[!] Falta yt-dlp. Instálalo con: pip install yt-dlp flask flask-cors\\n")
+    sys.exit(1)
+
+app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "*"}})
+
+@app.after_request
+def add_cors_pna_headers(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With, *"
+    response.headers["Access-Control-Allow-Private-Network"] = "true"
+    response.headers["Access-Control-Expose-Headers"] = "Content-Disposition, X-Audio-Title"
+    return response
+
+def sanitize_filename(name):
+    clean = re.sub(r'[^\\w\\s-]', '', name).strip()
+    return re.sub(r'[-\\s]+', '_', clean).lower()
+
+@app.route('/health', methods=['GET', 'OPTIONS'])
+def health():
+    if request.method == 'OPTIONS':
+        return ('', 204)
+    return jsonify({"status": "ok", "service": "La Visual MK - YT2MP3", "port": 5057})
+
+@app.route('/convert', methods=['POST', 'OPTIONS'])
+def convert_to_mp3():
+    if request.method == 'OPTIONS':
+        return ('', 204)
+
+    data = request.get_json(silent=True) or {}
+    url = data.get('url', '').strip()
+    if not url:
+        return jsonify({"error": "Falta la URL de YouTube"}), 400
+
+    temp_dir = tempfile.mkdtemp(prefix="lavisualmk_yt_")
+    out_template = os.path.join(temp_dir, '%(title)s.%(ext)s')
+
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'outtmpl': out_template,
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '192',
+        }],
+        'quiet': True,
+        'no_warnings': True,
+    }
+
+    try:
+        print(f"[*] Extrayendo audio de: {url}")
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            raw_title = info.get('title', 'youtube_audio')
+            clean_title = sanitize_filename(raw_title)
+
+        generated_files = [f for f in os.listdir(temp_dir) if f.endswith('.mp3')]
+        if not generated_files:
+            return jsonify({"error": "No se generó el MP3. Verifica tener ffmpeg instalado."}), 500
+
+        mp3_path = os.path.join(temp_dir, generated_files[0])
+        final_filename = f"{clean_title}.mp3"
+        print(f"[✓] MP3 listo: {final_filename}")
+
+        return send_file(
+            mp3_path,
+            as_attachment=True,
+            download_name=final_filename,
+            mimetype="audio/mpeg"
+        )
+    except Exception as e:
+        print(f"[!] Error: {str(e)}")
+        return jsonify({"error": f"Error procesando video: {str(e)}"}), 500
+
+if __name__ == '__main__':
+    print("=========================================================")
+    print(" 🎵 La Visual MK - Servidor Local YouTube -> MP3")
+    print(" Escuchando en: http://127.0.0.1:5057")
+    print("=========================================================")
+    app.run(host='0.0.0.0', port=5057, debug=False)
+`;
+
 const ART_DIRECTION_STYLES = [
   { id: 'photorealistic', label: '📸 Fotorrealista', desc: 'Fotografía comercial auténtica de alta definición' },
   { id: 'visual_metaphor', label: '🎭 Metáfora Visual', desc: 'Simbolismo conceptual de alto impacto' },
@@ -126,7 +220,26 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
   const [isConvertingYt, setIsConvertingYt] = useState(false);
   const [ytConvertStatus, setYtConvertStatus] = useState<{ type: 'idle' | 'loading' | 'success' | 'error'; message: string } | null>(null);
   const [showYtServerHelp, setShowYtServerHelp] = useState(false);
+  const [copiedScript, setCopiedScript] = useState(false);
   const [audioWarning, setAudioWarning] = useState<string | null>(null);
+
+  const handleDownloadScript = () => {
+    const blob = new Blob([LOCAL_PYTHON_SCRIPT_CODE], { type: 'text/x-python;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'yt2mp3_server.py';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleCopyScript = () => {
+    navigator.clipboard.writeText(LOCAL_PYTHON_SCRIPT_CODE);
+    setCopiedScript(true);
+    setTimeout(() => setCopiedScript(false), 2500);
+  };
 
   const isVideo = slide.mediaType === 'video';
   const overlayIntensity = slide.overlayIntensity !== undefined ? slide.overlayIntensity : 85;
@@ -280,7 +393,7 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
     e.target.value = '';
   };
 
-  // Convert YouTube to MP3 via local Python server (yt2mp3_server.py)
+  // Convert YouTube to MP3 via Cloud API or local Python server (yt2mp3_server.py)
   const handleYoutubeToMp3 = async () => {
     const url = youtubeUrl.trim();
     if (!url) {
@@ -294,58 +407,110 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
     setIsConvertingYt(true);
     setYtConvertStatus({
       type: 'loading',
-      message: 'Conectando con el servidor local yt2mp3_server.py y extrayendo audio...',
+      message: 'Extrayendo audio en MP3 desde YouTube (servidor en la nube)...',
     });
 
+    let success = false;
+
+    // Strategy 1: Server-Side Cloud API (/api/convert-youtube-mp3)
     try {
-      const res = await fetch(`${YT2MP3_LOCAL_SERVER}/convert`, {
+      const res = await fetch('/api/convert-youtube-mp3', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url }),
       });
 
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || `Error del servidor local (Código ${res.status})`);
+      if (res.ok) {
+        const blob = await res.blob();
+        const contentDisposition = res.headers.get('Content-Disposition') || '';
+        const xTitle = res.headers.get('X-Audio-Title');
+        let fileName = xTitle ? decodeURIComponent(xTitle) + '.mp3' : '';
+        if (!fileName) {
+          const match = contentDisposition.match(/filename="?([^"]+)"?/);
+          fileName = match ? decodeURIComponent(match[1]) : `youtube_audio_${Date.now()}.mp3`;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const dataUrl = e.target?.result as string;
+          onUpdateSlide({
+            includeMusic: true,
+            musicUrl: dataUrl,
+            musicName: fileName,
+          });
+          setYtConvertStatus({
+            type: 'success',
+            message: `✓ "${fileName}" descargado y cargado en tu carrusel con éxito.`,
+          });
+          setYoutubeUrl('');
+        };
+        reader.readAsDataURL(blob);
+        success = true;
+        setIsConvertingYt(false);
+        return;
       }
+    } catch (cloudErr: any) {
+      console.warn('Cloud YouTube conversion failed, attempting local server fallback:', cloudErr);
+    }
 
-      const blob = await res.blob();
-      const contentDisposition = res.headers.get('Content-Disposition') || '';
-      const fileNameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
-      const fileName = fileNameMatch ? fileNameMatch[1] : `youtube_audio_${Date.now()}.mp3`;
+    // Strategy 2: Local Python Server (http://127.0.0.1:5057 or http://localhost:5057)
+    setYtConvertStatus({
+      type: 'loading',
+      message: 'Intentando conexión con tu servidor local Python en PC (puerto 5057)...',
+    });
 
-      // Read audio blob as Data URL for slide persistence
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const dataUrl = e.target?.result as string;
-        onUpdateSlide({
-          includeMusic: true,
-          musicUrl: dataUrl,
-          musicName: fileName,
-        });
-        setYtConvertStatus({
-          type: 'success',
-          message: `✓ "${fileName}" descargado y cargado en tu carrusel con éxito.`,
-        });
-        setYoutubeUrl('');
-      };
-      reader.onerror = () => {
-        setYtConvertStatus({
-          type: 'error',
-          message: 'Se descargó el archivo pero ocurrió un error al cargarlo en la aplicación.',
-        });
-      };
-      reader.readAsDataURL(blob);
+    const localEndpoints = [
+      'http://127.0.0.1:5057/convert',
+      'http://localhost:5057/convert',
+    ];
 
-    } catch (err: any) {
-      console.error(err);
+    for (const endpoint of localEndpoints) {
+      try {
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url }),
+        });
+
+        if (res.ok) {
+          const blob = await res.blob();
+          const contentDisposition = res.headers.get('Content-Disposition') || '';
+          const match = contentDisposition.match(/filename="?([^"]+)"?/);
+          const fileName = match ? decodeURIComponent(match[1]) : `youtube_audio_${Date.now()}.mp3`;
+
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const dataUrl = e.target?.result as string;
+            onUpdateSlide({
+              includeMusic: true,
+              musicUrl: dataUrl,
+              musicName: fileName,
+            });
+            setYtConvertStatus({
+              type: 'success',
+              message: `✓ "${fileName}" procesado por tu servidor local y cargado con éxito.`,
+            });
+            setYoutubeUrl('');
+          };
+          reader.readAsDataURL(blob);
+          success = true;
+          break;
+        }
+      } catch (localErr: any) {
+        console.warn(`Local endpoint ${endpoint} unreachable:`, localErr);
+      }
+    }
+
+    if (!success) {
       setYtConvertStatus({
         type: 'error',
-        message: `✗ ${err.message || 'No se pudo conectar'}. ¿Está corriendo yt2mp3_server.py en tu PC (http://localhost:5057)?`,
+        message:
+          'No se pudo extraer el audio automáticamente. Esto puede deberse a bloqueos de seguridad del navegador (HTTPS vs HTTP localhost) o restricciones del video. Te recomendamos descargar el script "yt2mp3_server.py" actualizado o subir directamente el archivo MP3 con el botón inferior.',
       });
-    } finally {
-      setIsConvertingYt(false);
+      setShowYtServerHelp(true);
     }
+
+    setIsConvertingYt(false);
   };
 
   // Enhance Image Prompt with AI Art Director (Contextualized to this specific slide + client)
@@ -594,13 +759,13 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
         </div>
       </div>
 
-      {/* Tabs Navigation - Auto-fitting wrap so all options are always visible */}
-      <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-800 pb-2.5 text-xs">
+      {/* Tabs Navigation */}
+      <div className="flex items-center gap-1.5 border-b border-slate-800 pb-2 text-xs overflow-x-auto scrollbar-none">
         <button
           onClick={() => setTab('pixabay')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold transition ${
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold transition whitespace-nowrap ${
             tab === 'pixabay'
-              ? 'bg-rose-600 text-white shadow-sm'
+              ? 'bg-rose-600 text-white shadow'
               : 'bg-slate-950 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800'
           }`}
         >
@@ -610,9 +775,9 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
 
         <button
           onClick={() => setTab('ai-prompt')}
-          className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition ${
+          className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition whitespace-nowrap ${
             tab === 'ai-prompt'
-              ? 'bg-gradient-to-r from-rose-900 to-pink-900 text-rose-200 border border-rose-600/70 shadow-sm'
+              ? 'bg-gradient-to-r from-rose-900 to-pink-900 text-rose-200 border border-rose-600/70 shadow'
               : 'bg-slate-950 hover:bg-slate-800 text-rose-400 border border-rose-950/60'
           }`}
         >
@@ -622,7 +787,7 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
 
         <button
           onClick={() => setTab('presets')}
-          className={`px-3 py-1.5 rounded-xl font-semibold transition ${
+          className={`px-3 py-1.5 rounded-xl font-semibold transition whitespace-nowrap ${
             tab === 'presets'
               ? 'bg-slate-800 text-white border border-slate-700'
               : 'bg-slate-950 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800'
@@ -633,21 +798,21 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
 
         <button
           onClick={() => setTab('custom')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-semibold transition ${
+          className={`flex items-center gap-1 px-3 py-1.5 rounded-xl font-semibold transition whitespace-nowrap ${
             tab === 'custom'
               ? 'bg-slate-800 text-white border border-slate-700'
               : 'bg-slate-950 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800'
           }`}
         >
-          <Upload className="w-3.5 h-3.5" />
+          <Upload className="w-3 h-3" />
           <span>Subir / URL</span>
         </button>
 
         <button
           onClick={() => setTab('music')}
-          className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition ${
+          className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition whitespace-nowrap ${
             tab === 'music'
-              ? 'bg-emerald-950 text-emerald-300 border border-emerald-700 shadow-sm'
+              ? 'bg-emerald-950 text-emerald-300 border border-emerald-700 shadow'
               : 'bg-slate-950 hover:bg-slate-800 text-emerald-400 border border-emerald-950/60'
           }`}
         >
@@ -777,7 +942,7 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
 
           {/* Results Grid 3x3 */}
           {pixabayResults.length > 0 ? (
-            <div className="grid grid-cols-3 gap-2 max-h-[240px] overflow-y-auto custom-scrollbar pr-1.5">
+            <div className="grid grid-cols-3 gap-2 max-h-[260px] overflow-y-auto pr-1">
               {pixabayResults.map((item) => (
                 <button
                   key={item.id}
@@ -1047,7 +1212,7 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
       {/* ========================================================= */}
       {tab === 'presets' && (
         <div className="space-y-3">
-          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-[240px] overflow-y-auto custom-scrollbar pr-1.5">
+          <div className="grid grid-cols-4 gap-2">
             {CURATED_STOCK_PHOTOS.map((photo, i) => (
               <button
                 key={i}
@@ -1162,8 +1327,8 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
               </button>
             </div>
 
-            <p className="text-[11px] text-slate-400">
-              Pega un enlace de YouTube para extraer su audio en MP3 mediante tu servidor local de Python.
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Pega un enlace de YouTube o descarga el MP3 en 1 clic con los servicios recomendados a continuación.
             </p>
 
             <div className="flex gap-2">
@@ -1197,6 +1362,31 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
               </button>
             </div>
 
+            {/* Acceso Rápido a Convertidores Web y Descarga Inmediata */}
+            {youtubeUrl.trim() && (
+              <div className="p-2.5 bg-slate-950/80 border border-slate-800 rounded-xl flex items-center justify-between text-[11px]">
+                <span className="text-slate-400">¿Descarga externa directa?</span>
+                <div className="flex items-center gap-2">
+                  <a
+                    href={`https://cobalt.tools/#${encodeURIComponent(youtubeUrl.trim())}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-emerald-400 hover:text-emerald-300 font-bold bg-slate-900 border border-emerald-500/30 px-2 py-1 rounded-lg transition"
+                  >
+                    Abrir en Cobalt.tools ↗
+                  </a>
+                  <a
+                    href={`https://y2meta.tube/en/youtube-to-mp3?url=${encodeURIComponent(youtubeUrl.trim())}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-red-400 hover:text-red-300 font-bold bg-slate-900 border border-red-500/30 px-2 py-1 rounded-lg transition"
+                  >
+                    Abrir en Y2Meta ↗
+                  </a>
+                </div>
+              </div>
+            )}
+
             {/* YouTube Convert Status */}
             {ytConvertStatus && (
               <div
@@ -1217,29 +1407,40 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
 
             {/* YouTube Server Help Modal / Drawer */}
             {showYtServerHelp && (
-              <div className="p-3 bg-slate-900 border border-slate-700/80 rounded-xl space-y-2 text-[11px] text-slate-300">
-                <div className="flex items-center justify-between font-bold text-white">
+              <div className="p-3 bg-slate-900 border border-slate-700/80 rounded-xl space-y-2.5 text-[11px] text-slate-300">
+                <div className="flex items-center justify-between font-bold text-white flex-wrap gap-2">
                   <span className="flex items-center gap-1.5">
                     <Terminal className="w-3.5 h-3.5 text-emerald-400" />
                     <span>Servidor Python Local (Puerto 5057)</span>
                   </span>
-                  <a
-                    href="/yt2mp3_server.py"
-                    download="yt2mp3_server.py"
-                    className="flex items-center gap-1 text-[10px] bg-slate-800 hover:bg-slate-700 text-emerald-400 px-2 py-1 rounded-lg border border-slate-700 transition"
-                  >
-                    <Download className="w-3 h-3" />
-                    <span>Descargar yt2mp3_server.py</span>
-                  </a>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={handleCopyScript}
+                      className="flex items-center gap-1 text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-200 px-2 py-1 rounded-lg border border-slate-700 transition"
+                      title="Copiar código Python al portapapeles"
+                    >
+                      {copiedScript ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                      <span>{copiedScript ? 'Copiado' : 'Copiar Código'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDownloadScript}
+                      className="flex items-center gap-1 text-[10px] bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 px-2 py-1 rounded-lg border border-emerald-700/60 transition font-bold"
+                    >
+                      <Download className="w-3 h-3" />
+                      <span>Descargar .py Limpio</span>
+                    </button>
+                  </div>
                 </div>
                 <p className="text-slate-400">
                   Para convertir videos de YouTube a MP3 directamente en tu máquina:
                 </p>
-                <div className="bg-slate-950 p-2 rounded-lg font-mono text-[10px] text-slate-300 space-y-1 border border-slate-800">
-                  <div className="text-slate-500"># 1. Instalar dependencias en terminal:</div>
-                  <div className="text-emerald-400">pip install flask flask-cors yt-dlp</div>
-                  <div className="text-slate-500 pt-1"># 2. Iniciar el servidor local:</div>
-                  <div className="text-emerald-400">python yt2mp3_server.py</div>
+                <div className="bg-slate-950 p-2.5 rounded-lg font-mono text-[10px] text-slate-300 space-y-1 border border-slate-800">
+                  <div className="text-slate-500"># 1. Instalar dependencias en tu consola (Windows CMD / PowerShell):</div>
+                  <div className="text-emerald-400 select-all">pip install flask flask-cors yt-dlp</div>
+                  <div className="text-slate-500 pt-1"># 2. Iniciar el servidor en tu carpeta E:\local-server\:</div>
+                  <div className="text-emerald-400 select-all">python yt2mp3_server.py</div>
                 </div>
               </div>
             )}
@@ -1352,69 +1553,28 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
 
       {/* Adjustments: Darkness Overlay, Zoom, Pan (Always Accessible) */}
       <div className="space-y-3 pt-3 border-t border-slate-800">
-        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
-          <span className="flex items-center gap-1.5 font-bold text-slate-300">
-            <Sliders className="w-3.5 h-3.5 text-rose-400" />
-            <span>Ajustes Visuales del Fondo:</span>
+        <div className="flex items-center justify-between text-xs text-slate-400">
+          <span className="flex items-center gap-1.5">
+            <Sliders className="w-3.5 h-3.5 text-slate-400" />
+            <span>Oscurecido para legibilidad:</span>
           </span>
-
-          <div className="flex items-center gap-1.5">
-            {/* Reset adjustments button */}
-            <button
-              type="button"
-              onClick={() =>
-                onUpdateSlide({
-                  overlayIntensity: 85,
-                  zoom: 1,
-                  posX: 50,
-                  posY: 50,
-                  fit: 'cover',
-                })
-              }
-              className="text-[10px] text-slate-400 hover:text-white bg-slate-950 hover:bg-slate-800 px-2 py-1 rounded-lg border border-slate-800 transition"
-              title="Restablecer valores por defecto (100% zoom, centro, 85% opacidad)"
-            >
-              Restablecer
-            </button>
-
-            {/* Remove background image button if present */}
-            {slide.image && (
-              <button
-                type="button"
-                onClick={() => onUpdateSlide({ image: '' })}
-                className="text-[10px] text-rose-400 hover:text-rose-300 bg-rose-950/40 hover:bg-rose-900/60 px-2 py-1 rounded-lg border border-rose-800/40 transition flex items-center gap-1"
-                title="Quitar la imagen o fondo actual de esta diapositiva"
-              >
-                <Trash2 className="w-3 h-3" />
-                <span>Quitar Fondo</span>
-              </button>
-            )}
-          </div>
+          <span className="font-mono text-slate-200 font-bold">{overlayIntensity}%</span>
         </div>
+        <input
+          type="range"
+          min="0"
+          max="100"
+          value={overlayIntensity}
+          onChange={(e) => onUpdateSlide({ overlayIntensity: parseInt(e.target.value, 10) })}
+          className="w-full accent-rose-600 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
+        />
 
-        {/* Darkness Overlay Slider */}
-        <div className="space-y-1 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
-          <div className="flex items-center justify-between text-[11px] text-slate-400">
-            <span>Oscurecido para legibilidad del texto:</span>
-            <span className="font-mono text-rose-400 font-bold">{overlayIntensity}%</span>
-          </div>
-          <input
-            type="range"
-            min="0"
-            max="100"
-            value={overlayIntensity}
-            onChange={(e) => onUpdateSlide({ overlayIntensity: parseInt(e.target.value, 10) })}
-            className="w-full accent-rose-600 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
-          />
-        </div>
-
-        {/* Zoom, Pos X, Pos Y Grid */}
-        <div className="grid grid-cols-3 gap-2 pt-0.5">
+        <div className="grid grid-cols-3 gap-3 pt-1">
           {/* Zoom Slider */}
-          <div className="bg-slate-950/60 p-2 rounded-xl border border-slate-800/80 space-y-1">
-            <div className="flex justify-between text-[10px] text-slate-400">
-              <span className="font-semibold">Zoom</span>
-              <span className="font-mono text-slate-200 font-bold">{zoom}%</span>
+          <div>
+            <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+              <span>Zoom</span>
+              <span className="font-mono">{zoom}%</span>
             </div>
             <input
               type="range"
@@ -1422,15 +1582,15 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
               max="250"
               value={zoom}
               onChange={(e) => onUpdateSlide({ zoom: parseInt(e.target.value, 10) / 100 })}
-              className="w-full accent-rose-600 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
+              className="w-full accent-rose-600 cursor-pointer h-1 bg-slate-800 rounded-lg"
             />
           </div>
 
           {/* Pan X Slider */}
-          <div className="bg-slate-950/60 p-2 rounded-xl border border-slate-800/80 space-y-1">
-            <div className="flex justify-between text-[10px] text-slate-400">
-              <span className="font-semibold">Posición X</span>
-              <span className="font-mono text-slate-200 font-bold">{posX}%</span>
+          <div>
+            <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+              <span>Posición X</span>
+              <span className="font-mono">{posX}%</span>
             </div>
             <input
               type="range"
@@ -1438,15 +1598,15 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
               max="100"
               value={posX}
               onChange={(e) => onUpdateSlide({ posX: parseInt(e.target.value, 10) })}
-              className="w-full accent-rose-600 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
+              className="w-full accent-rose-600 cursor-pointer h-1 bg-slate-800 rounded-lg"
             />
           </div>
 
           {/* Pan Y Slider */}
-          <div className="bg-slate-950/60 p-2 rounded-xl border border-slate-800/80 space-y-1">
-            <div className="flex justify-between text-[10px] text-slate-400">
-              <span className="font-semibold">Posición Y</span>
-              <span className="font-mono text-slate-200 font-bold">{posY}%</span>
+          <div>
+            <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+              <span>Posición Y</span>
+              <span className="font-mono">{posY}%</span>
             </div>
             <input
               type="range"
@@ -1454,7 +1614,7 @@ export const MediaPanel: React.FC<MediaPanelProps> = ({
               max="100"
               value={posY}
               onChange={(e) => onUpdateSlide({ posY: parseInt(e.target.value, 10) })}
-              className="w-full accent-rose-600 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
+              className="w-full accent-rose-600 cursor-pointer h-1 bg-slate-800 rounded-lg"
             />
           </div>
         </div>

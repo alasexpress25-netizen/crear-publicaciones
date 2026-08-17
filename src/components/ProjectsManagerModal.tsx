@@ -779,29 +779,20 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
                   <label className="text-[11px] font-bold text-slate-400 block mb-2">
                     Diapositivas ({activeProject.slides.length}):
                   </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  <div className="grid grid-cols-4 gap-2">
                     {activeProject.slides.map((s, idx) => (
                       <div
                         key={idx}
-                        className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-[10px] space-y-1 relative group overflow-hidden min-h-[90px] flex flex-col justify-between"
+                        className="bg-slate-950 p-2 rounded-xl border border-slate-800 text-[10px] space-y-1 relative group overflow-hidden"
                       >
-                        {/* Image preview background if slide has image */}
-                        {s.image && (
-                          <div
-                            className="absolute inset-0 bg-cover bg-center pointer-events-none opacity-40 group-hover:opacity-55 transition"
-                            style={{ backgroundImage: `url("${s.image}")` }}
-                          />
-                        )}
-                        <div className="relative z-10">
-                          <span className="text-[9px] font-black text-rose-400 block mb-0.5 drop-shadow">
-                            #{idx + 1}
-                          </span>
-                          <p className="font-bold text-white line-clamp-2 leading-tight drop-shadow-sm">
-                            {s.title || s.badge || 'Sin título'}
-                          </p>
-                        </div>
+                        <span className="text-[9px] font-black text-rose-400 block">
+                          #{idx + 1}
+                        </span>
+                        <p className="font-bold text-white line-clamp-2 leading-tight">
+                          {s.title || s.badge || 'Sin título'}
+                        </p>
                         {s.body && (
-                          <p className="relative z-10 text-slate-300 line-clamp-1 text-[9px] drop-shadow-sm">
+                          <p className="text-slate-400 line-clamp-1 text-[9px]">
                             {s.body}
                           </p>
                         )}

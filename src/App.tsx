@@ -28,10 +28,6 @@ import {
   setStoredAppLanguage,
   initClientLanguagesFromDB,
 } from './services/clientLanguageStorage';
-import {
-  getActiveWorkspaceDB,
-  saveActiveWorkspaceDB,
-} from './services/storageDb';
 import { apiTranslateCarousel } from './services/api';
 import { Header } from './components/Header';
 import { CanvasSlide } from './components/CanvasSlide';
@@ -93,8 +89,17 @@ export default function App() {
     };
   });
 
-  // Carousel Slides State - Always fresh blank project on app open
-  const [slides, setSlides] = useState<Slide[]>(INITIAL_DEFAULT_SLIDES);
+  // Carousel Slides State
+  const [slides, setSlides] = useState<Slide[]>(() => {
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_SLIDES_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return INITIAL_DEFAULT_SLIDES;
+  });
 
   const [currentIndex, setCurrentIndex] = useState<number>(0);
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('4:5');
@@ -168,7 +173,7 @@ export default function App() {
 
   // Modals state
   const [isClientSelectorOpen, setIsClientSelectorOpen] = useState(false);
-  const [isProjectsOpen, setIsProjectsOpen] = useState(true);
+  const [isProjectsOpen, setIsProjectsOpen] = useState(false);
   const [isKnowledgeOpen, setIsKnowledgeOpen] = useState(false);
   const [isHookLabOpen, setIsHookLabOpen] = useState(false);
   const [isPostCaptionOpen, setIsPostCaptionOpen] = useState(false);
@@ -203,16 +208,6 @@ export default function App() {
     if (proj.aspectRatio) setAspectRatio(proj.aspectRatio);
     setEscenasPorDiapositiva({});
     setCurrentIndex(0);
-    saveActiveWorkspaceDB({
-      slides: proj.slides || slides,
-      brand: proj.brand || brand,
-      brief: proj.brief || brief,
-      targetAudience: proj.targetAudience || targetAudience,
-      postMeta: proj.postMeta || postMeta,
-      aspectRatio: proj.aspectRatio || aspectRatio,
-      documents,
-      selectedClient,
-    });
   };
 
   const handleCreateNewBlankProject = () => {
@@ -220,33 +215,10 @@ export default function App() {
     setBrief('');
     setEscenasPorDiapositiva({});
     setCurrentIndex(0);
-    saveActiveWorkspaceDB({
-      slides: INITIAL_DEFAULT_SLIDES,
-      brand,
-      brief: '',
-      targetAudience,
-      postMeta,
-      aspectRatio,
-      documents,
-      selectedClient,
-    });
   };
 
-  // Sync to IndexedDB (unlimited storage for HD base64 images from PC) and LocalStorage fallback
+  // Sync to LocalStorage
   useEffect(() => {
-    // 1. Guardar permanentemente en IndexedDB
-    saveActiveWorkspaceDB({
-      slides,
-      brand,
-      brief,
-      targetAudience,
-      postMeta,
-      aspectRatio,
-      documents,
-      selectedClient,
-    });
-
-    // 2. Respaldo ligero en LocalStorage
     try {
       localStorage.setItem(LOCAL_STORAGE_SLIDES_KEY, JSON.stringify(slides));
       localStorage.setItem(LOCAL_STORAGE_BRAND_KEY, JSON.stringify(brand));
@@ -256,7 +228,7 @@ export default function App() {
         localStorage.setItem(LOCAL_STORAGE_CLIENT_KEY, JSON.stringify(selectedClient));
       }
     } catch {}
-  }, [slides, brand, brief, targetAudience, postMeta, aspectRatio, documents, selectedClient]);
+  }, [slides, brand, documents, postMeta, selectedClient]);
 
   // Active slide safety check
   const currentSlide = slides[currentIndex] || slides[0] || INITIAL_DEFAULT_SLIDES[0];
