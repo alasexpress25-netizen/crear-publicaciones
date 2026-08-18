@@ -99,25 +99,35 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
     const startX = e.clientX;
     const startY = e.clientY;
 
-    // Measure the element's actual top-left relative to the canvas container
+    // Find the target element using data-drag-key
     const targetEl = (e.currentTarget.closest(`[data-drag-key="${key}"]`) || e.currentTarget) as HTMLElement;
     const elemRect = targetEl.getBoundingClientRect();
 
-    // If already positioned with pos.left/pos.top (which is top-left % on canvas), use it.
-    // Otherwise calculate current DOM top-left % relative to container.
-    const currentLeftPct = slide.textPos?.[key]?.left ?? (((elemRect.left - containerRect.left) / containerRect.width) * 100);
-    const currentTopPct = slide.textPos?.[key]?.top ?? (((elemRect.top - containerRect.top) / containerRect.height) * 100);
+    // Calculate the element's actual position relative to the container right now
+    const initialLeftPct = slide.textPos?.[key]?.left !== undefined
+      ? slide.textPos[key]!.left
+      : Math.round((((elemRect.left - containerRect.left) / containerRect.width) * 100) * 10) / 10;
+
+    const initialTopPct = slide.textPos?.[key]?.top !== undefined
+      ? slide.textPos[key]!.top
+      : Math.round((((elemRect.top - containerRect.top) / containerRect.height) * 100) * 10) / 10;
+
+    // Immediately establish absolute position state if not already set, so there is ZERO jump
+    if (!slide.textPos?.[key]) {
+      onUpdateTextPos?.(key, { left: initialLeftPct, top: initialTopPct });
+    }
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
+      moveEvent.preventDefault();
       const deltaX = moveEvent.clientX - startX;
       const deltaY = moveEvent.clientY - startY;
 
       const deltaXPct = (deltaX / containerRect.width) * 100;
       const deltaYPct = (deltaY / containerRect.height) * 100;
 
-      // Completely free, smooth movement across and beyond canvas edges with zero snapping or magnet pull
-      const newLeft = Math.round((currentLeftPct + deltaXPct) * 10) / 10;
-      const newTop = Math.round((currentTopPct + deltaYPct) * 10) / 10;
+      // Smooth, zero-snap freeform movement
+      const newLeft = Math.round((initialLeftPct + deltaXPct) * 10) / 10;
+      const newTop = Math.round((initialTopPct + deltaYPct) * 10) / 10;
 
       onUpdateTextPos?.(key, { left: newLeft, top: newTop });
     };
@@ -232,6 +242,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
         </div>
         {hasPos && (
           <button
+            type="button"
             onClick={(e) => {
               e.stopPropagation();
               onUpdateTextPos?.(key, null);
@@ -240,6 +251,20 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
             title="Restablecer a posición por defecto"
           >
             Restablecer
+          </button>
+        )}
+        {onDeleteElement && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDeleteElement(key);
+            }}
+            className="text-[9px] bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white px-1.5 py-0.5 rounded border border-rose-700/60 transition flex items-center gap-0.5"
+            title="Eliminar objeto (o presiona tecla Supr/Delete)"
+          >
+            <X className="w-2.5 h-2.5" />
+            <span>Eliminar (Supr)</span>
           </button>
         )}
       </div>
@@ -556,83 +581,85 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
         />
       )}
 
-      {/* Top Header Bar */}
-      <div className="z-10 w-full p-5 sm:p-6 pb-2 flex items-center justify-between gap-3 border-b border-slate-800/50">
-        <div
-          data-drag-key="brandName"
-          className={`group relative flex items-center gap-2 cursor-pointer transition rounded-xl px-2 py-1 ${
-            activeElementKey === 'brandName' ? 'ring-2 ring-rose-500 bg-slate-900/80' : 'hover:bg-slate-900/40'
-          }`}
-          onClick={(e) => {
-            e.stopPropagation();
-            onSelectElement('brandName');
-          }}
-          style={getStyleFor('brandName')}
-        >
-          {renderActiveControls('brandName')}
-          {brand.logo ? (
-            <img
-              src={brand.logo}
-              alt="Logo"
-              className="rounded-lg object-contain border border-slate-700/80 bg-slate-950/60 p-0.5 transition-all"
-              style={{
-                height: `${brand.logoSize || 24}px`,
-                maxWidth: `${Math.max(60, (brand.logoSize || 24) * 3)}px`,
-              }}
-            />
-          ) : (
-            <div
-              className="rounded-lg flex items-center justify-center text-white font-black shadow-sm transition-all shrink-0"
-              style={{
-                backgroundColor: primaryColor,
-                width: `${brand.logoSize || 24}px`,
-                height: `${brand.logoSize || 24}px`,
-                fontSize: `${Math.max(9, Math.round((brand.logoSize || 24) * 0.45))}px`,
-              }}
-            >
-              {brand.name ? brand.name.charAt(0).toUpperCase() : '★'}
-            </div>
-          )}
-          <span
-            contentEditable
-            suppressContentEditableWarning
-            onBlur={(e) => onUpdateBrand('name', e.currentTarget.innerText)}
-            className="outline-none"
-          >
-            {brand.name || 'LA VISUAL MK'}
-          </span>
-        </div>
-
-        <div
-          data-drag-key="brandHandle"
-          className={`group relative flex items-center gap-1.5 cursor-pointer transition rounded-xl px-2 py-1 ${
-            activeElementKey === 'brandHandle' ? 'ring-2 ring-rose-500 bg-slate-900/80' : 'hover:bg-slate-900/40'
-          }`}
-          onClick={(e) => {
-            e.stopPropagation();
-            onSelectElement('brandHandle');
-          }}
-          style={getStyleFor('brandHandle')}
-        >
-          {renderActiveControls('brandHandle')}
-          <span
-            contentEditable
-            suppressContentEditableWarning
-            onBlur={(e) => {
-              const val = e.currentTarget.innerText.trim();
-              onUpdateBrand('handle', val.startsWith('@') ? val : (val ? `@${val}` : ''));
+      {/* Unified Canvas Canvas Body (Sin header ni footer compartimentados, sin líneas divisorias) */}
+      <div className="z-10 w-full h-full relative overflow-visible flex flex-col justify-between p-5 sm:p-6">
+        {/* Top Brand Elements (Posicionados en flujo natural arriba, pero libres para trasladarse a cualquier punto) */}
+        <div className="w-full flex items-center justify-between gap-3 pointer-events-none mb-1">
+          <div
+            data-drag-key="brandName"
+            className={`group relative pointer-events-auto flex items-center gap-2 cursor-pointer transition rounded-xl px-2 py-1 ${
+              activeElementKey === 'brandName' ? 'ring-2 ring-rose-500 bg-slate-900/80' : 'hover:bg-slate-900/40'
+            }`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelectElement('brandName');
             }}
-            className="outline-none tracking-wide"
+            style={getStyleFor('brandName')}
           >
-            {brand.handle ? (brand.handle.startsWith('@') ? brand.handle : `@${brand.handle}`) : '@lavisualmk'}
-          </span>
-        </div>
-      </div>
+            {renderActiveControls('brandName')}
+            {brand.logo ? (
+              <img
+                src={brand.logo}
+                alt="Logo"
+                className="rounded-lg object-contain border border-slate-700/80 bg-slate-950/60 p-0.5 transition-all"
+                style={{
+                  height: `${brand.logoSize || 24}px`,
+                  maxWidth: `${Math.max(60, (brand.logoSize || 24) * 3)}px`,
+                }}
+              />
+            ) : (
+              <div
+                className="rounded-lg flex items-center justify-center text-white font-black shadow-sm transition-all shrink-0"
+                style={{
+                  backgroundColor: primaryColor,
+                  width: `${brand.logoSize || 24}px`,
+                  height: `${brand.logoSize || 24}px`,
+                  fontSize: `${Math.max(9, Math.round((brand.logoSize || 24) * 0.45))}px`,
+                }}
+              >
+                {brand.name ? brand.name.charAt(0).toUpperCase() : '★'}
+              </div>
+            )}
+            <span
+              contentEditable
+              suppressContentEditableWarning
+              onBlur={(e) => onUpdateBrand('name', e.currentTarget.innerText)}
+              className="outline-none"
+            >
+              {brand.name || 'LA VISUAL MK'}
+            </span>
+          </div>
 
-      {/* Main Content Body: Adaptive by Layout Template */}
-      <div className={`z-10 w-full flex-1 px-5 sm:px-6 py-3 flex flex-col ${
-        slide.contentAlign === 'top' ? 'justify-start' : slide.contentAlign === 'bottom' ? 'justify-end' : 'justify-center'
-      } overflow-visible`}>
+          <div
+            data-drag-key="brandHandle"
+            className={`group relative pointer-events-auto flex items-center gap-1.5 cursor-pointer transition rounded-xl px-2 py-1 ${
+              activeElementKey === 'brandHandle' ? 'ring-2 ring-rose-500 bg-slate-900/80' : 'hover:bg-slate-900/40'
+            }`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelectElement('brandHandle');
+            }}
+            style={getStyleFor('brandHandle')}
+          >
+            {renderActiveControls('brandHandle')}
+            <span
+              contentEditable
+              suppressContentEditableWarning
+              onBlur={(e) => {
+                const val = e.currentTarget.innerText.trim();
+                onUpdateBrand('handle', val.startsWith('@') ? val : (val ? `@${val}` : ''));
+              }}
+              className="outline-none tracking-wide"
+            >
+              {brand.handle ? (brand.handle.startsWith('@') ? brand.handle : `@${brand.handle}`) : '@lavisualmk'}
+            </span>
+          </div>
+        </div>
+
+        {/* Main Content Body: Adaptive by Layout Template */}
+        <div className={`w-full flex-1 py-1 flex flex-col ${
+          slide.contentAlign === 'top' ? 'justify-start' : slide.contentAlign === 'bottom' ? 'justify-end' : 'justify-center'
+        } overflow-visible`}>
            {/* ==================================================================== */}
         {/* LAYOUT 1: STANDARD (Título + Puntos/Cuerpo) */}
         {/* ==================================================================== */}
@@ -1736,51 +1763,53 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
 
       </div>
 
-      {/* Bottom Footer Bar (CTA & Web) */}
-      <div className="z-10 w-full p-5 sm:p-6 pt-2 flex items-center justify-between gap-3 border-t border-slate-800/50 text-xs">
-        <div
-          data-drag-key="cta"
-          className={`group relative cursor-pointer transition rounded-lg px-2 py-0.5 ${
-            activeElementKey === 'cta' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/40'
-          }`}
-          onClick={(e) => {
-            e.stopPropagation();
-            onSelectElement('cta');
-          }}
-          style={getStyleFor('cta')}
-        >
-          {renderActiveControls('cta')}
-          <span
-            contentEditable
-            suppressContentEditableWarning
-            onBlur={(e) => onUpdateField('cta', e.currentTarget.innerText)}
-            className="outline-none flex items-center gap-1.5"
+        {/* Bottom Elements (CTA & Web sin barra divisoria, libres para trasladarse) */}
+        <div className="w-full flex items-center justify-between gap-3 pointer-events-none text-xs mt-1">
+          <div
+            data-drag-key="cta"
+            className={`group relative pointer-events-auto cursor-pointer transition rounded-lg px-2 py-0.5 ${
+              activeElementKey === 'cta' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/40'
+            }`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelectElement('cta');
+            }}
+            style={getStyleFor('cta')}
           >
-            {slide.cta || loc.standard.cta}
-          </span>
+            {renderActiveControls('cta')}
+            <span
+              contentEditable
+              suppressContentEditableWarning
+              onBlur={(e) => onUpdateField('cta', e.currentTarget.innerText)}
+              className="outline-none flex items-center gap-1.5"
+            >
+              {slide.cta || loc.standard.cta}
+            </span>
+          </div>
+
+          <div
+            data-drag-key="brandWeb"
+            className={`group relative pointer-events-auto cursor-pointer transition rounded-lg px-2 py-0.5 ${
+              activeElementKey === 'brandWeb' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/40'
+            }`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelectElement('brandWeb');
+            }}
+            style={getStyleFor('brandWeb')}
+          >
+            {renderActiveControls('brandWeb')}
+            <span
+              contentEditable
+              suppressContentEditableWarning
+              onBlur={(e) => onUpdateBrand('web', e.currentTarget.innerText)}
+              className="outline-none hover:underline"
+            >
+              {brand.web || (brand.handle ? `@${brand.handle.replace(/^@/, '')}` : 'lavisualmk.com')}
+            </span>
+          </div>
         </div>
 
-        <div
-          data-drag-key="brandWeb"
-          className={`group relative cursor-pointer transition rounded-lg px-2 py-0.5 ${
-            activeElementKey === 'brandWeb' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/40'
-          }`}
-          onClick={(e) => {
-            e.stopPropagation();
-            onSelectElement('brandWeb');
-          }}
-          style={getStyleFor('brandWeb')}
-        >
-          {renderActiveControls('brandWeb')}
-          <span
-            contentEditable
-            suppressContentEditableWarning
-            onBlur={(e) => onUpdateBrand('web', e.currentTarget.innerText)}
-            className="outline-none hover:underline"
-          >
-            {brand.web || (brand.handle ? `@${brand.handle.replace(/^@/, '')}` : 'lavisualmk.com')}
-          </span>
-        </div>
       </div>
 
     </div>

@@ -194,12 +194,25 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
             <Move className="w-3.5 h-3.5 text-rose-400 mr-0.5 shrink-0" />
             <span className="text-[11px] font-bold text-slate-400 mr-0.5">Mover:</span>
 
-            {/* Steppers de posición con 5% de salto libre horizontal y vertical */}
+            {/* Steppers de posición con 4% de salto libre horizontal y vertical sin saltos al centro */}
             <div className="flex items-center gap-0.5 bg-slate-900 border border-slate-800 rounded-lg p-0.5">
               <button
                 onClick={() => {
-                  const currentPos = slide.textPos?.[activeKey] || { left: 50, top: 50 };
-                  onUpdateTextPos?.(activeKey, { left: Math.max(0, currentPos.left - 5), top: currentPos.top });
+                  let currentPos = slide.textPos?.[activeKey];
+                  if (!currentPos && typeof document !== 'undefined') {
+                    const el = document.querySelector(`[data-drag-key="${activeKey}"]`) as HTMLElement;
+                    const cont = document.getElementById('active-canvas-slide-container');
+                    if (el && cont) {
+                      const rEl = el.getBoundingClientRect();
+                      const rCont = cont.getBoundingClientRect();
+                      currentPos = {
+                        left: Math.round((((rEl.left - rCont.left) / rCont.width) * 100) * 10) / 10,
+                        top: Math.round((((rEl.top - rCont.top) / rCont.height) * 100) * 10) / 10,
+                      };
+                    }
+                  }
+                  const pos = currentPos || { left: 5, top: 40 };
+                  onUpdateTextPos?.(activeKey, { left: Math.max(-50, pos.left - 4), top: pos.top });
                 }}
                 className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition"
                 title="Mover a la izquierda (←)"
@@ -208,8 +221,21 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
               </button>
               <button
                 onClick={() => {
-                  const currentPos = slide.textPos?.[activeKey] || { left: 50, top: 50 };
-                  onUpdateTextPos?.(activeKey, { left: Math.min(100, currentPos.left + 5), top: currentPos.top });
+                  let currentPos = slide.textPos?.[activeKey];
+                  if (!currentPos && typeof document !== 'undefined') {
+                    const el = document.querySelector(`[data-drag-key="${activeKey}"]`) as HTMLElement;
+                    const cont = document.getElementById('active-canvas-slide-container');
+                    if (el && cont) {
+                      const rEl = el.getBoundingClientRect();
+                      const rCont = cont.getBoundingClientRect();
+                      currentPos = {
+                        left: Math.round((((rEl.left - rCont.left) / rCont.width) * 100) * 10) / 10,
+                        top: Math.round((((rEl.top - rCont.top) / rCont.height) * 100) * 10) / 10,
+                      };
+                    }
+                  }
+                  const pos = currentPos || { left: 5, top: 40 };
+                  onUpdateTextPos?.(activeKey, { left: Math.min(150, pos.left + 4), top: pos.top });
                 }}
                 className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition"
                 title="Mover a la derecha (→)"
@@ -218,8 +244,21 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
               </button>
               <button
                 onClick={() => {
-                  const currentPos = slide.textPos?.[activeKey] || { left: 50, top: 50 };
-                  onUpdateTextPos?.(activeKey, { left: currentPos.left, top: Math.max(0, currentPos.top - 5) });
+                  let currentPos = slide.textPos?.[activeKey];
+                  if (!currentPos && typeof document !== 'undefined') {
+                    const el = document.querySelector(`[data-drag-key="${activeKey}"]`) as HTMLElement;
+                    const cont = document.getElementById('active-canvas-slide-container');
+                    if (el && cont) {
+                      const rEl = el.getBoundingClientRect();
+                      const rCont = cont.getBoundingClientRect();
+                      currentPos = {
+                        left: Math.round((((rEl.left - rCont.left) / rCont.width) * 100) * 10) / 10,
+                        top: Math.round((((rEl.top - rCont.top) / rCont.height) * 100) * 10) / 10,
+                      };
+                    }
+                  }
+                  const pos = currentPos || { left: 5, top: 40 };
+                  onUpdateTextPos?.(activeKey, { left: pos.left, top: Math.max(-50, pos.top - 4) });
                 }}
                 className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition"
                 title="Mover arriba (↑)"
@@ -228,8 +267,21 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
               </button>
               <button
                 onClick={() => {
-                  const currentPos = slide.textPos?.[activeKey] || { left: 50, top: 50 };
-                  onUpdateTextPos?.(activeKey, { left: currentPos.left, top: Math.min(100, currentPos.top + 5) });
+                  let currentPos = slide.textPos?.[activeKey];
+                  if (!currentPos && typeof document !== 'undefined') {
+                    const el = document.querySelector(`[data-drag-key="${activeKey}"]`) as HTMLElement;
+                    const cont = document.getElementById('active-canvas-slide-container');
+                    if (el && cont) {
+                      const rEl = el.getBoundingClientRect();
+                      const rCont = cont.getBoundingClientRect();
+                      currentPos = {
+                        left: Math.round((((rEl.left - rCont.left) / rCont.width) * 100) * 10) / 10,
+                        top: Math.round((((rEl.top - rCont.top) / rCont.height) * 100) * 10) / 10,
+                      };
+                    }
+                  }
+                  const pos = currentPos || { left: 5, top: 40 };
+                  onUpdateTextPos?.(activeKey, { left: pos.left, top: Math.min(150, pos.top + 4) });
                 }}
                 className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition"
                 title="Mover abajo (↓)"
@@ -242,65 +294,161 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
             <div className="flex items-center gap-0.5 bg-slate-900 border border-slate-800 rounded-lg p-0.5 text-[10px] font-bold">
               <button
                 onClick={() => {
-                  const currentPos = slide.textPos?.[activeKey] || { left: 50, top: 50 };
-                  onUpdateTextPos?.(activeKey, { left: 25, top: currentPos.top });
+                  let currentPos = slide.textPos?.[activeKey];
+                  if (!currentPos && typeof document !== 'undefined') {
+                    const el = document.querySelector(`[data-drag-key="${activeKey}"]`) as HTMLElement;
+                    const cont = document.getElementById('active-canvas-slide-container');
+                    if (el && cont) {
+                      const rEl = el.getBoundingClientRect();
+                      const rCont = cont.getBoundingClientRect();
+                      currentPos = {
+                        left: Math.round((((rEl.left - rCont.left) / rCont.width) * 100) * 10) / 10,
+                        top: Math.round((((rEl.top - rCont.top) / rCont.height) * 100) * 10) / 10,
+                      };
+                    }
+                  }
+                  const pos = currentPos || { left: 4, top: 40 };
+                  // Move directly to left margin (4%)
+                  onUpdateTextPos?.(activeKey, { left: 4, top: pos.top });
                 }}
                 className="px-1.5 py-0.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition"
-                title="Colocar horizontalmente a la izquierda (X: 25%)"
+                title="Alinear al margen izquierdo (X: 4%)"
               >
                 Izq
               </button>
               <button
                 onClick={() => {
-                  const currentPos = slide.textPos?.[activeKey] || { left: 50, top: 50 };
-                  onUpdateTextPos?.(activeKey, { left: 50, top: currentPos.top });
+                  let currentPos = slide.textPos?.[activeKey];
+                  let elemWidthPct = 85;
+                  if (typeof document !== 'undefined') {
+                    const el = document.querySelector(`[data-drag-key="${activeKey}"]`) as HTMLElement;
+                    const cont = document.getElementById('active-canvas-slide-container');
+                    if (el && cont) {
+                      const rEl = el.getBoundingClientRect();
+                      const rCont = cont.getBoundingClientRect();
+                      elemWidthPct = Math.round(((rEl.width / rCont.width) * 100) * 10) / 10;
+                      currentPos = {
+                        left: Math.round((((rEl.left - rCont.left) / rCont.width) * 100) * 10) / 10,
+                        top: Math.round((((rEl.top - rCont.top) / rCont.height) * 100) * 10) / 10,
+                      };
+                    }
+                  }
+                  const pos = currentPos || { left: 5, top: 40 };
+                  // Geometric center: Place left edge so the object center aligns with 50% of the canvas
+                  const centerLeft = Math.max(0, Math.round(((100 - elemWidthPct) / 2) * 10) / 10);
+                  onUpdateTextPos?.(activeKey, { left: centerLeft, top: pos.top });
                 }}
                 className="px-1.5 py-0.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition"
-                title="Centrar horizontalmente (X: 50%)"
+                title="Centrar horizontalmente en el lienzo"
               >
                 Centro
               </button>
               <button
                 onClick={() => {
-                  const currentPos = slide.textPos?.[activeKey] || { left: 50, top: 50 };
-                  onUpdateTextPos?.(activeKey, { left: 75, top: currentPos.top });
+                  let currentPos = slide.textPos?.[activeKey];
+                  let elemWidthPct = 85;
+                  if (typeof document !== 'undefined') {
+                    const el = document.querySelector(`[data-drag-key="${activeKey}"]`) as HTMLElement;
+                    const cont = document.getElementById('active-canvas-slide-container');
+                    if (el && cont) {
+                      const rEl = el.getBoundingClientRect();
+                      const rCont = cont.getBoundingClientRect();
+                      elemWidthPct = Math.round(((rEl.width / rCont.width) * 100) * 10) / 10;
+                      currentPos = {
+                        left: Math.round((((rEl.left - rCont.left) / rCont.width) * 100) * 10) / 10,
+                        top: Math.round((((rEl.top - rCont.top) / rCont.height) * 100) * 10) / 10,
+                      };
+                    }
+                  }
+                  const pos = currentPos || { left: 5, top: 40 };
+                  // Right margin: if element is narrow (like a badge or card), push it all the way to right; if wide, place at 96% - width
+                  const rightLeft = Math.max(8, Math.round(((96 - elemWidthPct)) * 10) / 10);
+                  onUpdateTextPos?.(activeKey, { left: rightLeft, top: pos.top });
                 }}
                 className="px-1.5 py-0.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition"
-                title="Colocar horizontalmente a la derecha (X: 75%)"
+                title="Alinear al margen derecho"
               >
                 Der
               </button>
             </div>
 
-            {/* Presets Verticales rápidos */}
+            {/* Presets Verticales rápidos a lo largo de todo el cuerpo del lienzo */}
             <div className="flex items-center gap-0.5 bg-slate-900 border border-slate-800 rounded-lg p-0.5 text-[10px] font-bold">
               <button
                 onClick={() => {
-                  const currentPos = slide.textPos?.[activeKey] || { left: 50, top: 50 };
-                  onUpdateTextPos?.(activeKey, { left: currentPos.left, top: 22 });
+                  let currentPos = slide.textPos?.[activeKey];
+                  if (!currentPos && typeof document !== 'undefined') {
+                    const el = document.querySelector(`[data-drag-key="${activeKey}"]`) as HTMLElement;
+                    const cont = document.getElementById('active-canvas-slide-container');
+                    if (el && cont) {
+                      const rEl = el.getBoundingClientRect();
+                      const rCont = cont.getBoundingClientRect();
+                      currentPos = {
+                        left: Math.round((((rEl.left - rCont.left) / rCont.width) * 100) * 10) / 10,
+                        top: Math.round((((rEl.top - rCont.top) / rCont.height) * 100) * 10) / 10,
+                      };
+                    }
+                  }
+                  const pos = currentPos || { left: 6, top: 18 };
+                  // Top of the entire canvas (3%)
+                  onUpdateTextPos?.(activeKey, { left: pos.left, top: 3 });
                 }}
                 className="px-1.5 py-0.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition"
-                title="Colocar arriba (Y: 22%)"
+                title="Colocar en el borde superior del lienzo (Y: 3%)"
               >
                 Arriba
               </button>
               <button
                 onClick={() => {
-                  const currentPos = slide.textPos?.[activeKey] || { left: 50, top: 50 };
-                  onUpdateTextPos?.(activeKey, { left: currentPos.left, top: 50 });
+                  let currentPos = slide.textPos?.[activeKey];
+                  let elemHeightPct = 15;
+                  if (typeof document !== 'undefined') {
+                    const el = document.querySelector(`[data-drag-key="${activeKey}"]`) as HTMLElement;
+                    const cont = document.getElementById('active-canvas-slide-container');
+                    if (el && cont) {
+                      const rEl = el.getBoundingClientRect();
+                      const rCont = cont.getBoundingClientRect();
+                      elemHeightPct = Math.round(((rEl.height / rCont.height) * 100) * 10) / 10;
+                      currentPos = {
+                        left: Math.round((((rEl.left - rCont.left) / rCont.width) * 100) * 10) / 10,
+                        top: Math.round((((rEl.top - rCont.top) / rCont.height) * 100) * 10) / 10,
+                      };
+                    }
+                  }
+                  const pos = currentPos || { left: 6, top: 45 };
+                  // True vertical center of entire canvas
+                  const centerTop = Math.max(0, Math.round(((100 - elemHeightPct) / 2) * 10) / 10);
+                  onUpdateTextPos?.(activeKey, { left: pos.left, top: centerTop });
                 }}
                 className="px-1.5 py-0.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition"
-                title="Centrar verticalmente (Y: 50%)"
+                title="Centrar verticalmente en el lienzo entero"
               >
                 Medio
               </button>
               <button
                 onClick={() => {
-                  const currentPos = slide.textPos?.[activeKey] || { left: 50, top: 50 };
-                  onUpdateTextPos?.(activeKey, { left: currentPos.left, top: 78 });
+                  let currentPos = slide.textPos?.[activeKey];
+                  let elemHeightPct = 12;
+                  if (typeof document !== 'undefined') {
+                    const el = document.querySelector(`[data-drag-key="${activeKey}"]`) as HTMLElement;
+                    const cont = document.getElementById('active-canvas-slide-container');
+                    if (el && cont) {
+                      const rEl = el.getBoundingClientRect();
+                      const rCont = cont.getBoundingClientRect();
+                      elemHeightPct = Math.round(((rEl.height / rCont.height) * 100) * 10) / 10;
+                      currentPos = {
+                        left: Math.round((((rEl.left - rCont.left) / rCont.width) * 100) * 10) / 10,
+                        top: Math.round((((rEl.top - rCont.top) / rCont.height) * 100) * 10) / 10,
+                      };
+                    }
+                  }
+                  const pos = currentPos || { left: 6, top: 78 };
+                  // Bottom edge of the entire canvas (95% - element height)
+                  const bottomTop = Math.max(4, Math.round(((96 - elemHeightPct)) * 10) / 10);
+                  onUpdateTextPos?.(activeKey, { left: pos.left, top: bottomTop });
                 }}
                 className="px-1.5 py-0.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition"
-                title="Colocar abajo (Y: 78%)"
+                title="Colocar en el borde inferior del lienzo entero"
               >
                 Abajo
               </button>

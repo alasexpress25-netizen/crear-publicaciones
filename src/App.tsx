@@ -628,6 +628,32 @@ export default function App() {
     handleUpdateSlideField('contentAlign', align);
   };
 
+  // Keyboard shortcut listener for 'Delete' / 'Supr' key to remove active element/object
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        // Do not intercept if user is typing inside an input, textarea, or contentEditable element
+        const target = e.target as HTMLElement | null;
+        if (target) {
+          const isContentEditable = target.isContentEditable || target.getAttribute('contenteditable') === 'true';
+          const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT';
+          if (isContentEditable || isInput) {
+            return;
+          }
+        }
+
+        // If an active element is selected on the canvas, delete it with Delete key
+        if (activeElementKey) {
+          e.preventDefault();
+          handleDeleteActiveElement(activeElementKey);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeElementKey, currentIndex, slides]);
+
   const handleToggleHideCardBoxes = () => {
     setSlides((prev) => {
       const copy = [...prev];
