@@ -18,16 +18,23 @@
 
     <script>
       window.addEventListener('error', function (e) {
-        if (!e.filename || e.message === 'Script error.' || e.message === 'Script error') {
+        if (!e.filename || e.message === 'Script error.' || e.message === 'Script error' || !e.message) {
           e.preventDefault && e.preventDefault();
+          e.stopImmediatePropagation && e.stopImmediatePropagation();
+          return true;
         }
       }, true);
-      window.onerror = function (msg) {
-        if (typeof msg === 'string' && msg.indexOf('Script error') !== -1) {
+      window.onerror = function (msg, url, line, col, error) {
+        if (!msg || msg === 'Script error.' || msg === 'Script error' || (typeof msg === 'string' && msg.indexOf('Script error') !== -1)) {
           return true;
         }
         return false;
       };
+      window.addEventListener('unhandledrejection', function (e) {
+        if (e.reason && (e.reason.message === 'Script error.' || e.reason === 'Script error.')) {
+          e.preventDefault && e.preventDefault();
+        }
+      });
     </script>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">

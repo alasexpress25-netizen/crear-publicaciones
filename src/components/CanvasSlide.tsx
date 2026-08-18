@@ -129,9 +129,9 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
       return slide.layoutTemplate === 'checklist' ? 'checklist-container' : 'bullets-container';
     }
     if (key === 'stat-subtext') return 'stat-subtext-box';
-    if (key === 'cta-subheadline') return 'cta-subheadline-card';
-    if (key === 'comp-leftTag' || key === 'comp-leftTitle' || key === 'comp-leftText') return 'comp-grid';
-    if (key === 'comp-rightTag' || key === 'comp-rightTitle' || key === 'comp-rightText') return 'comp-grid';
+    if (key === 'cta-subheadline' || key === 'cta-pill') return 'cta-subheadline-card';
+    if (key === 'comp-leftTag' || key === 'comp-leftTitle' || key === 'comp-leftText') return 'comp-left-card';
+    if (key === 'comp-rightTag' || key === 'comp-rightTitle' || key === 'comp-rightText') return 'comp-right-card';
     if (key === 'quote-text' || key === 'quote-author' || key === 'quote-role' || key === 'quote-icon') return 'quote-container';
     return key;
   };
@@ -156,25 +156,6 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
     const startX = e.clientX;
     const startY = e.clientY;
 
-    // Snapshot current physical positions of ALL top-level rendered canvas elements that don't have textPos yet
-    // This prevents sibling elements from collapsing / jumping / getting "swallowed" into the void when one element is moved
-    const allDragElements = containerRef.current.querySelectorAll<HTMLElement>('[data-drag-key]');
-    const batchPositions: Record<string, { left: number; top: number }> = { ...(slide.textPos || {}) };
-    let hasNewSnapshots = false;
-
-    allDragElements.forEach((el) => {
-      const elKey = el.getAttribute('data-drag-key');
-      if (elKey && !isInnerChildElement(elKey) && !slide.textPos?.[elKey] && !batchPositions[elKey]) {
-        const r = el.getBoundingClientRect();
-        if (r.width > 0 && r.height > 0) {
-          const lPct = Math.round((((r.left - containerRect.left) / containerRect.width) * 100) * 10) / 10;
-          const tPct = Math.round((((r.top - containerRect.top) / containerRect.height) * 100) * 10) / 10;
-          batchPositions[elKey] = { left: lPct, top: tPct };
-          hasNewSnapshots = true;
-        }
-      }
-    });
-
     // Find the target element using data-drag-key or direct ref
     const targetEl = (containerRef.current.querySelector(`[data-drag-key="${key}"]`) || e.currentTarget.closest(`[data-drag-key="${key}"]`) || e.currentTarget) as HTMLElement;
     const elemRect = targetEl.getBoundingClientRect();
@@ -182,22 +163,11 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
     // Calculate the element's actual position relative to the container right now
     const initialLeftPct = slide.textPos?.[key]?.left !== undefined
       ? slide.textPos[key]!.left
-      : (batchPositions[key]?.left !== undefined
-          ? batchPositions[key].left
-          : Math.round((((elemRect.left - containerRect.left) / containerRect.width) * 100) * 10) / 10);
+      : Math.round((((elemRect.left - containerRect.left) / containerRect.width) * 100) * 10) / 10;
 
     const initialTopPct = slide.textPos?.[key]?.top !== undefined
       ? slide.textPos[key]!.top
-      : (batchPositions[key]?.top !== undefined
-          ? batchPositions[key].top
-          : Math.round((((elemRect.top - containerRect.top) / containerRect.height) * 100) * 10) / 10);
-
-    batchPositions[key] = { left: initialLeftPct, top: initialTopPct };
-
-    // Immediately establish locked positions for all existing top-level elements so sibling elements never jump or collapse
-    if (hasNewSnapshots || !slide.textPos?.[key]) {
-      onUpdateTextPos?.(batchPositions as any);
-    }
+      : Math.round((((elemRect.top - containerRect.top) / containerRect.height) * 100) * 10) / 10;
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
       moveEvent.preventDefault();
@@ -233,24 +203,6 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
     const startX = e.clientX;
     const startY = e.clientY;
 
-    // Snapshot all sibling top-level element positions so nothing jumps on resize
-    const allDragElements = containerRef.current.querySelectorAll<HTMLElement>('[data-drag-key]');
-    const batchPositions: Record<string, { left: number; top: number }> = { ...(slide.textPos || {}) };
-    let hasNewSnapshots = false;
-
-    allDragElements.forEach((el) => {
-      const elKey = el.getAttribute('data-drag-key');
-      if (elKey && !isInnerChildElement(elKey) && !slide.textPos?.[elKey] && !batchPositions[elKey]) {
-        const r = el.getBoundingClientRect();
-        if (r.width > 0 && r.height > 0) {
-          const lPct = Math.round((((r.left - containerRect.left) / containerRect.width) * 100) * 10) / 10;
-          const tPct = Math.round((((r.top - containerRect.top) / containerRect.height) * 100) * 10) / 10;
-          batchPositions[elKey] = { left: lPct, top: tPct };
-          hasNewSnapshots = true;
-        }
-      }
-    });
-
     // Find the target element using data-drag-key to get its current size and aspect ratio
     const targetEl = (containerRef.current.querySelector(`[data-drag-key="${key}"]`) || e.currentTarget.parentElement) as HTMLElement | null;
     const elemRect = targetEl ? targetEl.getBoundingClientRect() : null;
@@ -263,20 +215,13 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
     // Starting position of element in %
     const curLeftPct = slide.textPos?.[key]?.left !== undefined
       ? slide.textPos[key]!.left
-      : (batchPositions[key]?.left !== undefined
-          ? batchPositions[key].left
-          : (elemRect ? Math.round((((elemRect.left - containerRect.left) / containerRect.width) * 100) * 10) / 10 : 35));
+      : (elemRect ? Math.round((((elemRect.left - containerRect.left) / containerRect.width) * 100) * 10) / 10 : 35);
     const curTopPct = slide.textPos?.[key]?.top !== undefined
       ? slide.textPos[key]!.top
-      : (batchPositions[key]?.top !== undefined
-          ? batchPositions[key].top
-          : (elemRect ? Math.round((((elemRect.top - containerRect.top) / containerRect.height) * 100) * 10) / 10 : 35));
+      : (elemRect ? Math.round((((elemRect.top - containerRect.top) / containerRect.height) * 100) * 10) / 10 : 35);
 
-    batchPositions[key] = { left: curLeftPct, top: curTopPct };
-
-    // If pos is not set, set it now to lock it in place during resize
-    if (hasNewSnapshots || !slide.textPos?.[key]) {
-      onUpdateTextPos?.(batchPositions as any);
+    if (!slide.textPos?.[key]) {
+      onUpdateTextPos?.(key, { left: curLeftPct, top: curTopPct });
     }
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
