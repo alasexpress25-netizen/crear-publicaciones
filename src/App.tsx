@@ -6,6 +6,7 @@ import {
   MarketingDocument,
   CarouselPostMeta,
   TextStyleItem,
+  CustomTextLayer,
   MarketingAnalysisResult,
   SlideLayoutTemplate,
   ComparisonData,
@@ -465,7 +466,7 @@ export default function App() {
   };
 
   const handleUpdateTextStyle = (key: string, stylePartial: Partial<TextStyleItem>) => {
-    if (key === 'brandName' || key === 'brandWeb' || key === 'brandHandle') {
+    if (key === 'brandName' || key === 'brandWeb' || key === 'brandHandle' || key === 'brandLogo') {
       setBrand((prev) => ({
         ...prev,
         textStyle: {
@@ -497,7 +498,7 @@ export default function App() {
   };
 
   const handleResetTextStyle = (key: string) => {
-    if (key === 'brandName' || key === 'brandWeb' || key === 'brandHandle') {
+    if (key === 'brandName' || key === 'brandWeb' || key === 'brandHandle' || key === 'brandLogo') {
       setBrand((prev) => {
         const textStyle = { ...(prev.textStyle || {}) };
         delete textStyle[key];
@@ -527,7 +528,11 @@ export default function App() {
 
   const handleDeleteActiveElement = (key: string) => {
     if (!key) return;
-    if (key === 'badge' || key === 'subtag' || key === 'title' || key === 'body' || key === 'cta') {
+    if (key === 'brandLogo') {
+      handleUpdateTextPos('brandLogo', null);
+      handleResetTextStyle('brandLogo');
+      setActiveElementKey(null);
+    } else if (key === 'badge' || key === 'subtag' || key === 'title' || key === 'body' || key === 'cta') {
       handleUpdateSlideField(key as keyof Slide, '');
       setActiveElementKey(null);
     } else if (key === 'brandHandle') {
@@ -541,36 +546,121 @@ export default function App() {
       handleDeleteCustomText(key);
       setActiveElementKey(null);
     } else if (key.startsWith('comp-')) {
-      const field = key.replace('comp-', '') as keyof ComparisonData;
-      handleUpdateComparison({ [field]: '' });
+      if (key === 'comp-left-card' || key === 'comp-right-card' || key === 'comp-grid') {
+        handleResetTextStyle(key);
+      } else {
+        const field = key.replace('comp-', '') as keyof ComparisonData;
+        handleUpdateComparison({ [field]: '' });
+      }
       setActiveElementKey(null);
     } else if (key.startsWith('quote-')) {
       if (key === 'quote-text') handleUpdateQuote({ quoteText: '' });
       if (key === 'quote-author') handleUpdateQuote({ authorName: '' });
       if (key === 'quote-role') handleUpdateQuote({ authorRole: '' });
+      if (key === 'quote-icon' || key === 'quote-container') handleResetTextStyle(key);
       setActiveElementKey(null);
     } else if (key.startsWith('stat-')) {
       if (key === 'stat-number') handleUpdateStat({ statNumber: '' });
       if (key === 'stat-label') handleUpdateStat({ statLabel: '' });
       if (key === 'stat-subtext') handleUpdateStat({ statSubtext: '' });
+      if (key === 'stat-subtext-box' || key === 'stat-container') handleResetTextStyle(key);
       setActiveElementKey(null);
     } else if (key.startsWith('cta-')) {
       if (key === 'cta-headline') handleUpdateCtaFinal({ headline: '' });
       if (key === 'cta-subheadline') handleUpdateCtaFinal({ subheadline: '' });
       if (key === 'cta-pill') handleUpdateCtaFinal({ actionPill: '' });
+      if (key === 'cta-avatar' || key === 'cta-container' || key === 'cta-subheadline-card') handleResetTextStyle(key);
       setActiveElementKey(null);
     }
   };
 
-  const handleAddCustomText = (type: 'heading' | 'body' | 'badge' = 'body') => {
-    const newId = `custom-${Date.now()}`;
-    const newLayer = {
-      id: newId,
-      text: type === 'heading' ? 'NUEVO SUBTÍTULO O TITULAR' : type === 'badge' ? 'ETIQUETA DESTACADA' : 'Escribe aquí tu nuevo texto o aclaración adicional.',
-      fontSize: type === 'heading' ? 20 : type === 'badge' ? 11 : 14,
-      color: type === 'badge' ? (currentSlide.accentColor || brand.primaryColor || '#e11d48') : '#ffffff',
-      align: 'left' as const,
-    };
+  const handleAddCustomText = (
+    type: 'heading' | 'body' | 'badge' | 'accent' | 'box' | 'image' = 'body',
+    payload?: { imageUrl?: string }
+  ) => {
+    const newId = type === 'box'
+      ? `custom-box-${Date.now()}`
+      : type === 'accent'
+      ? `custom-accent-${Date.now()}`
+      : type === 'image'
+      ? `custom-img-${Date.now()}`
+      : `custom-${Date.now()}`;
+    
+    const accentCol = currentSlide.accentColor || brand.primaryColor || '#e11d48';
+    let newLayer: CustomTextLayer;
+
+    if (type === 'image') {
+      newLayer = {
+        id: newId,
+        type: 'image',
+        imageUrl: payload?.imageUrl || '',
+        boxWidth: 35,
+        boxHeight: 35,
+        borderRadius: 12,
+      };
+      const initPos = { left: 35, top: 35 };
+      handleUpdateTextPos(newId, initPos);
+      handleUpdateTextStyle(newId, {
+        height: 90,
+        borderRadius: 12,
+        zIndex: 35,
+        shadow: true,
+        shadowType: 'soft',
+        shadowColor: '#000000',
+      });
+    } else if (type === 'box') {
+      newLayer = {
+        id: newId,
+        type: 'box',
+        text: 'Recuadro contenedor editable',
+        color: '#cbd5e1',
+        fontSize: 13,
+        boxWidth: 85,
+        boxHeight: 80,
+        borderRadius: 16,
+      };
+      handleUpdateTextStyle(newId, {
+        backgroundColor: 'rgba(15, 23, 42, 0.85)',
+        boxBorder: true,
+        boxBorderColor: 'rgba(51, 65, 85, 0.8)',
+        boxBorderWidth: 1,
+        borderRadius: 16,
+        zIndex: 15,
+        shadow: true,
+        shadowType: 'soft',
+        shadowColor: '#000000',
+      });
+    } else if (type === 'accent') {
+      newLayer = {
+        id: newId,
+        type: 'accent',
+        accentType: 'bar',
+        color: accentCol,
+        boxWidth: 40,
+        boxHeight: 4,
+        borderRadius: 9999,
+      };
+      handleUpdateTextStyle(newId, {
+        backgroundColor: accentCol,
+        zIndex: 25,
+        shadow: true,
+        shadowType: 'glow',
+        shadowColor: accentCol,
+      });
+    } else {
+      newLayer = {
+        id: newId,
+        type,
+        text: type === 'heading' ? 'NUEVO SUBTÍTULO O TITULAR' : type === 'badge' ? 'ETIQUETA DESTACADA' : 'Escribe aquí tu nuevo texto o aclaración adicional.',
+        fontSize: type === 'heading' ? 20 : type === 'badge' ? 11 : 14,
+        color: type === 'badge' ? accentCol : '#ffffff',
+        align: 'left' as const,
+      };
+      handleUpdateTextStyle(newId, {
+        zIndex: 30,
+      });
+    }
+
     setSlides((prev) => {
       const copy = [...prev];
       if (!copy[currentIndex]) return prev;
@@ -579,6 +669,10 @@ export default function App() {
       return copy;
     });
     setActiveElementKey(newId);
+  };
+
+  const handleAddCustomImage = (imageUrl: string) => {
+    handleAddCustomText('image', { imageUrl });
   };
 
   const handleUpdateCustomText = (id: string, text: string) => {
@@ -998,6 +1092,9 @@ export default function App() {
                 onResetStyle={handleResetTextStyle}
                 onDeleteActiveElement={handleDeleteActiveElement}
                 onAddCustomText={handleAddCustomText}
+                onAddCustomImage={handleAddCustomImage}
+                onSelectElement={setActiveElementKey}
+                onUpdateBrand={handleUpdateBrand}
                 onUpdateSlideOverlayType={handleUpdateSlideOverlayType}
                 onUpdateSlideAccentColor={handleUpdateSlideAccentColor}
                 onUpdateSlideBackgroundColor={handleUpdateSlideBackgroundColor}
@@ -1030,6 +1127,7 @@ export default function App() {
                   onUpdateQuote={handleUpdateQuote}
                   onUpdateCtaFinal={handleUpdateCtaFinal}
                   onUpdateTextPos={handleUpdateTextPos}
+                  onUpdateTextStyle={handleUpdateTextStyle}
                 />
               </div>
 

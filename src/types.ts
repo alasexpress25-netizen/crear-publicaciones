@@ -15,6 +15,7 @@ export type SlideLayoutTemplate =
 export interface TextStyleItem {
   fontSize?: number;
   width?: number;
+  height?: number;
   color?: string;
   outline?: boolean; // Contorno del texto (stroke de letras)
   outlineColor?: string;
@@ -22,6 +23,7 @@ export interface TextStyleItem {
   boxBorder?: boolean; // Contorno del marco / recuadro contenedor
   boxBorderColor?: string;
   boxBorderWidth?: number;
+  borderRadius?: number;
   shadow?: boolean;
   shadowColor?: string;
   shadowType?: 'soft' | 'subtle' | 'hard' | 'glow';
@@ -34,7 +36,8 @@ export interface TextStyleItem {
   textTransform?: 'uppercase' | 'none' | 'capitalize';
   transparentBox?: boolean;
   backgroundColor?: string;
-  zIndex?: number; // Capas: orden de apilamiento / superposición
+  opacity?: number;
+  zIndex?: number; // Capas: orden de apilamiento / superposición (1-100)
 }
 
 export interface TextPosition {
@@ -73,8 +76,9 @@ export interface CtaFinalData {
 
 export interface CustomTextLayer {
   id: string;
-  text: string;
-  type?: 'heading' | 'body' | 'badge' | 'tag' | 'cta';
+  text?: string;
+  type?: 'heading' | 'body' | 'badge' | 'tag' | 'cta' | 'accent' | 'box' | 'image';
+  imageUrl?: string;
   fontSize?: number;
   color?: string;
   align?: 'left' | 'center' | 'right';
@@ -82,6 +86,10 @@ export interface CustomTextLayer {
   fontWeight?: string;
   isUppercase?: boolean;
   bgPill?: boolean;
+  boxWidth?: number;
+  boxHeight?: number;
+  borderRadius?: number;
+  accentType?: 'bar' | 'glow' | 'badge' | 'line' | 'dot';
 }
 
 export interface Slide {

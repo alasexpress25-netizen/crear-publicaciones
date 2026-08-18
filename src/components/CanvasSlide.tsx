@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Slide,
   BrandInfo,
@@ -8,7 +8,8 @@ import {
   QuoteData,
   CtaFinalData,
   SlideLayoutTemplate,
-  CustomTextLayer
+  CustomTextLayer,
+  TextStyleItem
 } from '../types';
 import { getTemplateLocalization, resolveChecklistBullets } from '../data/templateLocalizations';
 import {
@@ -25,7 +26,9 @@ import {
   Trash2,
   Plus,
   Move,
-  GripVertical
+  Maximize2,
+  GripVertical,
+  Image as ImageIcon
 } from 'lucide-react';
 
 interface CanvasSlideProps {
@@ -50,6 +53,7 @@ interface CanvasSlideProps {
   onUpdateQuote?: (partial: Partial<QuoteData>) => void;
   onUpdateCtaFinal?: (partial: Partial<CtaFinalData>) => void;
   onUpdateTextPos?: (key: string, pos: { left: number; top: number } | null) => void;
+  onUpdateTextStyle?: (key: string, style: Partial<TextStyleItem>) => void;
   isExportMode?: boolean;
 }
 
@@ -75,12 +79,34 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
   onUpdateQuote,
   onUpdateCtaFinal,
   onUpdateTextPos,
+  onUpdateTextStyle,
   isExportMode = false,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const loc = getTemplateLocalization(language);
 
   const primaryColor = slide.accentColor || brand.primaryColor || '#e11d48';
+
+  const getNumericHeight = (key: string): number => {
+    const custom = (slide.textStyle && slide.textStyle[key]) || (brand.textStyle && brand.textStyle[key]) || {};
+    if (custom.height !== undefined && custom.height !== null) {
+      const parsed = typeof custom.height === 'number' ? custom.height : parseInt(String(custom.height), 10);
+      if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
+    if (key === 'brandLogo') {
+      return brand.logoSize || 28;
+    }
+    return 90;
+  };
+
+  const getNumericBorderRadius = (key: string, defaultRadius: number = 12): number => {
+    const custom = (slide.textStyle && slide.textStyle[key]) || (brand.textStyle && brand.textStyle[key]) || {};
+    if (custom.borderRadius !== undefined && custom.borderRadius !== null) {
+      const parsed = typeof custom.borderRadius === 'number' ? custom.borderRadius : parseInt(String(custom.borderRadius), 10);
+      if (!isNaN(parsed) && parsed >= 0) return parsed;
+    }
+    return defaultRadius;
+  };
 
   // Aspect ratio map
   const aspectClassMap = {
@@ -91,6 +117,12 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
   };
 
   const startDrag = (key: string, e: React.PointerEvent) => {
+    // If clicking on resize handles or buttons, do not initiate element drag
+    const target = e.target as HTMLElement;
+    if (target.closest('.resize-handle') || target.closest('button') || target.closest('input')) {
+      return;
+    }
+
     e.stopPropagation();
     e.preventDefault();
     if (!containerRef.current || isExportMode) return;
@@ -130,6 +162,123 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
       const newTop = Math.round((initialTopPct + deltaYPct) * 10) / 10;
 
       onUpdateTextPos?.(key, { left: newLeft, top: newTop });
+    };
+
+    const handlePointerUp = () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+  };
+
+  const startResize = (key: string, e: React.PointerEvent, corner: 'se' | 'sw' | 'ne' | 'nw') => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!containerRef.current || isExportMode) return;
+
+    const containerRect = containerRef.current.getBoundingClientRect();
+    const startX = e.clientX;
+    const startY = e.clientY;
+
+    // Find the target element using data-drag-key to get its current size and aspect ratio
+    const targetEl = (containerRef.current.querySelector(`[data-drag-key="${key}"]`) || e.currentTarget.parentElement) as HTMLElement | null;
+    const elemRect = targetEl ? targetEl.getBoundingClientRect() : null;
+
+    const startH = getNumericHeight(key);
+    const startW = elemRect && elemRect.width > 0 ? elemRect.width : startH;
+    const elemAspect = startW > 0 && startH > 0 ? startW / startH : 1;
+    const currentZoom = zoomLevel || 1;
+
+    // Starting position of element in %
+    const curLeftPct = slide.textPos?.[key]?.left !== undefined
+      ? slide.textPos[key]!.left
+      : (elemRect ? Math.round((((elemRect.left - containerRect.left) / containerRect.width) * 100) * 10) / 10 : 35);
+    const curTopPct = slide.textPos?.[key]?.top !== undefined
+      ? slide.textPos[key]!.top
+      : (elemRect ? Math.round((((elemRect.top - containerRect.top) / containerRect.height) * 100) * 10) / 10 : 35);
+
+    // If pos is not set, set it now to lock it in place during resize
+    if (!slide.textPos?.[key]) {
+      onUpdateTextPos?.(key, { left: curLeftPct, top: curTopPct });
+    }
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      moveEvent.preventDefault();
+      const deltaX = (moveEvent.clientX - startX) / currentZoom;
+      const deltaY = (moveEvent.clientY - startY) / currentZoom;
+
+      let deltaH = 0;
+      if (corner === 'se') {
+        deltaH = (deltaX / elemAspect + deltaY) / 2;
+      } else if (corner === 'sw') {
+        deltaH = (-deltaX / elemAspect + deltaY) / 2;
+      } else if (corner === 'ne') {
+        deltaH = (deltaX / elemAspect - deltaY) / 2;
+      } else if (corner === 'nw') {
+        deltaH = (-deltaX / elemAspect - deltaY) / 2;
+      }
+
+      const newHeight = Math.round(Math.max(16, Math.min(600, startH + deltaH)));
+      const actualDeltaH = newHeight - startH;
+      const actualDeltaW = actualDeltaH * elemAspect;
+
+      // When dragging top/left corners, adjust the top/left position accordingly so opposite corner stays anchored
+      let newLeftPct = curLeftPct;
+      let newTopPct = curTopPct;
+
+      if (corner === 'nw') {
+        newLeftPct = curLeftPct - ((actualDeltaW / (containerRect.width / currentZoom)) * 100);
+        newTopPct = curTopPct - ((actualDeltaH / (containerRect.height / currentZoom)) * 100);
+      } else if (corner === 'ne') {
+        newTopPct = curTopPct - ((actualDeltaH / (containerRect.height / currentZoom)) * 100);
+      } else if (corner === 'sw') {
+        newLeftPct = curLeftPct - ((actualDeltaW / (containerRect.width / currentZoom)) * 100);
+      }
+
+      onUpdateTextStyle?.(key, { height: newHeight });
+      if (key === 'brandLogo' && onUpdateBrand) {
+        onUpdateBrand('logoSize', newHeight);
+      }
+
+      if (corner === 'nw' || corner === 'ne' || corner === 'sw') {
+        onUpdateTextPos?.(key, {
+          left: Math.round(newLeftPct * 10) / 10,
+          top: Math.round(newTopPct * 10) / 10,
+        });
+      }
+    };
+
+    const handlePointerUp = () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+  };
+
+  const startScaleDirect = (key: string, e: React.PointerEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!containerRef.current || isExportMode) return;
+
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startH = getNumericHeight(key);
+    const currentZoom = zoomLevel || 1;
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      moveEvent.preventDefault();
+      const deltaX = (moveEvent.clientX - startX) / currentZoom;
+      const deltaY = (moveEvent.clientY - startY) / currentZoom;
+      const delta = (deltaX + deltaY) / 1.5;
+      const newHeight = Math.round(Math.max(16, Math.min(600, startH + delta)));
+      onUpdateTextStyle?.(key, { height: newHeight });
+      if (key === 'brandLogo' && onUpdateBrand) {
+        onUpdateBrand('logoSize', newHeight);
+      }
     };
 
     const handlePointerUp = () => {
@@ -226,20 +375,158 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
   const renderActiveControls = (key: string, label?: string) => {
     if (activeElementKey !== key || isExportMode) return null;
     const hasPos = Boolean(slide.textPos && slide.textPos[key]);
+    const isImg = key === 'brandLogo' || key.startsWith('custom-img-') || key.startsWith('custom-image-') || key.startsWith('custom-accent-');
+
+    const sizeNum = getNumericHeight(key);
 
     return (
       <div
-        className="no-export absolute -top-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 bg-slate-900/95 border border-rose-500 shadow-2xl px-2 py-0.5 rounded-full text-[10px] font-bold text-white select-none whitespace-nowrap"
+        className="no-export absolute -top-10 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5 bg-slate-950/95 border border-rose-500/80 shadow-2xl px-2.5 py-1 rounded-full text-[11px] font-bold text-white select-none whitespace-nowrap backdrop-blur-md"
         onClick={(e) => e.stopPropagation()}
       >
-        <div
-          onPointerDown={(e) => startDrag(key, e)}
-          className="flex items-center gap-1 cursor-grab active:cursor-grabbing text-rose-300 hover:text-white px-1 py-0.5 transition"
-          title="Mantén presionado y arrastra para mover libremente por la diapositiva"
-        >
-          <Move className="w-3 h-3 text-rose-400" />
-          <span>{label || 'Mover'}</span>
-        </div>
+        {isImg ? (
+          <>
+            {/* Control 1: Tirador dedicado para MOVER */}
+            <div
+              onPointerDown={(e) => startDrag(key, e)}
+              className="flex items-center gap-1 bg-rose-600/90 hover:bg-rose-600 text-white px-2 py-0.5 rounded-full cursor-grab active:cursor-grabbing shadow-sm transition"
+              title="Presiona y arrastra para MOVER la imagen a cualquier lugar"
+            >
+              <Move className="w-3 h-3 text-white" />
+              <span>Mover</span>
+            </div>
+
+            {/* Control 2: Tirador dedicado para DIMENSIONAR (arrastra para cambiar escala) */}
+            <div
+              onPointerDown={(e) => startScaleDirect(key, e)}
+              className="flex items-center gap-1 bg-amber-600/90 hover:bg-amber-600 text-white px-2 py-0.5 rounded-full cursor-nwse-resize active:cursor-nwse-resize shadow-sm transition"
+              title="Presiona y arrastra hacia la derecha/arriba para AGRANDAR o izquierda/abajo para ACHICAR"
+            >
+              <Maximize2 className="w-3 h-3 text-white" />
+              <span>Dimensionar</span>
+            </div>
+
+            {/* Control 3: Stepper de Tamaño con lectura en px */}
+            <div className="flex items-center gap-0.5 bg-slate-900 border border-slate-800 rounded-full px-1.5 py-0.5">
+              <button
+                type="button"
+                onClick={() => {
+                  const next = Math.max(16, sizeNum - 8);
+                  onUpdateTextStyle?.(key, { height: next });
+                  if (key === 'brandLogo' && onUpdateBrand) onUpdateBrand('logoSize', next);
+                }}
+                className="text-slate-300 hover:text-white px-1.5 hover:bg-slate-800 rounded-full font-bold text-xs"
+                title="Achicar imagen (-8px)"
+              >
+                -
+              </button>
+              <span className="font-mono text-[10px] text-amber-300 font-bold px-1 min-w-[32px] text-center">
+                {sizeNum}px
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  const next = Math.min(480, sizeNum + 8);
+                  onUpdateTextStyle?.(key, { height: next });
+                  if (key === 'brandLogo' && onUpdateBrand) onUpdateBrand('logoSize', next);
+                }}
+                className="text-slate-300 hover:text-white px-1.5 hover:bg-slate-800 rounded-full font-bold text-xs"
+                title="Agrandar imagen (+8px)"
+              >
+                +
+              </button>
+            </div>
+
+            {/* Presets Rápidos de Tamaño */}
+            <div className="hidden sm:flex items-center gap-0.5">
+              {[40, 80, 140, 220].map((sz) => (
+                <button
+                  key={sz}
+                  type="button"
+                  onClick={() => {
+                    onUpdateTextStyle?.(key, { height: sz });
+                    if (key === 'brandLogo' && onUpdateBrand) onUpdateBrand('logoSize', sz);
+                  }}
+                  className={`px-1.5 py-0.5 rounded text-[9px] font-bold transition ${
+                    sizeNum === sz
+                      ? 'bg-amber-500 text-slate-950'
+                      : 'bg-slate-900 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {sz}
+                </button>
+              ))}
+            </div>
+
+            {/* Control 4: Selector de Redondeo de Esquinas */}
+            <div className="hidden sm:flex items-center gap-0.5 border-l border-slate-800 pl-1">
+              {[
+                { label: 'Recto', val: 0 },
+                { label: 'Suave', val: 12 },
+                { label: 'Redondo', val: 24 },
+                { label: 'Círculo', val: 9999 },
+              ].map((rd) => {
+                const curRad = getNumericBorderRadius(key, 12);
+                const isMatch = (rd.val === 9999 && curRad >= 9000) || (rd.val !== 9999 && Math.abs(curRad - rd.val) <= 2);
+                return (
+                  <button
+                    key={rd.label}
+                    type="button"
+                    onClick={() => {
+                      onUpdateTextStyle?.(key, { borderRadius: rd.val });
+                    }}
+                    className={`px-1.5 py-0.5 rounded text-[9px] font-bold transition ${
+                      isMatch
+                        ? 'bg-rose-600 text-white'
+                        : 'bg-slate-900 text-slate-400 hover:text-slate-200'
+                    }`}
+                    title={`Esquinas: ${rd.label}`}
+                  >
+                    {rd.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Control 5: Sombra rápida */}
+            <div className="hidden sm:flex items-center gap-0.5 border-l border-slate-800 pl-1">
+              {(() => {
+                const custom = (slide.textStyle && slide.textStyle[key]) || (brand.textStyle && brand.textStyle[key]) || {};
+                const hasShadow = Boolean(custom.shadow);
+                return (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onUpdateTextStyle?.(key, {
+                        shadow: !hasShadow,
+                        shadowColor: custom.shadowColor || '#000000',
+                        shadowType: custom.shadowType || 'soft',
+                      });
+                    }}
+                    className={`px-1.5 py-0.5 rounded text-[9px] font-bold transition flex items-center gap-0.5 ${
+                      hasShadow
+                        ? 'bg-amber-500 text-slate-950 shadow-sm'
+                        : 'bg-slate-900 text-slate-400 hover:text-slate-200'
+                    }`}
+                    title="Alternar Sombra / Relieve de la imagen"
+                  >
+                    <span>☀ Sombra</span>
+                  </button>
+                );
+              })()}
+            </div>
+          </>
+        ) : (
+          <div
+            onPointerDown={(e) => startDrag(key, e)}
+            className="flex items-center gap-1 cursor-grab active:cursor-grabbing text-rose-300 hover:text-white px-1 py-0.5 transition"
+            title="Mantén presionado y arrastra para mover libremente por la diapositiva"
+          >
+            <Move className="w-3 h-3 text-rose-400" />
+            <span>{label || 'Mover'}</span>
+          </div>
+        )}
+
         {hasPos && (
           <button
             type="button"
@@ -247,12 +534,13 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
               e.stopPropagation();
               onUpdateTextPos?.(key, null);
             }}
-            className="text-[9px] bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white px-1.5 py-0.5 rounded border border-slate-700 transition"
+            className="text-[9px] bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white px-1.5 py-0.5 rounded-full border border-slate-700 transition"
             title="Restablecer a posición por defecto"
           >
             Restablecer
           </button>
         )}
+
         {onDeleteElement && (
           <button
             type="button"
@@ -260,48 +548,59 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
               e.stopPropagation();
               onDeleteElement(key);
             }}
-            className="text-[9px] bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white px-1.5 py-0.5 rounded border border-rose-700/60 transition flex items-center gap-0.5"
+            className="text-[9px] bg-rose-950/80 hover:bg-rose-600 text-rose-300 hover:text-white px-1.5 py-0.5 rounded-full border border-rose-700/60 transition flex items-center gap-0.5"
             title="Eliminar objeto (o presiona tecla Supr/Delete)"
           >
             <X className="w-2.5 h-2.5" />
-            <span>Eliminar (Supr)</span>
+            <span>Eliminar</span>
           </button>
         )}
       </div>
     );
   };
 
+  const getDefaultZIndex = (key: string): number => {
+    if (key === 'brandLogo' || key === 'cta-avatar') return 35;
+    if (key.includes('-card') || key.includes('-box') || key.includes('-container') || key.includes('grid') || key.startsWith('custom-box-')) return 20;
+    if (key.includes('accent') || key === 'quote-icon' || key === 'badge' || key === 'cta-pill' || key.startsWith('custom-accent-')) return 28;
+    if (key === 'title' || key === 'cta-headline' || key === 'stat-number') return 32;
+    return 30;
+  };
+
   const getDefaultsForElement = (key: string, pColor: string): React.CSSProperties => {
-    if (key === 'brandName') return { color: '#e2e8f0', fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em' };
-    if (key === 'brandHandle') return { color: '#94a3b8', fontSize: '11px', fontWeight: 500, letterSpacing: '0.025em' };
-    if (key === 'brandWeb') return { color: pColor, fontSize: '11px', fontWeight: 'bold' };
-    if (key === 'badge') return { color: '#ffffff', fontSize: '10px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em' };
-    if (key === 'subtag') return { color: pColor, fontSize: '13px', fontWeight: 'bold' };
-    if (key === 'title') return { color: '#ffffff', fontSize: '22px', fontWeight: 900, textTransform: 'uppercase', lineHeight: 1.25 };
-    if (key === 'body') return { color: '#cbd5e1', fontSize: '13px', lineHeight: 1.6 };
-    if (key.startsWith('bullet-')) return { color: '#e2e8f0', fontSize: '12px', lineHeight: 1.5 };
-    if (key === 'cta') return { color: '#cbd5e1', fontSize: '12px', fontWeight: 600 };
+    if (key === 'brandLogo') return { zIndex: 35 };
+    if (key === 'brandName') return { color: '#e2e8f0', fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em', zIndex: 30 };
+    if (key === 'brandHandle') return { color: '#94a3b8', fontSize: '11px', fontWeight: 500, letterSpacing: '0.025em', zIndex: 30 };
+    if (key === 'brandWeb') return { color: pColor, fontSize: '11px', fontWeight: 'bold', zIndex: 30 };
+    if (key === 'badge') return { color: '#ffffff', fontSize: '10px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em', zIndex: 28 };
+    if (key === 'subtag') return { color: pColor, fontSize: '13px', fontWeight: 'bold', zIndex: 30 };
+    if (key === 'title') return { color: '#ffffff', fontSize: '22px', fontWeight: 900, textTransform: 'uppercase', lineHeight: 1.25, zIndex: 32 };
+    if (key === 'body') return { color: '#cbd5e1', fontSize: '13px', lineHeight: 1.6, zIndex: 30 };
+    if (key.startsWith('bullet-')) return { color: '#e2e8f0', fontSize: '12px', lineHeight: 1.5, zIndex: 30 };
+    if (key === 'cta') return { color: '#cbd5e1', fontSize: '12px', fontWeight: 600, zIndex: 30 };
     
-    if (key === 'quote-text') return { color: '#ffffff', fontSize: '18px', fontWeight: 'bold', fontStyle: 'italic', lineHeight: 1.5 };
-    if (key === 'quote-author') return { color: '#ffffff', fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em' };
-    if (key === 'quote-role') return { color: '#fb7185', fontSize: '11px', fontWeight: 600 };
+    if (key === 'quote-icon') return { zIndex: 28 };
+    if (key === 'quote-text') return { color: '#ffffff', fontSize: '18px', fontWeight: 'bold', fontStyle: 'italic', lineHeight: 1.5, zIndex: 30 };
+    if (key === 'quote-author') return { color: '#ffffff', fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em', zIndex: 30 };
+    if (key === 'quote-role') return { color: '#fb7185', fontSize: '11px', fontWeight: 600, zIndex: 30 };
 
-    if (key === 'stat-number') return { color: pColor, fontSize: '60px', fontWeight: 900, lineHeight: 1 };
-    if (key === 'stat-label') return { color: '#ffffff', fontSize: '13px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em' };
-    if (key === 'stat-subtext') return { color: '#cbd5e1', fontSize: '12px', lineHeight: 1.5 };
+    if (key === 'stat-number') return { color: pColor, fontSize: '60px', fontWeight: 900, lineHeight: 1, zIndex: 32 };
+    if (key === 'stat-label') return { color: '#ffffff', fontSize: '13px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em', zIndex: 30 };
+    if (key === 'stat-subtext') return { color: '#cbd5e1', fontSize: '12px', lineHeight: 1.5, zIndex: 30 };
 
-    if (key === 'comp-leftTag') return { color: '#f87171', fontSize: '11px', fontWeight: 900, textTransform: 'uppercase' };
-    if (key === 'comp-leftTitle') return { color: '#ffffff', fontSize: '13px', fontWeight: 'bold', lineHeight: 1.3 };
-    if (key === 'comp-leftText') return { color: '#cbd5e1', fontSize: '11px', lineHeight: 1.4 };
-    if (key === 'comp-rightTag') return { color: '#34d399', fontSize: '11px', fontWeight: 900, textTransform: 'uppercase' };
-    if (key === 'comp-rightTitle') return { color: '#ffffff', fontSize: '13px', fontWeight: 'bold', lineHeight: 1.3 };
-    if (key === 'comp-rightText') return { color: '#cbd5e1', fontSize: '11px', lineHeight: 1.4 };
+    if (key === 'comp-leftTag') return { color: '#f87171', fontSize: '11px', fontWeight: 900, textTransform: 'uppercase', zIndex: 28 };
+    if (key === 'comp-leftTitle') return { color: '#ffffff', fontSize: '13px', fontWeight: 'bold', lineHeight: 1.3, zIndex: 30 };
+    if (key === 'comp-leftText') return { color: '#cbd5e1', fontSize: '11px', lineHeight: 1.4, zIndex: 30 };
+    if (key === 'comp-rightTag') return { color: '#34d399', fontSize: '11px', fontWeight: 900, textTransform: 'uppercase', zIndex: 28 };
+    if (key === 'comp-rightTitle') return { color: '#ffffff', fontSize: '13px', fontWeight: 'bold', lineHeight: 1.3, zIndex: 30 };
+    if (key === 'comp-rightText') return { color: '#cbd5e1', fontSize: '11px', lineHeight: 1.4, zIndex: 30 };
 
-    if (key === 'cta-headline') return { color: '#ffffff', fontSize: '22px', fontWeight: 900, textTransform: 'uppercase', lineHeight: 1.25 };
-    if (key === 'cta-subheadline') return { color: '#cbd5e1', fontSize: '12px', lineHeight: 1.5 };
-    if (key === 'cta-pill') return { color: '#ffffff', fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em' };
+    if (key === 'cta-avatar') return { zIndex: 35 };
+    if (key === 'cta-headline') return { color: '#ffffff', fontSize: '22px', fontWeight: 900, textTransform: 'uppercase', lineHeight: 1.25, zIndex: 32 };
+    if (key === 'cta-subheadline') return { color: '#cbd5e1', fontSize: '12px', lineHeight: 1.5, zIndex: 30 };
+    if (key === 'cta-pill') return { color: '#ffffff', fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em', zIndex: 28 };
 
-    return { color: '#ffffff', fontSize: '13px' };
+    return { color: '#ffffff', fontSize: '13px', zIndex: 30 };
   };
 
   const getStyleFor = (key: string, baseStyle?: React.CSSProperties) => {
@@ -310,12 +609,24 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
     const pos = slide.textPos && slide.textPos[key];
     const def = getDefaultsForElement(key, primaryColor);
 
+    const isImageElement =
+      key === 'brandLogo' ||
+      key === 'cta-avatar' ||
+      key.startsWith('custom-img-') ||
+      key.startsWith('custom-image-') ||
+      key.startsWith('custom-photo-') ||
+      customTextLayer?.type === 'image' ||
+      Boolean(customTextLayer?.imageUrl);
+
     const isContainer =
       key.includes('-card') ||
       key.includes('-box') ||
       key.includes('-container') ||
       key.includes('grid') ||
-      key === 'cta-avatar';
+      key.startsWith('custom-box-') ||
+      key === 'cta-avatar' ||
+      key === 'brandLogo' ||
+      isImageElement;
 
     const styleObj: React.CSSProperties = {
       ...def,
@@ -337,6 +648,16 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
     if (custom.width !== undefined && custom.width !== null) {
       styleObj.width = typeof custom.width === 'number' && custom.width <= 100 ? `${custom.width}%` : `${custom.width}px`;
       styleObj.maxWidth = '100%';
+    }
+    if (custom.height !== undefined && custom.height !== null) {
+      styleObj.height = typeof custom.height === 'number' ? `${custom.height}px` : custom.height;
+    }
+    if (custom.borderRadius !== undefined && custom.borderRadius !== null) {
+      const bRad = typeof custom.borderRadius === 'number' ? `${custom.borderRadius}px` : String(custom.borderRadius).endsWith('px') ? custom.borderRadius : `${custom.borderRadius}px`;
+      styleObj.borderRadius = bRad;
+    }
+    if (custom.opacity !== undefined && custom.opacity !== null) {
+      styleObj.opacity = custom.opacity;
     }
     if (custom.letterSpacing) styleObj.letterSpacing = custom.letterSpacing;
     if (custom.textTransform) styleObj.textTransform = custom.textTransform;
@@ -367,10 +688,9 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
 
       if (isContainer) {
         // Si el elemento seleccionado es una tarjeta / caja contenedora pura (ej. comp-left-card), outline actúa como borde de marco
-        styleObj.border = `${outW}px solid ${outCol}`;
-        styleObj.borderColor = outCol;
         styleObj.borderWidth = `${outW}px`;
         styleObj.borderStyle = 'solid';
+        styleObj.borderColor = outCol;
       } else {
         // Para elementos de TEXTO: aplica ÚNICAMENTE stroke en las letras sin dibujar ningún marco o recuadro
         if (!isTransparentColor) {
@@ -394,14 +714,13 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
     if (custom.boxBorder) {
       const boxCol = custom.boxBorderColor || '#000000';
       const boxW = custom.boxBorderWidth || 2;
-      styleObj.border = `${boxW}px solid ${boxCol}`;
-      styleObj.borderColor = boxCol;
       styleObj.borderWidth = `${boxW}px`;
       styleObj.borderStyle = 'solid';
+      styleObj.borderColor = boxCol;
       styleObj.borderRadius = styleObj.borderRadius || '10px';
     }
 
-    // 2. Sombra de texto o caja (Drop Shadow / Box Shadow)
+    // 3. Sombra de texto o caja (Drop Shadow / Box Shadow)
     if (custom.shadow) {
       const shCol = custom.shadowColor || '#000000';
       const shType = custom.shadowType || 'soft';
@@ -440,13 +759,16 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
       styleObj.maxWidth = '100%';
     }
 
+    const defaultZ = getDefaultZIndex(key);
+    const resolvedZIndex = custom.zIndex !== undefined ? custom.zIndex : defaultZ;
+
     if (pos) {
       styleObj.position = 'absolute';
       styleObj.left = `${pos.left}%`;
       styleObj.top = `${pos.top}%`;
       // Use direct top-left coordinate positioning without center-pivot magnetism
       styleObj.transform = 'none';
-      styleObj.zIndex = custom.zIndex !== undefined ? custom.zIndex : 30;
+      styleObj.zIndex = resolvedZIndex;
 
       // Prevent squishing: maintain generous proportional width when dragged freely
       if (!custom.width) {
@@ -468,23 +790,18 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
         } else if (['stat-subtext-box', 'cta-subheadline-card'].includes(key)) {
           styleObj.width = '88%';
           styleObj.maxWidth = '92%';
-        } else if (['brandName', 'brandHandle', 'brandWeb', 'badge', 'subtag', 'cta', 'cta-pill', 'comp-leftTag', 'comp-rightTag', 'quote-author', 'quote-role', 'cta-avatar'].includes(key)) {
+        } else if (['brandName', 'brandHandle', 'brandWeb', 'badge', 'subtag', 'cta', 'cta-pill', 'comp-leftTag', 'comp-rightTag', 'quote-author', 'quote-role', 'cta-avatar', 'brandLogo'].includes(key) || key.startsWith('custom-img-') || key.startsWith('custom-image-') || key.startsWith('custom-accent-')) {
           styleObj.width = 'auto';
           styleObj.whiteSpace = 'nowrap';
-          styleObj.maxWidth = '90%';
+          styleObj.maxWidth = '100%';
         } else {
           styleObj.width = '85%';
           styleObj.maxWidth = '90%';
         }
       }
-    } else if (activeElementKey === key) {
+    } else {
       styleObj.position = 'relative';
-      if (custom.zIndex !== undefined) {
-        styleObj.zIndex = custom.zIndex;
-      }
-    } else if (custom.zIndex !== undefined) {
-      styleObj.position = 'relative';
-      styleObj.zIndex = custom.zIndex;
+      styleObj.zIndex = resolvedZIndex;
     }
 
     return styleObj;
@@ -585,51 +902,112 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
       <div className="z-10 w-full h-full relative overflow-visible flex flex-col justify-between p-5 sm:p-6">
         {/* Top Brand Elements (Posicionados en flujo natural arriba, pero libres para trasladarse a cualquier punto) */}
         <div className="w-full flex items-center justify-between gap-3 pointer-events-none mb-1">
-          <div
-            data-drag-key="brandName"
-            className={`group relative pointer-events-auto flex items-center gap-2 cursor-pointer transition rounded-xl px-2 py-1 ${
-              activeElementKey === 'brandName' ? 'ring-2 ring-rose-500 bg-slate-900/80' : 'hover:bg-slate-900/40'
-            }`}
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelectElement('brandName');
-            }}
-            style={getStyleFor('brandName')}
-          >
-            {renderActiveControls('brandName')}
-            {brand.logo ? (
-              <img
-                src={brand.logo}
-                alt="Logo"
-                className="rounded-lg object-contain border border-slate-700/80 bg-slate-950/60 p-0.5 transition-all"
-                style={{
-                  height: `${brand.logoSize || 24}px`,
-                  maxWidth: `${Math.max(60, (brand.logoSize || 24) * 3)}px`,
-                }}
-              />
-            ) : (
-              <div
-                className="rounded-lg flex items-center justify-center text-white font-black shadow-sm transition-all shrink-0"
-                style={{
-                  backgroundColor: primaryColor,
-                  width: `${brand.logoSize || 24}px`,
-                  height: `${brand.logoSize || 24}px`,
-                  fontSize: `${Math.max(9, Math.round((brand.logoSize || 24) * 0.45))}px`,
-                }}
-              >
-                {brand.name ? brand.name.charAt(0).toUpperCase() : '★'}
-              </div>
-            )}
-            <span
-              contentEditable
-              suppressContentEditableWarning
-              onBlur={(e) => onUpdateBrand('name', e.currentTarget.innerText)}
-              className="outline-none"
+          <div className="flex items-center gap-2 pointer-events-auto">
+            {/* Elemento Independiente 1: LOGO DE MARCA */}
+            <div
+              data-drag-key="brandLogo"
+              className={`group relative pointer-events-auto cursor-grab active:cursor-grabbing rounded-xl p-1 select-none ${
+                activeElementKey === 'brandLogo'
+                  ? 'ring-2 ring-rose-500 bg-slate-900/90'
+                  : 'hover:bg-slate-900/40'
+              }`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectElement('brandLogo');
+              }}
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                // Double click quick toggle
+              }}
+              onPointerDown={(e) => {
+                onSelectElement('brandLogo');
+                startDrag('brandLogo', e);
+              }}
+              style={{
+                ...getStyleFor('brandLogo'),
+                borderRadius: `${getNumericBorderRadius('brandLogo', 12)}px`,
+              }}
+              title="Haz clic o arrastra para mover el logo libremente"
             >
-              {brand.name || 'LA VISUAL MK'}
-            </span>
+              {renderActiveControls('brandLogo', 'Logo')}
+              {activeElementKey === 'brandLogo' && !isExportMode && (
+                <>
+                  <div
+                    onPointerDown={(e) => startResize('brandLogo', e, 'nw')}
+                    className="resize-handle no-export absolute -top-2 -left-2 w-4 h-4 bg-amber-400 border-2 border-slate-950 rounded-full shadow-md cursor-nwse-resize z-50 hover:scale-125 transition-transform"
+                    title="Arrastrar esquina para redimensionar"
+                  />
+                  <div
+                    onPointerDown={(e) => startResize('brandLogo', e, 'ne')}
+                    className="resize-handle no-export absolute -top-2 -right-2 w-4 h-4 bg-amber-400 border-2 border-slate-950 rounded-full shadow-md cursor-nesw-resize z-50 hover:scale-125 transition-transform"
+                    title="Arrastrar esquina para redimensionar"
+                  />
+                  <div
+                    onPointerDown={(e) => startResize('brandLogo', e, 'sw')}
+                    className="resize-handle no-export absolute -bottom-2 -left-2 w-4 h-4 bg-amber-400 border-2 border-slate-950 rounded-full shadow-md cursor-nesw-resize z-50 hover:scale-125 transition-transform"
+                    title="Arrastrar esquina para redimensionar"
+                  />
+                  <div
+                    onPointerDown={(e) => startResize('brandLogo', e, 'se')}
+                    className="resize-handle no-export absolute -bottom-2 -right-2 w-4 h-4 bg-amber-400 border-2 border-slate-950 rounded-full shadow-md cursor-nwse-resize z-50 hover:scale-125 transition-transform"
+                    title="Arrastrar esquina para redimensionar"
+                  />
+                </>
+              )}
+              {brand.logo ? (
+                <img
+                  src={brand.logo}
+                  alt="Logo"
+                  className="object-contain pointer-events-none"
+                  style={{
+                    height: `${getNumericHeight('brandLogo')}px`,
+                    width: 'auto',
+                    maxWidth: 'none',
+                    maxHeight: 'none',
+                    borderRadius: `${getNumericBorderRadius('brandLogo', 12)}px`,
+                  }}
+                />
+              ) : (
+                <div
+                  className="flex items-center justify-center text-white font-black shadow-sm shrink-0"
+                  style={{
+                    backgroundColor: (getStyleFor('brandLogo').backgroundColor as any) || primaryColor,
+                    width: `${getNumericHeight('brandLogo')}px`,
+                    height: `${getNumericHeight('brandLogo')}px`,
+                    fontSize: `${Math.max(9, Math.round(getNumericHeight('brandLogo') * 0.45))}px`,
+                    borderRadius: `${getNumericBorderRadius('brandLogo', 12)}px`,
+                  }}
+                >
+                  {brand.name ? brand.name.charAt(0).toUpperCase() : '★'}
+                </div>
+              )}
+            </div>
+
+            {/* Elemento Independiente 2: NOMBRE DE MARCA */}
+            <div
+              data-drag-key="brandName"
+              className={`group relative pointer-events-auto flex items-center gap-1.5 cursor-pointer transition rounded-xl px-2 py-1 ${
+                activeElementKey === 'brandName' ? 'ring-2 ring-rose-500 bg-slate-900/80' : 'hover:bg-slate-900/40'
+              }`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectElement('brandName');
+              }}
+              style={getStyleFor('brandName')}
+            >
+              {renderActiveControls('brandName')}
+              <span
+                contentEditable
+                suppressContentEditableWarning
+                onBlur={(e) => onUpdateBrand('name', e.currentTarget.innerText)}
+                className="outline-none font-bold"
+              >
+                {brand.name || 'LA VISUAL MK'}
+              </span>
+            </div>
           </div>
 
+          {/* Elemento Independiente 3: USUARIO/HANDLE */}
           <div
             data-drag-key="brandHandle"
             className={`group relative pointer-events-auto flex items-center gap-1.5 cursor-pointer transition rounded-xl px-2 py-1 ${
@@ -1719,45 +2097,228 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
           </div>
         )}
 
-        {/* Dynamic Custom Text Layers Added by User */}
+        {/* Dynamic Custom Elements Added by User (Textos, Acentos, Recuadros e Imágenes) */}
         {slide.customTexts && slide.customTexts.length > 0 && (
-          <div className="space-y-2 pt-2 border-t border-slate-800/40 mt-2">
-            {slide.customTexts.map((custom) => (
-              <div
-                key={custom.id}
-                data-drag-key={custom.id}
-                className={`group relative cursor-pointer transition rounded-xl p-2 bg-slate-900/60 border border-slate-800/80 shadow-sm ${
-                  activeElementKey === custom.id ? 'ring-2 ring-rose-500 bg-slate-900/90' : 'hover:bg-slate-900/80'
-                }`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSelectElement(custom.id);
-                }}
-                style={getStyleFor(custom.id)}
-              >
-                {renderActiveControls(custom.id)}
-                <div
-                  contentEditable
-                  suppressContentEditableWarning
-                  onBlur={(e) => onUpdateCustomText?.(custom.id, e.currentTarget.innerText)}
-                  className="outline-none leading-relaxed"
-                >
-                  {custom.text}
-                </div>
-                {onDeleteCustomText && (
-                  <button
+          <div className="space-y-2 pointer-events-auto overflow-visible">
+            {slide.customTexts.map((custom) => {
+              const isBox = custom.type === 'box' || custom.id.startsWith('custom-box-');
+              const isAccent = custom.type === 'accent' || custom.id.startsWith('custom-accent-');
+              const isImage = custom.type === 'image' || custom.id.startsWith('custom-img-') || custom.id.startsWith('custom-image-');
+
+              if (isImage) {
+                const itemStyle = getStyleFor(custom.id);
+                const heightVal = getNumericHeight(custom.id);
+                const isActive = activeElementKey === custom.id;
+                return (
+                  <div
+                    key={custom.id}
+                    data-drag-key={custom.id}
+                    className={`group relative cursor-grab active:cursor-grabbing p-0.5 inline-flex items-center justify-center select-none ${
+                      isActive
+                        ? 'ring-2 ring-rose-500 rounded-xl bg-slate-900/40'
+                        : 'hover:opacity-95'
+                    }`}
                     onClick={(e) => {
                       e.stopPropagation();
-                      onDeleteCustomText(custom.id);
+                      onSelectElement(custom.id);
                     }}
-                    className="no-export absolute -top-2 -right-2 bg-rose-600 hover:bg-rose-500 text-white rounded-full p-1 shadow-md opacity-0 group-hover:opacity-100 transition"
-                    title="Eliminar capa de texto"
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      // Double click quick toggle
+                    }}
+                    onPointerDown={(e) => {
+                      onSelectElement(custom.id);
+                      startDrag(custom.id, e);
+                    }}
+                    style={{
+                      ...itemStyle,
+                      borderRadius: `${getNumericBorderRadius(custom.id, 12)}px`,
+                    }}
+                    title="Haz clic o arrastra para mover la imagen a cualquier lugar"
                   >
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-            ))}
+                    {renderActiveControls(custom.id, 'Imagen')}
+                    {/* 4 Interactive Corner Resize Handles when active */}
+                    {isActive && !isExportMode && (
+                      <>
+                        <div
+                          onPointerDown={(e) => startResize(custom.id, e, 'nw')}
+                          className="resize-handle no-export absolute -top-2 -left-2 w-4 h-4 bg-amber-400 border-2 border-slate-950 rounded-full shadow-lg cursor-nwse-resize z-50 hover:scale-125 transition-transform"
+                          title="Arrastrar esquina para redimensionar"
+                        />
+                        <div
+                          onPointerDown={(e) => startResize(custom.id, e, 'ne')}
+                          className="resize-handle no-export absolute -top-2 -right-2 w-4 h-4 bg-amber-400 border-2 border-slate-950 rounded-full shadow-lg cursor-nesw-resize z-50 hover:scale-125 transition-transform"
+                          title="Arrastrar esquina para redimensionar"
+                        />
+                        <div
+                          onPointerDown={(e) => startResize(custom.id, e, 'sw')}
+                          className="resize-handle no-export absolute -bottom-2 -left-2 w-4 h-4 bg-amber-400 border-2 border-slate-950 rounded-full shadow-lg cursor-nesw-resize z-50 hover:scale-125 transition-transform"
+                          title="Arrastrar esquina para redimensionar"
+                        />
+                        <div
+                          onPointerDown={(e) => startResize(custom.id, e, 'se')}
+                          className="resize-handle no-export absolute -bottom-2 -right-2 w-4 h-4 bg-amber-400 border-2 border-slate-950 rounded-full shadow-lg cursor-nwse-resize z-50 hover:scale-125 transition-transform"
+                          title="Arrastrar esquina para redimensionar"
+                        />
+                      </>
+                    )}
+                    {custom.imageUrl ? (
+                      <img
+                        src={custom.imageUrl}
+                        alt="Capa personalizada"
+                        referrerPolicy="no-referrer"
+                        className="object-contain pointer-events-none"
+                        style={{
+                          height: `${heightVal}px`,
+                          width: 'auto',
+                          maxWidth: 'none',
+                          maxHeight: 'none',
+                          borderRadius: `${getNumericBorderRadius(custom.id, 12)}px`,
+                          opacity: itemStyle.opacity !== undefined ? itemStyle.opacity : 1,
+                        }}
+                      />
+                    ) : (
+                      <div className="w-20 h-20 bg-slate-800/90 border border-slate-700 rounded-lg flex items-center justify-center text-slate-400">
+                        <ImageIcon className="w-8 h-8" />
+                      </div>
+                    )}
+                    {onDeleteCustomText && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteCustomText(custom.id);
+                        }}
+                        className="no-export absolute -top-2 -right-2 bg-rose-600 hover:bg-rose-500 text-white rounded-full p-1 shadow-md opacity-0 group-hover:opacity-100 transition"
+                        title="Eliminar imagen o logo"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                );
+              }
+
+              if (isBox) {
+                return (
+                  <div
+                    key={custom.id}
+                    data-drag-key={custom.id}
+                    className={`group relative cursor-pointer transition rounded-2xl p-4 shadow-lg ${
+                      activeElementKey === custom.id
+                        ? 'ring-2 ring-rose-500 bg-slate-900/90'
+                        : 'bg-slate-900/70 hover:border-slate-700'
+                    }`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectElement(custom.id);
+                    }}
+                    style={{
+                      border: '1px solid rgba(51, 65, 85, 0.8)',
+                      minHeight: '60px',
+                      ...getStyleFor(custom.id),
+                    }}
+                  >
+                    {renderActiveControls(custom.id, 'Mover Recuadro')}
+                    <div
+                      contentEditable
+                      suppressContentEditableWarning
+                      onBlur={(e) => onUpdateCustomText?.(custom.id, e.currentTarget.innerText)}
+                      className="outline-none leading-relaxed text-sm text-slate-300"
+                    >
+                      {custom.text || 'Recuadro contenedor editable (puedes moverlo, cambiar su fondo, borde, o enviarlo atrás).'}
+                    </div>
+                    {onDeleteCustomText && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteCustomText(custom.id);
+                        }}
+                        className="no-export absolute -top-2 -right-2 bg-rose-600 hover:bg-rose-500 text-white rounded-full p-1 shadow-md opacity-0 group-hover:opacity-100 transition"
+                        title="Eliminar recuadro"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                );
+              }
+
+              if (isAccent) {
+                return (
+                  <div
+                    key={custom.id}
+                    data-drag-key={custom.id}
+                    className={`group relative cursor-pointer transition rounded-full my-1.5 ${
+                      activeElementKey === custom.id
+                        ? 'ring-2 ring-rose-500'
+                        : 'hover:opacity-90'
+                    }`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectElement(custom.id);
+                    }}
+                    style={{
+                      height: '4px',
+                      width: '45%',
+                      backgroundColor: custom.color || primaryColor,
+                      boxShadow: `0 0 14px ${(custom.color || primaryColor)}90`,
+                      ...getStyleFor(custom.id),
+                    }}
+                  >
+                    {renderActiveControls(custom.id, 'Mover Acento')}
+                    {onDeleteCustomText && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteCustomText(custom.id);
+                        }}
+                        className="no-export absolute -top-2.5 -right-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-full p-0.5 shadow-md opacity-0 group-hover:opacity-100 transition"
+                        title="Eliminar acento"
+                      >
+                        <X className="w-2.5 h-2.5" />
+                      </button>
+                    )}
+                  </div>
+                );
+              }
+
+              return (
+                <div
+                  key={custom.id}
+                  data-drag-key={custom.id}
+                  className={`group relative cursor-pointer transition rounded-xl p-2 bg-slate-900/60 border border-slate-800/80 shadow-sm ${
+                    activeElementKey === custom.id ? 'ring-2 ring-rose-500 bg-slate-900/90' : 'hover:bg-slate-900/80'
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectElement(custom.id);
+                  }}
+                  style={getStyleFor(custom.id)}
+                >
+                  {renderActiveControls(custom.id)}
+                  <div
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => onUpdateCustomText?.(custom.id, e.currentTarget.innerText)}
+                    className="outline-none leading-relaxed"
+                  >
+                    {custom.text}
+                  </div>
+                  {onDeleteCustomText && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteCustomText(custom.id);
+                      }}
+                      className="no-export absolute -top-2 -right-2 bg-rose-600 hover:bg-rose-500 text-white rounded-full p-1 shadow-md opacity-0 group-hover:opacity-100 transition"
+                      title="Eliminar capa de texto"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
 
