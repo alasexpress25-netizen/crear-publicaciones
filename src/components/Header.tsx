@@ -8,6 +8,9 @@ import {
   Languages,
   Sparkles,
   Loader2,
+  FolderArchive,
+  Check,
+  RefreshCw,
 } from 'lucide-react';
 import { AspectRatio, BrandInfo } from '../types';
 import { safeAlert } from '../utils/notifications';
@@ -23,6 +26,8 @@ interface HeaderProps {
   onChangeLanguage?: (lang: 'es' | 'pt' | 'en') => void;
   onTranslateCarousel?: (targetLang: 'es' | 'pt' | 'en') => void;
   isTranslating?: boolean;
+  currentProjectTitle?: string | null;
+  autoSaveStatus?: 'saved' | 'saving' | 'idle';
   onOpenClientSelector: () => void;
   onOpenProjects?: () => void;
   onOpenExport?: () => void;
@@ -40,7 +45,10 @@ export const Header: React.FC<HeaderProps> = ({
   onChangeLanguage,
   onTranslateCarousel,
   isTranslating = false,
+  currentProjectTitle,
+  autoSaveStatus = 'idle',
   onOpenClientSelector,
+  onOpenProjects,
   onResetCarousel,
 }) => {
   const [installPrompt, setInstallPrompt] = useState<any>(null);
@@ -125,6 +133,41 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
             <Users className="w-3.5 h-3.5 text-slate-400 group-hover:text-rose-400" />
           </button>
+
+          {/* Project & Autosave Pill */}
+          {onOpenProjects && (
+            <button
+              onClick={onOpenProjects}
+              className="hidden md:flex items-center gap-2 bg-slate-900/90 hover:bg-slate-800 border border-slate-700/70 hover:border-indigo-500/50 rounded-xl px-3 py-1.5 transition shadow-sm group"
+              title="Abrir Biblioteca de Proyectos y almacenamiento en disco"
+            >
+              <div className="w-4 h-4 rounded-full bg-indigo-600 flex items-center justify-center text-[9px] text-white font-black">
+                <FolderArchive className="w-2.5 h-2.5" />
+              </div>
+              <div className="text-left">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[9px] text-slate-400 block uppercase font-bold leading-none">
+                    Proyecto
+                  </span>
+                  {autoSaveStatus === 'saving' && (
+                    <span className="text-[8px] bg-amber-950/80 text-amber-300 px-1 py-0.2 rounded border border-amber-800/60 font-bold flex items-center gap-0.5">
+                      <RefreshCw className="w-2 h-2 animate-spin" />
+                      Guardando...
+                    </span>
+                  )}
+                  {autoSaveStatus === 'saved' && (
+                    <span className="text-[8px] bg-emerald-950/80 text-emerald-300 px-1 py-0.2 rounded border border-emerald-800/60 font-bold flex items-center gap-0.5">
+                      <Check className="w-2 h-2" />
+                      Autoguardado
+                    </span>
+                  )}
+                </div>
+                <span className="text-xs font-bold text-slate-200 group-hover:text-indigo-300 transition truncate max-w-[120px] block">
+                  {currentProjectTitle || 'Nuevo en blanco'}
+                </span>
+              </div>
+            </button>
+          )}
         </div>
 
         {/* Aspect Ratio Switcher (Mobile Only, Desktop uses Sidebar) */}

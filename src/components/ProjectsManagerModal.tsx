@@ -25,7 +25,10 @@ import {
   AlertCircle,
   FileDown,
   Image as ImageIcon,
-  Search
+  Search,
+  Edit2,
+  CheckCircle2,
+  FilePlus2
 } from 'lucide-react';
 import { Slide, BrandInfo, CarouselPostMeta, AspectRatio, SavedCarouselProject } from '../types';
 import { safeAlert, safeConfirm } from '../utils/notifications';
@@ -63,8 +66,11 @@ interface ProjectsManagerModalProps {
   currentTargetAudience: string;
   currentPostMeta: CarouselPostMeta;
   currentAspectRatio: AspectRatio;
+  currentProjectId?: string | null;
+  currentProjectTitle?: string | null;
   onLoadProject: (project: SavedCarouselProject) => void;
   onNewProject: () => void;
+  onProjectSaved?: (project: SavedCarouselProject) => void;
   onUpdateBrand?: (field: keyof BrandInfo, value: string) => void;
 }
 
@@ -77,8 +83,11 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
   currentTargetAudience,
   currentPostMeta,
   currentAspectRatio,
+  currentProjectId,
+  currentProjectTitle,
   onLoadProject,
   onNewProject,
+  onProjectSaved,
   onUpdateBrand,
 }) => {
   const [activeTab, setActiveTab] = useState<'projects' | 'logos'>('projects');
@@ -96,6 +105,10 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
   const [isSyncingFolder, setIsSyncingFolder] = useState(false);
   const [folderNotification, setFolderNotification] = useState<string | null>(null);
   const [appliedLogoId, setAppliedLogoId] = useState<string | null>(null);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [editTitleValue, setEditTitleValue] = useState('');
+  const [projectPendingDelete, setProjectPendingDelete] = useState<SavedCarouselProject | null>(null);
+  const [logoPendingDelete, setLogoPendingDelete] = useState<ClientLogoAsset | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -111,12 +124,16 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
         }
       });
 
-      // Pre-fill title suggestion from slide 1 or brief
-      const slide1 = currentSlides[0];
-      const defaultTitle = slide1?.title || currentBrief?.slice(0, 40) || `Carrusel ${currentBrand.name || 'Proyecto'}`;
-      setNewTitle(defaultTitle.replace(/[^\w\s\sáéíóúÁÉÍÓÚñÑüÜ.,-]/gi, '').slice(0, 50).trim());
+      // Pre-fill title suggestion: if loaded from a project, use its title; otherwise suggest from slide 1 or brief
+      if (currentProjectTitle) {
+        setNewTitle(currentProjectTitle);
+      } else {
+        const slide1 = currentSlides[0];
+        const defaultTitle = slide1?.title || currentBrief?.slice(0, 40) || `Carrusel ${currentBrand.name || 'Proyecto'}`;
+        setNewTitle(defaultTitle.replace(/[^\w\s\sáéíóúÁÉÍÓÚñÑüÜ.,-]/gi, '').slice(0, 50).trim());
+      }
     }
-  }, [isOpen, currentSlides, currentBrief, currentBrand.name]);
+  }, [isOpen, currentSlides, currentBrief, currentBrand.name, currentProjectTitle]);
 
   const loadLogosFromStorage = async () => {
     try {
@@ -153,13 +170,6 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
     reader.readAsDataURL(file);
   };
 
-  const handleDeleteLogoFromGallery = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!safeConfirm('¿Seguro que deseas eliminar este logo de la carpeta?')) return;
-    await deleteClientLogoDB(id);
-    await loadLogosFromStorage();
-  };
-
   const handleApplyLogoToCanvas = (logo: ClientLogoAsset) => {
     if (onUpdateBrand) {
       onUpdateBrand('logo', logo.logoUrl);
@@ -181,6 +191,10 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
       setProjects(stored);
       if (stored.length > 0) {
         setActiveProject((prev) => {
+          if (currentProjectId) {
+            const currentMatch = stored.find(p => p.id === currentProjectId);
+            if (currentMatch) return currentMatch;
+          }
           if (prev && stored.some(p => p.id === prev.id)) return prev;
           return stored[0];
         });
@@ -245,7 +259,79 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
     }
   };
 
-  const handleSaveCurrentProject = async () => {
+  /**
+   * Guarda sobreescribiendo el proyecto actualmente cargado o el seleccionado en la biblioteca
+   */
+  const handleOverwriteCurrentProject = async () => {
+    const targetId = currentProjectId || activeProject?.id;
+    const existing = (targetId ? projects.find(p => p.id === targetId) : null) || activeProject;
+    
+    if (!existing && !targetId) {
+      await handleSaveAsNewProject();
+      return;
+    }
+
+    const idToUse = targetId || existing?.id || `proj-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+    const titleToUse = newTitle.trim() || existing?.title || `Carrusel ${currentBrand.name || 'Sin título'}`;
+
+    const updatedProj: SavedCarouselProject = {
+      id: idToUse,
+      title: titleToUse,
+      clientName: currentBrand.name || existing?.clientName || 'General',
+      clientId: currentBrand.clientId || existing?.clientId,
+      createdAt: existing?.createdAt || new Date().toLocaleDateString('es-ES', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      }),
+      updatedAt: new Date().toISOString(),
+      slides: currentSlides,
+      brand: currentBrand,
+      brief: currentBrief,
+      targetAudience: currentTargetAudience,
+      postMeta: currentPostMeta,
+      aspectRatio: currentAspectRatio,
+    };
+
+    // 1. Guardar en IndexedDB
+    await saveProjectDB(updatedProj);
+    const updatedList = projects.some(p => p.id === idToUse)
+      ? projects.map(p => p.id === idToUse ? updatedProj : p)
+      : [updatedProj, ...projects];
+    
+    setProjects(updatedList);
+    setActiveProject(updatedProj);
+    setSaveSuccess(true);
+
+    if (onProjectSaved) {
+      onProjectSaved(updatedProj);
+    }
+
+    // 2. Si hay carpeta vinculada, escribir archivo físico en disco
+    const dirHandle = getActiveDirectoryHandle();
+    if (dirHandle) {
+      try {
+        const savedFileName = await saveProjectToDiskFolder(dirHandle, updatedProj);
+        setSaveDiskStatus(`Sobrescrito en "${dirHandle.name}": ${savedFileName}`);
+        setTimeout(() => setSaveDiskStatus(null), 5000);
+      } catch (err) {
+        console.warn('No se pudo actualizar en la carpeta física:', err);
+      }
+    }
+
+    setFolderNotification(`¡Proyecto "${titleToUse}" sobrescrito con el carrusel actual!`);
+    setTimeout(() => {
+      setSaveSuccess(false);
+      setFolderNotification(null);
+    }, 3000);
+  };
+
+  /**
+   * Guarda el carrusel actual como un NUEVO proyecto independiente (con nuevo ID)
+   */
+  const handleSaveAsNewProject = async () => {
     const titleToUse = newTitle.trim() || `Carrusel ${currentBrand.name || 'Sin título'}`;
     const newProj: SavedCarouselProject = {
       id: `proj-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
@@ -275,19 +361,104 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
     setActiveProject(newProj);
     setSaveSuccess(true);
 
+    if (onProjectSaved) {
+      onProjectSaved(newProj);
+    }
+
     // 2. Si hay carpeta vinculada, escribir archivo físico en disco
     const dirHandle = getActiveDirectoryHandle();
     if (dirHandle) {
       try {
         const savedFileName = await saveProjectToDiskFolder(dirHandle, newProj);
-        setSaveDiskStatus(`Guardado en tu carpeta "${dirHandle.name}": ${savedFileName}`);
+        setSaveDiskStatus(`Nuevo proyecto guardado en "${dirHandle.name}": ${savedFileName}`);
         setTimeout(() => setSaveDiskStatus(null), 5000);
       } catch (err) {
         console.warn('No se pudo guardar automáticamente en la carpeta física:', err);
       }
     }
 
-    setTimeout(() => setSaveSuccess(false), 2500);
+    setFolderNotification(`¡Nuevo proyecto "${titleToUse}" guardado en tu biblioteca!`);
+    setTimeout(() => {
+      setSaveSuccess(false);
+      setFolderNotification(null);
+    }, 3000);
+  };
+
+  /**
+   * Permite hacer clic en cualquier proyecto de la lista o detalle y sobrescribirlo con el carrusel actual
+   */
+  const handleOverwriteSpecificProject = async (targetProj: SavedCarouselProject, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+
+    const confirmed = safeConfirm(
+      `¿Deseas sobrescribir el proyecto "${targetProj.title}" con las diapositivas y textos que tienes actualmente en el editor?\n\nSe actualizará su contenido con la versión actual.`
+    );
+    if (!confirmed) return;
+
+    const updatedProj: SavedCarouselProject = {
+      ...targetProj,
+      title: targetProj.title,
+      clientName: currentBrand.name || targetProj.clientName || 'General',
+      clientId: currentBrand.clientId || targetProj.clientId,
+      updatedAt: new Date().toISOString(),
+      slides: currentSlides,
+      brand: currentBrand,
+      brief: currentBrief,
+      targetAudience: currentTargetAudience,
+      postMeta: currentPostMeta,
+      aspectRatio: currentAspectRatio,
+    };
+
+    await saveProjectDB(updatedProj);
+    const updatedList = [updatedProj, ...projects.filter(p => p.id !== targetProj.id)];
+    setProjects(updatedList);
+    setActiveProject(updatedProj);
+
+    if (onProjectSaved) {
+      onProjectSaved(updatedProj);
+    }
+
+    const dirHandle = getActiveDirectoryHandle();
+    if (dirHandle) {
+      saveProjectToDiskFolder(dirHandle, updatedProj).catch(console.warn);
+    }
+
+    setFolderNotification(`¡El proyecto "${targetProj.title}" ha sido sobrescrito con el carrusel actual!`);
+    setTimeout(() => setFolderNotification(null), 4000);
+  };
+
+  /**
+   * Renombrar un proyecto en la biblioteca
+   */
+  const handleRenameActiveProject = async () => {
+    if (!activeProject || !editTitleValue.trim()) {
+      setIsRenaming(false);
+      return;
+    }
+
+    const updatedProj: SavedCarouselProject = {
+      ...activeProject,
+      title: editTitleValue.trim(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    await saveProjectDB(updatedProj);
+    const updatedList = projects.map(p => p.id === updatedProj.id ? updatedProj : p);
+    setProjects(updatedList);
+    setActiveProject(updatedProj);
+    setIsRenaming(false);
+
+    if (currentProjectId === updatedProj.id && onProjectSaved) {
+      onProjectSaved(updatedProj);
+    }
+
+    const dirHandle = getActiveDirectoryHandle();
+    if (dirHandle) {
+      saveProjectToDiskFolder(dirHandle, updatedProj).catch(console.warn);
+    }
+
+    setFolderNotification(`Proyecto renombrado a "${updatedProj.title}"`);
+    setTimeout(() => setFolderNotification(null), 3000);
   };
 
   const handleDuplicateProject = async (project: SavedCarouselProject, e?: React.MouseEvent) => {
@@ -318,15 +489,57 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
     }
   };
 
-  const handleDeleteProject = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (safeConfirm('¿Deseas eliminar este carrusel guardado de tu biblioteca?')) {
+  const handleDeleteProject = (id: string, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    const proj = projects.find(p => p.id === id);
+    if (proj) {
+      setProjectPendingDelete(proj);
+    }
+  };
+
+  const confirmExecuteDeleteProject = async () => {
+    if (!projectPendingDelete) return;
+    const id = projectPendingDelete.id;
+    const title = projectPendingDelete.title;
+
+    try {
       await deleteProjectDB(id);
       const updated = projects.filter((p) => p.id !== id);
       setProjects(updated);
       if (activeProject?.id === id) {
         setActiveProject(updated[0] || null);
       }
+      setFolderNotification(`Proyecto "${title}" eliminado.`);
+      setTimeout(() => setFolderNotification(null), 3000);
+    } catch (err) {
+      console.error('Error al eliminar proyecto:', err);
+    } finally {
+      setProjectPendingDelete(null);
+    }
+  };
+
+  const handleDeleteLogoFromGallery = (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const logo = logos.find(l => l.id === id);
+    if (logo) {
+      setLogoPendingDelete(logo);
+    }
+  };
+
+  const confirmExecuteDeleteLogo = async () => {
+    if (!logoPendingDelete) return;
+    try {
+      await deleteClientLogoDB(logoPendingDelete.id);
+      await loadLogosFromStorage();
+      setFolderNotification(`Logo eliminado.`);
+      setTimeout(() => setFolderNotification(null), 3000);
+    } catch (err) {
+      console.error('Error eliminando logo:', err);
+    } finally {
+      setLogoPendingDelete(null);
     }
   };
 
@@ -392,7 +605,8 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
     );
   });
 
-  const fsSupported = isFileSystemAccessSupported();
+  const isEditingExisting = Boolean(currentProjectId && projects.some(p => p.id === currentProjectId));
+  const activeExistingProject = projects.find(p => p.id === currentProjectId);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/85 backdrop-blur-md">
@@ -415,7 +629,7 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-400">
-                Guarda carruseles y logos de todos tus clientes organizados en tu disco rígido
+                Guarda, actualiza y sobrescribe carruseles y logos organizados en tu disco rígido
               </p>
             </div>
           </div>
@@ -556,427 +770,475 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
           </div>
         )}
 
-        {/* Quick Save Current Carousel Bar */}
+        {/* Quick Save / Overwrite Current Carousel Bar */}
         {activeTab === 'projects' ? (
           <>
-            <div className="p-4 bg-slate-950/80 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2 flex-1 min-w-[260px]">
-            <Save className="w-4 h-4 text-rose-400 shrink-0" />
-            <input
-              type="text"
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              placeholder="Nombre para guardar el carrusel actual..."
-              className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-rose-500 font-semibold"
-            />
-          </div>
+            <div className="p-4 bg-slate-950/90 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
+              
+              {/* Left: Project title input with status tag */}
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 flex-1 min-w-[280px]">
+                <div className="flex items-center gap-2 w-full">
+                  <div className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 text-rose-400 shrink-0">
+                    <Save className="w-4 h-4" />
+                  </div>
+                  <input
+                    type="text"
+                    value={newTitle}
+                    onChange={(e) => setNewTitle(e.target.value)}
+                    placeholder="Nombre del carrusel..."
+                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-rose-500 font-semibold"
+                  />
+                </div>
+                {isEditingExisting && (
+                  <span className="text-[10px] bg-indigo-950/80 text-indigo-300 border border-indigo-700/50 px-2 py-0.5 rounded-lg whitespace-nowrap shrink-0 flex items-center gap-1 font-bold">
+                    <Edit2 className="w-2.5 h-2.5" />
+                    Editando: {activeExistingProject?.title || currentProjectTitle}
+                  </span>
+                )}
+              </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleSaveCurrentProject}
-              className="flex items-center gap-2 bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-md shadow-rose-950/50 transition transform active:scale-95"
-            >
-              {saveSuccess ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
-              <span>{saveSuccess ? '¡Guardado en Disco!' : 'Guardar Carrusel Actual'}</span>
-            </button>
+              {/* Right: Save & Overwrite Actions */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleSaveAsNewProject}
+                  className="flex items-center gap-2 bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-md shadow-rose-950/50 transition transform active:scale-95"
+                  title="Guarda este carrusel como un proyecto en tu biblioteca de disco"
+                >
+                  {saveSuccess ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+                  <span>Guardar Proyecto</span>
+                </button>
 
-            <button
-              onClick={() => {
-                if (safeConfirm('¿Deseas vaciar el lienzo y empezar un carrusel nuevo en blanco?')) {
-                  onNewProject();
-                  onClose();
-                }
-              }}
-              className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs px-3 py-2 rounded-xl border border-slate-700 transition"
-              title="Limpiar y crear uno nuevo"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Nuevo en Blanco</span>
-            </button>
-          </div>
-        </div>
+                <button
+                  onClick={handleOverwriteCurrentProject}
+                  className="flex items-center gap-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-md shadow-emerald-950/50 transition transform active:scale-95 border border-emerald-500/30"
+                  title="Sobrescribe el proyecto actual con las diapositivas y cambios que tienes en el editor"
+                >
+                  {saveSuccess ? <CheckCircle2 className="w-4 h-4" /> : <RefreshCw className="w-4 h-4" />}
+                  <span>{saveSuccess ? '¡Sobrescrito con Éxito!' : 'Sobrescribir Actual'}</span>
+                </button>
+              </div>
+            </div>
 
-        {/* Body Split */}
-        <div className="flex-1 grid grid-cols-1 md:grid-cols-12 overflow-hidden min-h-0">
-          
-          {/* Left: Project List */}
-          <div className="md:col-span-5 border-r border-slate-800 flex flex-col overflow-hidden bg-slate-900/40">
-            <div className="p-3 border-b border-slate-800 space-y-2">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Buscar por título o cliente..."
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-              />
+            {/* Body Split */}
+            <div className="flex-1 grid grid-cols-1 md:grid-cols-12 overflow-hidden min-h-0">
+              
+              {/* Left: Project List */}
+              <div className="md:col-span-5 border-r border-slate-800 flex flex-col overflow-hidden bg-slate-900/40">
+                <div className="p-3 border-b border-slate-800 space-y-2">
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Buscar por título o cliente..."
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                  />
 
-              {/* Client Filter Tags */}
-              {clientNames.length > 0 && (
-                <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
-                  <button
-                    onClick={() => setSelectedClientFilter('all')}
-                    className={`px-2.5 py-0.5 rounded-lg text-[10px] font-bold transition shrink-0 ${
-                      selectedClientFilter === 'all'
-                        ? 'bg-indigo-600 text-white'
-                        : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
-                    }`}
-                  >
-                    Todos ({projects.length})
-                  </button>
-                  {clientNames.map((cName) => {
-                    const count = projects.filter((p) => (p.clientName || 'General') === cName).length;
-                    return (
+                  {/* Client Filter Tags */}
+                  {clientNames.length > 0 && (
+                    <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
                       <button
-                        key={cName}
-                        onClick={() => setSelectedClientFilter(cName)}
+                        onClick={() => setSelectedClientFilter('all')}
                         className={`px-2.5 py-0.5 rounded-lg text-[10px] font-bold transition shrink-0 ${
-                          selectedClientFilter === cName
-                            ? 'bg-rose-600 text-white'
+                          selectedClientFilter === 'all'
+                            ? 'bg-indigo-600 text-white'
                             : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
                         }`}
                       >
-                        {cName} ({count})
+                        Todos ({projects.length})
                       </button>
+                      {clientNames.map((cName) => {
+                        const count = projects.filter((p) => (p.clientName || 'General') === cName).length;
+                        return (
+                          <button
+                            key={cName}
+                            onClick={() => setSelectedClientFilter(cName)}
+                            className={`px-2.5 py-0.5 rounded-lg text-[10px] font-bold transition shrink-0 ${
+                              selectedClientFilter === cName
+                                ? 'bg-rose-600 text-white'
+                                : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                            }`}
+                          >
+                            {cName} ({count})
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-3 space-y-2 scrollbar-thin">
+                  {filtered.length === 0 ? (
+                    <div className="p-8 text-center text-slate-500 text-xs">
+                      {searchQuery ? 'No se encontraron proyectos con ese criterio.' : 'Aún no has guardado ningún carrusel.'}
+                    </div>
+                  ) : (
+                    filtered.map((proj) => {
+                      const isSelected = activeProject?.id === proj.id;
+                      const isCurrentlyLoaded = currentProjectId === proj.id;
+
+                      return (
+                        <div
+                          key={proj.id}
+                          onClick={() => {
+                            setActiveProject(proj);
+                            setIsRenaming(false);
+                          }}
+                          className={`p-3 rounded-2xl border transition cursor-pointer flex items-start justify-between gap-2 group ${
+                            isSelected
+                              ? 'border-indigo-500/80 bg-indigo-950/30 shadow-md ring-1 ring-indigo-500/30'
+                              : 'border-slate-800 bg-slate-950/60 hover:bg-slate-800/40 hover:border-slate-700'
+                          }`}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-slate-800 text-rose-300 border border-slate-700">
+                                {proj.clientName || 'General'}
+                              </span>
+                              {isCurrentlyLoaded && (
+                                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-300 border border-emerald-800/60">
+                                  Abierto
+                                </span>
+                              )}
+                              <span className="text-[10px] text-slate-500 flex items-center gap-1 ml-auto">
+                                <Clock className="w-3 h-3" />
+                                {proj.createdAt}
+                              </span>
+                            </div>
+
+                            <h4 className="text-xs font-bold text-white group-hover:text-indigo-300 transition truncate">
+                              {proj.title}
+                            </h4>
+
+                            <div className="flex items-center gap-3 mt-1.5 text-[10px] text-slate-400">
+                              <span className="flex items-center gap-1">
+                                <Layers className="w-3 h-3 text-slate-500" />
+                                {proj.slides.length} slides
+                              </span>
+                              <span>•</span>
+                              <span>{proj.aspectRatio || '4:5'}</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center shrink-0 ml-1">
+                            <button
+                              type="button"
+                              onClick={(e) => handleDeleteProject(proj.id, e)}
+                              className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-950/40 transition opacity-60 hover:opacity-100"
+                              title="Eliminar este proyecto de la biblioteca"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              {/* Right: Project Details & Preview */}
+              <div className="md:col-span-7 flex flex-col overflow-hidden bg-slate-900/80 p-5">
+                {activeProject ? (
+                  <div className="flex-1 overflow-y-auto space-y-4 pr-1 scrollbar-thin">
+                    
+                    {/* Active Project Card Header */}
+                    <div className="flex items-start justify-between gap-3 pb-3 border-b border-slate-800">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                          <span className="text-xs font-bold text-indigo-400">
+                            {activeProject.clientName}
+                          </span>
+                          <span className="text-slate-600">•</span>
+                          <span className="text-xs text-slate-400">
+                            Creado: {activeProject.createdAt}
+                          </span>
+                          {activeProject.id === currentProjectId && (
+                            <span className="text-[10px] font-bold bg-emerald-950/90 text-emerald-300 border border-emerald-700/60 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                              Actualmente en el editor
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Title & Rename */}
+                        {isRenaming ? (
+                          <div className="flex items-center gap-2 mt-1">
+                            <input
+                              type="text"
+                              value={editTitleValue}
+                              onChange={(e) => setEditTitleValue(e.target.value)}
+                              className="bg-slate-950 border border-indigo-500 rounded-lg px-2.5 py-1 text-sm text-white font-bold focus:outline-none flex-1"
+                              autoFocus
+                            />
+                            <button
+                              onClick={handleRenameActiveProject}
+                              className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition"
+                            >
+                              Guardar
+                            </button>
+                            <button
+                              onClick={() => setIsRenaming(false)}
+                              className="px-2 py-1 rounded-lg bg-slate-800 text-slate-300 text-xs hover:bg-slate-700"
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 group/title">
+                            <h3 className="text-base font-bold text-white truncate">
+                              {activeProject.title}
+                            </h3>
+                            <button
+                              onClick={() => {
+                                setEditTitleValue(activeProject.title);
+                                setIsRenaming(true);
+                              }}
+                              className="p-1 rounded text-slate-500 hover:text-indigo-300 transition opacity-0 group-hover/title:opacity-100"
+                              title="Renombrar título"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
+
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          Proporción: <span className="text-slate-200 font-mono">{activeProject.aspectRatio}</span> | {activeProject.slides.length} diapositivas
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => downloadSingleProjectFile(activeProject)}
+                          className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition"
+                          title="Descargar archivo individual .carousel.json a tu disco"
+                        >
+                          <FileDown className="w-4 h-4 text-emerald-400" />
+                        </button>
+
+                        <button
+                          onClick={() => handleDuplicateProject(activeProject)}
+                          className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition"
+                          title="Crear una copia de este proyecto"
+                        >
+                          <Copy className="w-4 h-4" />
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            onLoadProject(activeProject);
+                            onClose();
+                          }}
+                          className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-rose-600 hover:from-indigo-500 hover:to-rose-500 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-lg shadow-indigo-950/50 transition transform active:scale-95"
+                        >
+                          <ArrowRight className="w-4 h-4" />
+                          <span>Abrir en el Editor</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Slides Thumbnail Preview Strip */}
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-400 block mb-2">
+                        Diapositivas ({activeProject.slides.length}):
+                      </label>
+                      <div className="grid grid-cols-4 gap-2">
+                        {activeProject.slides.map((s, idx) => (
+                          <div
+                            key={idx}
+                            className="bg-slate-950 p-2 rounded-xl border border-slate-800 text-[10px] space-y-1 relative group overflow-hidden"
+                          >
+                            <span className="text-[9px] font-black text-rose-400 block">
+                              #{idx + 1}
+                            </span>
+                            <p className="font-bold text-white line-clamp-2 leading-tight">
+                              {s.title || s.badge || 'Sin título'}
+                            </p>
+                            {s.body && (
+                              <p className="text-slate-400 line-clamp-1 text-[9px]">
+                                {s.body}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Post Caption Preview */}
+                    {activeProject.postMeta?.caption && (
+                      <div className="bg-slate-950/80 p-3.5 rounded-2xl border border-slate-800 space-y-2">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-1.5">
+                          <FileText className="w-3.5 h-3.5" />
+                          Pie de Foto / Copywriting del Post:
+                        </span>
+                        <p className="text-xs text-slate-300 leading-relaxed max-h-28 overflow-y-auto scrollbar-thin whitespace-pre-line font-sans">
+                          {activeProject.postMeta.caption}
+                        </p>
+                        {activeProject.postMeta.hashtags && activeProject.postMeta.hashtags.length > 0 && (
+                          <div className="flex flex-wrap gap-1 pt-1">
+                            {activeProject.postMeta.hashtags.map((h, i) => (
+                              <span key={i} className="text-[10px] text-rose-400 font-mono">
+                                #{h}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Brief used */}
+                    {activeProject.brief && (
+                      <div className="bg-slate-950/60 p-3 rounded-xl border border-slate-800 text-xs">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
+                          Brief / Instrucción de IA:
+                        </span>
+                        <p className="text-slate-300 text-[11px] line-clamp-2">
+                          {activeProject.brief}
+                        </p>
+                      </div>
+                    )}
+
+                  </div>
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center text-slate-500 text-xs">
+                    Selecciona un carrusel de la izquierda para ver su contenido.
+                  </div>
+                )}
+              </div>
+
+            </div>
+          </>
+        ) : (
+          /* Carpeta de Logos Tab Content */
+          <div className="flex-1 flex flex-col overflow-hidden bg-slate-900/60 min-h-0">
+            {/* Logo Upload & Search Bar */}
+            <div className="p-4 bg-slate-950/80 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2 flex-1 min-w-[240px]">
+                <Search className="w-4 h-4 text-rose-400 shrink-0" />
+                <input
+                  type="text"
+                  value={logoSearchQuery}
+                  onChange={(e) => setLogoSearchQuery(e.target.value)}
+                  placeholder="Buscar logo por nombre de cliente o archivo..."
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-rose-500"
+                />
+              </div>
+
+              {/* Upload form for new logo */}
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={newLogoClientName}
+                  onChange={(e) => setNewLogoClientName(e.target.value)}
+                  placeholder="Nombre del cliente / marca..."
+                  className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-rose-500 w-48 font-medium"
+                />
+                <label className="flex items-center gap-1.5 bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-md shadow-rose-950/50 cursor-pointer transition transform active:scale-95 shrink-0">
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>Subir Logo a Carpeta</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleUploadLogoToGallery}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            </div>
+
+            {/* Logos Grid Gallery */}
+            <div className="flex-1 overflow-y-auto p-5 scrollbar-thin">
+              {filteredLogos.length === 0 ? (
+                <div className="py-16 text-center text-slate-400 space-y-3">
+                  <div className="w-14 h-14 rounded-2xl bg-slate-800/80 border border-slate-700 flex items-center justify-center mx-auto text-rose-400 shadow-inner">
+                    <ImageIcon className="w-7 h-7" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-white">
+                      {logoSearchQuery ? 'No se encontraron logos con ese nombre' : 'Carpeta de logos vacía'}
+                    </h4>
+                    <p className="text-xs text-slate-400 max-w-md mx-auto mt-1">
+                      Sube logos PNG transparentes de tus clientes arriba o guárdalos al crear un cliente en la sección Clientes. Se quedarán guardados permanentemente en tu disco.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {filteredLogos.map((logo) => {
+                    const isApplied = appliedLogoId === logo.id || currentBrand.logo === logo.logoUrl;
+
+                    return (
+                      <div
+                        key={logo.id}
+                        className={`bg-slate-950/90 rounded-2xl border p-4 flex flex-col justify-between transition group hover:shadow-lg ${
+                          isApplied
+                            ? 'border-rose-500/80 ring-1 ring-rose-500/40 bg-rose-950/20'
+                            : 'border-slate-800 hover:border-slate-700'
+                        }`}
+                      >
+                        {/* Logo Preview box */}
+                        <div className="w-full h-28 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-center p-3 relative overflow-hidden mb-3 group-hover:border-slate-700 transition">
+                          <img
+                            src={logo.logoUrl}
+                            alt={logo.clientName}
+                            className="max-h-full max-w-full object-contain filter drop-shadow-md"
+                          />
+                          {isApplied && (
+                            <span className="absolute top-2 right-2 bg-rose-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-full shadow flex items-center gap-1">
+                              <Check className="w-3 h-3" />
+                              En Uso
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Logo Info */}
+                        <div className="space-y-1 mb-3">
+                          <h4 className="text-xs font-bold text-white truncate">
+                            {logo.clientName || 'Cliente sin nombre'}
+                          </h4>
+                          <div className="flex items-center justify-between text-[10px] text-slate-400">
+                            <span>{logo.fileSize || 'PNG'}</span>
+                            <span>{new Date(logo.createdAt).toLocaleDateString()}</span>
+                          </div>
+                        </div>
+
+                        {/* Action buttons */}
+                        <div className="flex items-center gap-2 pt-2 border-t border-slate-800/80">
+                          <button
+                            type="button"
+                            onClick={() => handleApplyLogoToCanvas(logo)}
+                            className="flex-1 flex items-center justify-center gap-1.5 bg-rose-600/90 hover:bg-rose-500 text-white font-bold text-xs py-1.5 px-2 rounded-xl transition shadow-sm"
+                            title="Usar este logo en las diapositivas del carrusel actual"
+                          >
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span>Aplicar</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => downloadLogoFile(logo)}
+                            className="p-1.5 rounded-xl text-slate-400 hover:text-emerald-400 hover:bg-slate-800 border border-slate-800 transition"
+                            title="Descargar archivo de imagen"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={(e) => handleDeleteLogoFromGallery(logo.id, e)}
+                            className="p-1.5 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 border border-slate-800 transition"
+                            title="Eliminar logo de la carpeta"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
               )}
             </div>
-
-            <div className="flex-1 overflow-y-auto p-3 space-y-2 scrollbar-thin">
-              {filtered.length === 0 ? (
-                <div className="p-8 text-center text-slate-500 text-xs">
-                  {searchQuery ? 'No se encontraron proyectos con ese criterio.' : 'Aún no has guardado ningún carrusel.'}
-                </div>
-              ) : (
-                filtered.map((proj) => {
-                  const isSelected = activeProject?.id === proj.id;
-                  return (
-                    <div
-                      key={proj.id}
-                      onClick={() => setActiveProject(proj)}
-                      className={`p-3 rounded-2xl border transition cursor-pointer flex items-start justify-between gap-2 group ${
-                        isSelected
-                          ? 'border-indigo-500/80 bg-indigo-950/30 shadow-md ring-1 ring-indigo-500/30'
-                          : 'border-slate-800 bg-slate-950/60 hover:bg-slate-800/40 hover:border-slate-700'
-                      }`}
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 mb-1">
-                          <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-slate-800 text-rose-300 border border-slate-700">
-                            {proj.clientName || 'General'}
-                          </span>
-                          <span className="text-[10px] text-slate-500 flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
-                            {proj.createdAt}
-                          </span>
-                        </div>
-
-                        <h4 className="text-xs font-bold text-white group-hover:text-indigo-300 transition truncate">
-                          {proj.title}
-                        </h4>
-
-                        <div className="flex items-center gap-3 mt-1.5 text-[10px] text-slate-400">
-                          <span className="flex items-center gap-1">
-                            <Layers className="w-3 h-3 text-slate-500" />
-                            {proj.slides.length} slides
-                          </span>
-                          <span>•</span>
-                          <span>{proj.aspectRatio || '4:5'}</span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition shrink-0">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            downloadSingleProjectFile(proj);
-                          }}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-400 hover:bg-emerald-950/40 transition"
-                          title="Descargar archivo .json individual a tu PC"
-                        >
-                          <FileDown className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={(e) => handleDuplicateProject(proj, e)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-400 hover:bg-indigo-950/40 transition"
-                          title="Duplicar carrusel"
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={(e) => handleDeleteProject(proj.id, e)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 transition"
-                          title="Eliminar de la biblioteca"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
           </div>
-
-          {/* Right: Project Details & Preview */}
-          <div className="md:col-span-7 flex flex-col overflow-hidden bg-slate-900/80 p-5">
-            {activeProject ? (
-              <div className="flex-1 overflow-y-auto space-y-4 pr-1 scrollbar-thin">
-                
-                {/* Active Project Card Header */}
-                <div className="flex items-start justify-between gap-3 pb-3 border-b border-slate-800">
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-xs font-bold text-indigo-400">
-                        {activeProject.clientName}
-                      </span>
-                      <span className="text-slate-600">•</span>
-                      <span className="text-xs text-slate-400">
-                        Creado: {activeProject.createdAt}
-                      </span>
-                    </div>
-                    <h3 className="text-base font-bold text-white">
-                      {activeProject.title}
-                    </h3>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      Proporción: <span className="text-slate-200 font-mono">{activeProject.aspectRatio}</span> | {activeProject.slides.length} diapositivas
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      onClick={() => downloadSingleProjectFile(activeProject)}
-                      className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs px-3 py-2.5 rounded-xl border border-slate-700 transition"
-                      title="Descargar archivo individual .carousel.json a tu disco"
-                    >
-                      <FileDown className="w-4 h-4 text-emerald-400" />
-                      <span className="hidden sm:inline">Descargar .JSON</span>
-                    </button>
-                    <button
-                      onClick={() => handleDuplicateProject(activeProject)}
-                      className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs px-3 py-2.5 rounded-xl border border-slate-700 transition"
-                      title="Crear una copia de este proyecto"
-                    >
-                      <Copy className="w-4 h-4" />
-                      <span>Duplicar</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        onLoadProject(activeProject);
-                        onClose();
-                      }}
-                      className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-rose-600 hover:from-indigo-500 hover:to-rose-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-lg shadow-indigo-950/50 transition transform active:scale-95 shrink-0"
-                    >
-                      <ArrowRight className="w-4 h-4" />
-                      <span>Abrir en el Editor</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Slides Thumbnail Preview Strip */}
-                <div>
-                  <label className="text-[11px] font-bold text-slate-400 block mb-2">
-                    Diapositivas ({activeProject.slides.length}):
-                  </label>
-                  <div className="grid grid-cols-4 gap-2">
-                    {activeProject.slides.map((s, idx) => (
-                      <div
-                        key={idx}
-                        className="bg-slate-950 p-2 rounded-xl border border-slate-800 text-[10px] space-y-1 relative group overflow-hidden"
-                      >
-                        <span className="text-[9px] font-black text-rose-400 block">
-                          #{idx + 1}
-                        </span>
-                        <p className="font-bold text-white line-clamp-2 leading-tight">
-                          {s.title || s.badge || 'Sin título'}
-                        </p>
-                        {s.body && (
-                          <p className="text-slate-400 line-clamp-1 text-[9px]">
-                            {s.body}
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Post Caption Preview */}
-                {activeProject.postMeta?.caption && (
-                  <div className="bg-slate-950/80 p-3.5 rounded-2xl border border-slate-800 space-y-2">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-1.5">
-                      <FileText className="w-3.5 h-3.5" />
-                      Pie de Foto / Copywriting del Post:
-                    </span>
-                    <p className="text-xs text-slate-300 leading-relaxed max-h-28 overflow-y-auto scrollbar-thin whitespace-pre-line font-sans">
-                      {activeProject.postMeta.caption}
-                    </p>
-                    {activeProject.postMeta.hashtags && activeProject.postMeta.hashtags.length > 0 && (
-                      <div className="flex flex-wrap gap-1 pt-1">
-                        {activeProject.postMeta.hashtags.map((h, i) => (
-                          <span key={i} className="text-[10px] text-rose-400 font-mono">
-                            #{h}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Brief used */}
-                {activeProject.brief && (
-                  <div className="bg-slate-950/60 p-3 rounded-xl border border-slate-800 text-xs">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
-                      Brief / Instrucción de IA:
-                    </span>
-                    <p className="text-slate-300 text-[11px] line-clamp-2">
-                      {activeProject.brief}
-                    </p>
-                  </div>
-                )}
-
-              </div>
-            ) : (
-              <div className="flex-1 flex flex-col items-center justify-center text-slate-500 text-xs">
-                Selecciona un carrusel de la izquierda para ver su contenido.
-              </div>
-            )}
-          </div>
-
-        </div>
-      </>
-    ) : (
-      /* Carpeta de Logos Tab Content */
-      <div className="flex-1 flex flex-col overflow-hidden bg-slate-900/60 min-h-0">
-        {/* Logo Upload & Search Bar */}
-        <div className="p-4 bg-slate-950/80 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2 flex-1 min-w-[240px]">
-            <Search className="w-4 h-4 text-rose-400 shrink-0" />
-            <input
-              type="text"
-              value={logoSearchQuery}
-              onChange={(e) => setLogoSearchQuery(e.target.value)}
-              placeholder="Buscar logo por nombre de cliente o archivo..."
-              className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-rose-500"
-            />
-          </div>
-
-          {/* Upload form for new logo */}
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={newLogoClientName}
-              onChange={(e) => setNewLogoClientName(e.target.value)}
-              placeholder="Nombre del cliente / marca..."
-              className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-rose-500 w-48 font-medium"
-            />
-            <label className="flex items-center gap-1.5 bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-md shadow-rose-950/50 cursor-pointer transition transform active:scale-95 shrink-0">
-              <Upload className="w-3.5 h-3.5" />
-              <span>Subir Logo a Carpeta</span>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleUploadLogoToGallery}
-                className="hidden"
-              />
-            </label>
-          </div>
-        </div>
-
-        {/* Logos Grid Gallery */}
-        <div className="flex-1 overflow-y-auto p-5 scrollbar-thin">
-          {filteredLogos.length === 0 ? (
-            <div className="py-16 text-center text-slate-400 space-y-3">
-              <div className="w-14 h-14 rounded-2xl bg-slate-800/80 border border-slate-700 flex items-center justify-center mx-auto text-rose-400 shadow-inner">
-                <ImageIcon className="w-7 h-7" />
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-white">
-                  {logoSearchQuery ? 'No se encontraron logos con ese nombre' : 'Carpeta de logos vacía'}
-                </h4>
-                <p className="text-xs text-slate-400 max-w-md mx-auto mt-1">
-                  Sube logos PNG transparentes de tus clientes arriba o guárdalos al crear un cliente en la sección Clientes. Se quedarán guardados permanentemente en tu disco.
-                </p>
-              </div>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {filteredLogos.map((logo) => {
-                const isApplied = appliedLogoId === logo.id || currentBrand.logo === logo.logoUrl;
-
-                return (
-                  <div
-                    key={logo.id}
-                    className={`bg-slate-950/90 rounded-2xl border p-4 flex flex-col justify-between transition group hover:shadow-lg ${
-                      isApplied
-                        ? 'border-rose-500/80 ring-1 ring-rose-500/40 bg-rose-950/20'
-                        : 'border-slate-800 hover:border-slate-700'
-                    }`}
-                  >
-                    {/* Logo Preview box */}
-                    <div className="w-full h-28 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-center p-3 relative overflow-hidden mb-3 group-hover:border-slate-700 transition">
-                      <img
-                        src={logo.logoUrl}
-                        alt={logo.clientName}
-                        className="max-h-full max-w-full object-contain filter drop-shadow-md"
-                      />
-                      {isApplied && (
-                        <span className="absolute top-2 right-2 bg-rose-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-full shadow flex items-center gap-1">
-                          <Check className="w-3 h-3" />
-                          En Uso
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Logo Info */}
-                    <div className="space-y-1 mb-3">
-                      <h4 className="text-xs font-bold text-white truncate">
-                        {logo.clientName || 'Cliente sin nombre'}
-                      </h4>
-                      <div className="flex items-center justify-between text-[10px] text-slate-400">
-                        <span>{logo.fileSize || 'PNG'}</span>
-                        <span>{new Date(logo.createdAt).toLocaleDateString()}</span>
-                      </div>
-                    </div>
-
-                    {/* Action buttons */}
-                    <div className="flex items-center gap-2 pt-2 border-t border-slate-800/80">
-                      <button
-                        type="button"
-                        onClick={() => handleApplyLogoToCanvas(logo)}
-                        className="flex-1 flex items-center justify-center gap-1.5 bg-rose-600/90 hover:bg-rose-500 text-white font-bold text-xs py-1.5 px-2 rounded-xl transition shadow-sm"
-                        title="Usar este logo en las diapositivas del carrusel actual"
-                      >
-                        <Sparkles className="w-3.5 h-3.5" />
-                        <span>Aplicar</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => downloadLogoFile(logo)}
-                        className="p-1.5 rounded-xl text-slate-400 hover:text-emerald-400 hover:bg-slate-800 border border-slate-800 transition"
-                        title="Descargar archivo de imagen"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={(e) => handleDeleteLogoFromGallery(logo.id, e)}
-                        className="p-1.5 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 border border-slate-800 transition"
-                        title="Eliminar logo de la carpeta"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-    )}
+        )}
 
         {/* Footer */}
         <div className="px-6 py-3 border-t border-slate-800 bg-slate-900/90 flex items-center justify-between text-xs text-slate-400">
@@ -991,6 +1253,76 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
             Cerrar
           </button>
         </div>
+
+        {/* In-App Confirmation Modal for Project Deletion */}
+        {projectPendingDelete && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm animate-in fade-in duration-150">
+            <div className="bg-slate-900 border border-slate-700 p-6 rounded-2xl shadow-2xl max-w-sm w-full space-y-4 text-center">
+              <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-400 flex items-center justify-center mx-auto">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h4 className="text-base font-bold text-white">¿Eliminar este carrusel?</h4>
+                <p className="text-xs font-semibold text-rose-300 mt-1 line-clamp-2">
+                  "{projectPendingDelete.title}"
+                </p>
+                <p className="text-[11px] text-slate-400 mt-2">
+                  Se eliminará permanentemente de tu base de datos IndexedDB.
+                </p>
+              </div>
+              <div className="flex items-center justify-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setProjectPendingDelete(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmExecuteDeleteProject}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white text-xs font-bold transition shadow-lg shadow-rose-950/60 flex items-center gap-1.5"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Sí, Eliminar</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* In-App Confirmation Modal for Logo Deletion */}
+        {logoPendingDelete && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm animate-in fade-in duration-150">
+            <div className="bg-slate-900 border border-slate-700 p-6 rounded-2xl shadow-2xl max-w-sm w-full space-y-4 text-center">
+              <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-400 flex items-center justify-center mx-auto">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h4 className="text-base font-bold text-white">¿Eliminar este logo?</h4>
+                <p className="text-xs font-semibold text-rose-300 mt-1">
+                  Logo de "{logoPendingDelete.clientName}"
+                </p>
+              </div>
+              <div className="flex items-center justify-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setLogoPendingDelete(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmExecuteDeleteLogo}
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition"
+                >
+                  Eliminar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
       </div>
     </div>

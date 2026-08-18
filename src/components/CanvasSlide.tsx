@@ -52,7 +52,7 @@ interface CanvasSlideProps {
   onUpdateStat?: (partial: Partial<BigStatData>) => void;
   onUpdateQuote?: (partial: Partial<QuoteData>) => void;
   onUpdateCtaFinal?: (partial: Partial<CtaFinalData>) => void;
-  onUpdateTextPos?: (key: string, pos: { left: number; top: number } | null) => void;
+  onUpdateTextPos?: (key: string | Record<string, { left: number; top: number } | null>, pos?: { left: number; top: number } | null) => void;
   onUpdateTextStyle?: (key: string, style: Partial<TextStyleItem>) => void;
   isExportMode?: boolean;
 }
@@ -87,6 +87,14 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
 
   const primaryColor = slide.accentColor || brand.primaryColor || '#e11d48';
 
+  const isHidden = (key: string): boolean => {
+    if (slide.hiddenElements && slide.hiddenElements.includes(key)) return true;
+    if (brand.hiddenElements && brand.hiddenElements.includes(key)) return true;
+    const custom = (slide.textStyle && slide.textStyle[key]) || (brand.textStyle && brand.textStyle[key]);
+    if (custom && custom.opacity === 0) return true;
+    return false;
+  };
+
   const getNumericHeight = (key: string): number => {
     const custom = (slide.textStyle && slide.textStyle[key]) || (brand.textStyle && brand.textStyle[key]) || {};
     if (custom.height !== undefined && custom.height !== null) {
@@ -116,7 +124,23 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
     '16:9': 'aspect-[16/9] max-w-[550px]',
   };
 
-  const startDrag = (key: string, e: React.PointerEvent) => {
+  const getDragTargetKey = (key: string): string => {
+    if (key.startsWith('bullet-')) {
+      return slide.layoutTemplate === 'checklist' ? 'checklist-container' : 'bullets-container';
+    }
+    if (key === 'stat-subtext') return 'stat-subtext-box';
+    if (key === 'cta-subheadline') return 'cta-subheadline-card';
+    if (key === 'comp-leftTag' || key === 'comp-leftTitle' || key === 'comp-leftText') return 'comp-grid';
+    if (key === 'comp-rightTag' || key === 'comp-rightTitle' || key === 'comp-rightText') return 'comp-grid';
+    if (key === 'quote-text' || key === 'quote-author' || key === 'quote-role' || key === 'quote-icon') return 'quote-container';
+    return key;
+  };
+
+  const isInnerChildElement = (key: string): boolean => {
+    return getDragTargetKey(key) !== key;
+  };
+
+  const startDrag = (rawKey: string, e: React.PointerEvent) => {
     // If clicking on resize handles or buttons, do not initiate element drag
     const target = e.target as HTMLElement;
     if (target.closest('.resize-handle') || target.closest('button') || target.closest('input')) {
@@ -127,26 +151,52 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
     e.preventDefault();
     if (!containerRef.current || isExportMode) return;
 
+    const key = getDragTargetKey(rawKey);
     const containerRect = containerRef.current.getBoundingClientRect();
     const startX = e.clientX;
     const startY = e.clientY;
 
-    // Find the target element using data-drag-key
-    const targetEl = (e.currentTarget.closest(`[data-drag-key="${key}"]`) || e.currentTarget) as HTMLElement;
+    // Snapshot current physical positions of ALL top-level rendered canvas elements that don't have textPos yet
+    // This prevents sibling elements from collapsing / jumping / getting "swallowed" into the void when one element is moved
+    const allDragElements = containerRef.current.querySelectorAll<HTMLElement>('[data-drag-key]');
+    const batchPositions: Record<string, { left: number; top: number }> = { ...(slide.textPos || {}) };
+    let hasNewSnapshots = false;
+
+    allDragElements.forEach((el) => {
+      const elKey = el.getAttribute('data-drag-key');
+      if (elKey && !isInnerChildElement(elKey) && !slide.textPos?.[elKey] && !batchPositions[elKey]) {
+        const r = el.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) {
+          const lPct = Math.round((((r.left - containerRect.left) / containerRect.width) * 100) * 10) / 10;
+          const tPct = Math.round((((r.top - containerRect.top) / containerRect.height) * 100) * 10) / 10;
+          batchPositions[elKey] = { left: lPct, top: tPct };
+          hasNewSnapshots = true;
+        }
+      }
+    });
+
+    // Find the target element using data-drag-key or direct ref
+    const targetEl = (containerRef.current.querySelector(`[data-drag-key="${key}"]`) || e.currentTarget.closest(`[data-drag-key="${key}"]`) || e.currentTarget) as HTMLElement;
     const elemRect = targetEl.getBoundingClientRect();
 
     // Calculate the element's actual position relative to the container right now
     const initialLeftPct = slide.textPos?.[key]?.left !== undefined
       ? slide.textPos[key]!.left
-      : Math.round((((elemRect.left - containerRect.left) / containerRect.width) * 100) * 10) / 10;
+      : (batchPositions[key]?.left !== undefined
+          ? batchPositions[key].left
+          : Math.round((((elemRect.left - containerRect.left) / containerRect.width) * 100) * 10) / 10);
 
     const initialTopPct = slide.textPos?.[key]?.top !== undefined
       ? slide.textPos[key]!.top
-      : Math.round((((elemRect.top - containerRect.top) / containerRect.height) * 100) * 10) / 10;
+      : (batchPositions[key]?.top !== undefined
+          ? batchPositions[key].top
+          : Math.round((((elemRect.top - containerRect.top) / containerRect.height) * 100) * 10) / 10);
 
-    // Immediately establish absolute position state if not already set, so there is ZERO jump
-    if (!slide.textPos?.[key]) {
-      onUpdateTextPos?.(key, { left: initialLeftPct, top: initialTopPct });
+    batchPositions[key] = { left: initialLeftPct, top: initialTopPct };
+
+    // Immediately establish locked positions for all existing top-level elements so sibling elements never jump or collapse
+    if (hasNewSnapshots || !slide.textPos?.[key]) {
+      onUpdateTextPos?.(batchPositions as any);
     }
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
@@ -173,14 +223,33 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
     window.addEventListener('pointerup', handlePointerUp);
   };
 
-  const startResize = (key: string, e: React.PointerEvent, corner: 'se' | 'sw' | 'ne' | 'nw') => {
+  const startResize = (rawKey: string, e: React.PointerEvent, corner: 'se' | 'sw' | 'ne' | 'nw') => {
     e.stopPropagation();
     e.preventDefault();
     if (!containerRef.current || isExportMode) return;
 
+    const key = getDragTargetKey(rawKey);
     const containerRect = containerRef.current.getBoundingClientRect();
     const startX = e.clientX;
     const startY = e.clientY;
+
+    // Snapshot all sibling top-level element positions so nothing jumps on resize
+    const allDragElements = containerRef.current.querySelectorAll<HTMLElement>('[data-drag-key]');
+    const batchPositions: Record<string, { left: number; top: number }> = { ...(slide.textPos || {}) };
+    let hasNewSnapshots = false;
+
+    allDragElements.forEach((el) => {
+      const elKey = el.getAttribute('data-drag-key');
+      if (elKey && !isInnerChildElement(elKey) && !slide.textPos?.[elKey] && !batchPositions[elKey]) {
+        const r = el.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) {
+          const lPct = Math.round((((r.left - containerRect.left) / containerRect.width) * 100) * 10) / 10;
+          const tPct = Math.round((((r.top - containerRect.top) / containerRect.height) * 100) * 10) / 10;
+          batchPositions[elKey] = { left: lPct, top: tPct };
+          hasNewSnapshots = true;
+        }
+      }
+    });
 
     // Find the target element using data-drag-key to get its current size and aspect ratio
     const targetEl = (containerRef.current.querySelector(`[data-drag-key="${key}"]`) || e.currentTarget.parentElement) as HTMLElement | null;
@@ -194,14 +263,20 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
     // Starting position of element in %
     const curLeftPct = slide.textPos?.[key]?.left !== undefined
       ? slide.textPos[key]!.left
-      : (elemRect ? Math.round((((elemRect.left - containerRect.left) / containerRect.width) * 100) * 10) / 10 : 35);
+      : (batchPositions[key]?.left !== undefined
+          ? batchPositions[key].left
+          : (elemRect ? Math.round((((elemRect.left - containerRect.left) / containerRect.width) * 100) * 10) / 10 : 35));
     const curTopPct = slide.textPos?.[key]?.top !== undefined
       ? slide.textPos[key]!.top
-      : (elemRect ? Math.round((((elemRect.top - containerRect.top) / containerRect.height) * 100) * 10) / 10 : 35);
+      : (batchPositions[key]?.top !== undefined
+          ? batchPositions[key].top
+          : (elemRect ? Math.round((((elemRect.top - containerRect.top) / containerRect.height) * 100) * 10) / 10 : 35));
+
+    batchPositions[key] = { left: curLeftPct, top: curTopPct };
 
     // If pos is not set, set it now to lock it in place during resize
-    if (!slide.textPos?.[key]) {
-      onUpdateTextPos?.(key, { left: curLeftPct, top: curTopPct });
+    if (hasNewSnapshots || !slide.textPos?.[key]) {
+      onUpdateTextPos?.(batchPositions as any);
     }
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
@@ -374,7 +449,8 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
 
   const renderActiveControls = (key: string, label?: string) => {
     if (activeElementKey !== key || isExportMode) return null;
-    const hasPos = Boolean(slide.textPos && slide.textPos[key]);
+    const targetKey = getDragTargetKey(key);
+    const hasPos = Boolean(slide.textPos && (slide.textPos[targetKey] || slide.textPos[key]));
 
     return (
       <div
@@ -387,7 +463,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
           title="Mantén presionado y arrastra para mover libremente"
         >
           <Move className="w-3 h-3 text-rose-400" />
-          <span>{label || 'Mover'}</span>
+          <span>{label || (key.startsWith('bullet-') ? 'Mover Lista' : 'Mover')}</span>
         </div>
 
         {hasPos && (
@@ -395,7 +471,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              onUpdateTextPos?.(key, null);
+              onUpdateTextPos?.({ [targetKey]: null, [key]: null } as any);
             }}
             className="text-[9px] bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white px-1.5 py-0.5 rounded-full border border-slate-700 transition"
             title="Restablecer a posición por defecto"
@@ -469,7 +545,11 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
   const getStyleFor = (key: string, baseStyle?: React.CSSProperties) => {
     const customTextLayer = slide.customTexts?.find((c) => c.id === key);
     const custom = (slide.textStyle && slide.textStyle[key]) || (brand.textStyle && brand.textStyle[key]) || {};
-    const pos = slide.textPos && slide.textPos[key];
+    // Inner child elements (like individual bullets, stat subtext, quote text) belong to their container layout and must not receive individual position: absolute
+    const targetKey = getDragTargetKey(key);
+    const pos = isInnerChildElement(key)
+      ? undefined
+      : (slide.textPos?.[key] || (key === targetKey ? slide.textPos?.[targetKey] : undefined));
     const def = getDefaultsForElement(key, primaryColor);
 
     const isImageElement =
@@ -629,6 +709,11 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
       styleObj.position = 'absolute';
       styleObj.left = `${pos.left}%`;
       styleObj.top = `${pos.top}%`;
+      styleObj.margin = 0;
+      styleObj.marginTop = 0;
+      styleObj.marginBottom = 0;
+      styleObj.marginLeft = 0;
+      styleObj.marginRight = 0;
       // Use direct top-left coordinate positioning without center-pivot magnetism
       styleObj.transform = 'none';
       styleObj.zIndex = resolvedZIndex;
@@ -653,9 +738,11 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
         } else if (['stat-subtext-box', 'cta-subheadline-card'].includes(key)) {
           styleObj.width = '88%';
           styleObj.maxWidth = '92%';
-        } else if (['brandName', 'brandHandle', 'brandWeb', 'badge', 'subtag', 'cta', 'cta-pill', 'comp-leftTag', 'comp-rightTag', 'quote-author', 'quote-role', 'cta-avatar', 'brandLogo'].includes(key) || key.startsWith('custom-img-') || key.startsWith('custom-image-') || key.startsWith('custom-accent-')) {
+        } else if (['brandName', 'brandHandle', 'brandWeb', 'badge', 'subtag', 'cta', 'cta-pill', 'comp-leftTag', 'comp-rightTag', 'quote-author', 'quote-role'].includes(key)) {
+          styleObj.width = 'fit-content';
+          styleObj.maxWidth = '92%';
+        } else if (['cta-avatar', 'brandLogo'].includes(key) || key.startsWith('custom-img-') || key.startsWith('custom-image-') || key.startsWith('custom-accent-')) {
           styleObj.width = 'auto';
-          styleObj.whiteSpace = 'nowrap';
           styleObj.maxWidth = '100%';
         } else {
           styleObj.width = '85%';
@@ -663,7 +750,6 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
         }
       }
     } else {
-      styleObj.position = 'relative';
       styleObj.zIndex = resolvedZIndex;
     }
 
@@ -767,134 +853,136 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
         <div className="w-full flex items-center justify-between gap-3 pointer-events-none mb-1">
           <div className="flex items-center gap-2 pointer-events-auto">
             {/* Elemento Independiente 1: LOGO DE MARCA */}
-            <div
-              data-drag-key="brandLogo"
-              className={`group relative pointer-events-auto cursor-grab active:cursor-grabbing rounded-xl p-1 select-none ${
-                activeElementKey === 'brandLogo'
-                  ? 'ring-2 ring-rose-500 bg-slate-900/90'
-                  : 'hover:bg-slate-900/40'
-              }`}
-              onClick={(e) => {
-                e.stopPropagation();
-                onSelectElement('brandLogo');
-              }}
-              onDoubleClick={(e) => {
-                e.stopPropagation();
-                // Double click quick toggle
-              }}
-              onPointerDown={(e) => {
-                onSelectElement('brandLogo');
-                startDrag('brandLogo', e);
-              }}
-              style={{
-                ...getStyleFor('brandLogo'),
-                borderRadius: `${getNumericBorderRadius('brandLogo', 12)}px`,
-              }}
-              title="Haz clic o arrastra para mover el logo libremente"
-            >
-              {renderActiveControls('brandLogo', 'Logo')}
-              {activeElementKey === 'brandLogo' && !isExportMode && (
-                <>
-                  <div
-                    onPointerDown={(e) => startResize('brandLogo', e, 'nw')}
-                    className="resize-handle no-export absolute -top-2 -left-2 w-4 h-4 bg-amber-400 border-2 border-slate-950 rounded-full shadow-md cursor-nwse-resize z-50 hover:scale-125 transition-transform"
-                    title="Arrastrar esquina para redimensionar"
+            {!isHidden('brandLogo') && (
+              <div
+                data-drag-key="brandLogo"
+                className={`group relative pointer-events-auto cursor-grab active:cursor-grabbing rounded-xl p-1 select-none ${
+                  activeElementKey === 'brandLogo'
+                    ? 'ring-2 ring-rose-500 bg-slate-900/90'
+                    : 'hover:bg-slate-900/40'
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectElement('brandLogo');
+                }}
+                onPointerDown={(e) => {
+                  onSelectElement('brandLogo');
+                  startDrag('brandLogo', e);
+                }}
+                style={{
+                  ...getStyleFor('brandLogo'),
+                  borderRadius: `${getNumericBorderRadius('brandLogo', 12)}px`,
+                }}
+                title="Haz clic o arrastra para mover el logo libremente"
+              >
+                {renderActiveControls('brandLogo', 'Logo')}
+                {activeElementKey === 'brandLogo' && !isExportMode && (
+                  <>
+                    <div
+                      onPointerDown={(e) => startResize('brandLogo', e, 'nw')}
+                      className="resize-handle no-export absolute -top-2 -left-2 w-4 h-4 bg-amber-400 border-2 border-slate-950 rounded-full shadow-md cursor-nwse-resize z-50 hover:scale-125 transition-transform"
+                      title="Arrastrar esquina para redimensionar"
+                    />
+                    <div
+                      onPointerDown={(e) => startResize('brandLogo', e, 'ne')}
+                      className="resize-handle no-export absolute -top-2 -right-2 w-4 h-4 bg-amber-400 border-2 border-slate-950 rounded-full shadow-md cursor-nesw-resize z-50 hover:scale-125 transition-transform"
+                      title="Arrastrar esquina para redimensionar"
+                    />
+                    <div
+                      onPointerDown={(e) => startResize('brandLogo', e, 'sw')}
+                      className="resize-handle no-export absolute -bottom-2 -left-2 w-4 h-4 bg-amber-400 border-2 border-slate-950 rounded-full shadow-md cursor-nesw-resize z-50 hover:scale-125 transition-transform"
+                      title="Arrastrar esquina para redimensionar"
+                    />
+                    <div
+                      onPointerDown={(e) => startResize('brandLogo', e, 'se')}
+                      className="resize-handle no-export absolute -bottom-2 -right-2 w-4 h-4 bg-amber-400 border-2 border-slate-950 rounded-full shadow-md cursor-nwse-resize z-50 hover:scale-125 transition-transform"
+                      title="Arrastrar esquina para redimensionar"
+                    />
+                  </>
+                )}
+                {brand.logo ? (
+                  <img
+                    src={brand.logo}
+                    alt="Logo"
+                    className="object-contain pointer-events-none"
+                    style={{
+                      height: `${getNumericHeight('brandLogo')}px`,
+                      width: 'auto',
+                      maxWidth: 'none',
+                      maxHeight: 'none',
+                      borderRadius: `${getNumericBorderRadius('brandLogo', 12)}px`,
+                    }}
                   />
+                ) : (
                   <div
-                    onPointerDown={(e) => startResize('brandLogo', e, 'ne')}
-                    className="resize-handle no-export absolute -top-2 -right-2 w-4 h-4 bg-amber-400 border-2 border-slate-950 rounded-full shadow-md cursor-nesw-resize z-50 hover:scale-125 transition-transform"
-                    title="Arrastrar esquina para redimensionar"
-                  />
-                  <div
-                    onPointerDown={(e) => startResize('brandLogo', e, 'sw')}
-                    className="resize-handle no-export absolute -bottom-2 -left-2 w-4 h-4 bg-amber-400 border-2 border-slate-950 rounded-full shadow-md cursor-nesw-resize z-50 hover:scale-125 transition-transform"
-                    title="Arrastrar esquina para redimensionar"
-                  />
-                  <div
-                    onPointerDown={(e) => startResize('brandLogo', e, 'se')}
-                    className="resize-handle no-export absolute -bottom-2 -right-2 w-4 h-4 bg-amber-400 border-2 border-slate-950 rounded-full shadow-md cursor-nwse-resize z-50 hover:scale-125 transition-transform"
-                    title="Arrastrar esquina para redimensionar"
-                  />
-                </>
-              )}
-              {brand.logo ? (
-                <img
-                  src={brand.logo}
-                  alt="Logo"
-                  className="object-contain pointer-events-none"
-                  style={{
-                    height: `${getNumericHeight('brandLogo')}px`,
-                    width: 'auto',
-                    maxWidth: 'none',
-                    maxHeight: 'none',
-                    borderRadius: `${getNumericBorderRadius('brandLogo', 12)}px`,
-                  }}
-                />
-              ) : (
-                <div
-                  className="flex items-center justify-center text-white font-black shadow-sm shrink-0"
-                  style={{
-                    backgroundColor: (getStyleFor('brandLogo').backgroundColor as any) || primaryColor,
-                    width: `${getNumericHeight('brandLogo')}px`,
-                    height: `${getNumericHeight('brandLogo')}px`,
-                    fontSize: `${Math.max(9, Math.round(getNumericHeight('brandLogo') * 0.45))}px`,
-                    borderRadius: `${getNumericBorderRadius('brandLogo', 12)}px`,
-                  }}
-                >
-                  {brand.name ? brand.name.charAt(0).toUpperCase() : '★'}
-                </div>
-              )}
-            </div>
+                    className="flex items-center justify-center text-white font-black shadow-sm shrink-0"
+                    style={{
+                      backgroundColor: (getStyleFor('brandLogo').backgroundColor as any) || primaryColor,
+                      width: `${getNumericHeight('brandLogo')}px`,
+                      height: `${getNumericHeight('brandLogo')}px`,
+                      fontSize: `${Math.max(9, Math.round(getNumericHeight('brandLogo') * 0.45))}px`,
+                      borderRadius: `${getNumericBorderRadius('brandLogo', 12)}px`,
+                    }}
+                  >
+                    {brand.name ? brand.name.charAt(0).toUpperCase() : '★'}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Elemento Independiente 2: NOMBRE DE MARCA */}
-            <div
-              data-drag-key="brandName"
-              className={`group relative pointer-events-auto flex items-center gap-1.5 cursor-pointer transition rounded-xl px-2 py-1 ${
-                activeElementKey === 'brandName' ? 'ring-2 ring-rose-500 bg-slate-900/80' : 'hover:bg-slate-900/40'
-              }`}
-              onClick={(e) => {
-                e.stopPropagation();
-                onSelectElement('brandName');
-              }}
-              style={getStyleFor('brandName')}
-            >
-              {renderActiveControls('brandName')}
-              <span
-                contentEditable
-                suppressContentEditableWarning
-                onBlur={(e) => onUpdateBrand('name', e.currentTarget.innerText)}
-                className="outline-none font-bold"
+            {!isHidden('brandName') && (
+              <div
+                data-drag-key="brandName"
+                className={`group relative pointer-events-auto flex items-center gap-1.5 cursor-pointer transition rounded-xl px-2 py-1 ${
+                  activeElementKey === 'brandName' ? 'ring-2 ring-rose-500 bg-slate-900/80' : 'hover:bg-slate-900/40'
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectElement('brandName');
+                }}
+                style={getStyleFor('brandName')}
               >
-                {brand.name || 'LA VISUAL MK'}
-              </span>
-            </div>
+                {renderActiveControls('brandName')}
+                <span
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => onUpdateBrand('name', e.currentTarget.innerText)}
+                  className="outline-none font-bold"
+                >
+                  {brand.name || 'LA VISUAL MK'}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Elemento Independiente 3: USUARIO/HANDLE */}
-          <div
-            data-drag-key="brandHandle"
-            className={`group relative pointer-events-auto flex items-center gap-1.5 cursor-pointer transition rounded-xl px-2 py-1 ${
-              activeElementKey === 'brandHandle' ? 'ring-2 ring-rose-500 bg-slate-900/80' : 'hover:bg-slate-900/40'
-            }`}
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelectElement('brandHandle');
-            }}
-            style={getStyleFor('brandHandle')}
-          >
-            {renderActiveControls('brandHandle')}
-            <span
-              contentEditable
-              suppressContentEditableWarning
-              onBlur={(e) => {
-                const val = e.currentTarget.innerText.trim();
-                onUpdateBrand('handle', val.startsWith('@') ? val : (val ? `@${val}` : ''));
+          {!isHidden('brandHandle') && (
+            <div
+              data-drag-key="brandHandle"
+              className={`group relative pointer-events-auto flex items-center gap-1.5 cursor-pointer transition rounded-xl px-2 py-1 ${
+                activeElementKey === 'brandHandle' ? 'ring-2 ring-rose-500 bg-slate-900/80' : 'hover:bg-slate-900/40'
+              }`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectElement('brandHandle');
               }}
-              className="outline-none tracking-wide"
+              style={getStyleFor('brandHandle')}
             >
-              {brand.handle ? (brand.handle.startsWith('@') ? brand.handle : `@${brand.handle}`) : '@lavisualmk'}
-            </span>
-          </div>
+              {renderActiveControls('brandHandle')}
+              <span
+                contentEditable
+                suppressContentEditableWarning
+                onBlur={(e) => {
+                  const val = e.currentTarget.innerText.trim();
+                  onUpdateBrand('handle', val.startsWith('@') ? val : (val ? `@${val}` : ''));
+                }}
+                className="outline-none tracking-wide"
+              >
+                {brand.handle ? (brand.handle.startsWith('@') ? brand.handle : `@${brand.handle}`) : '@lavisualmk'}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Main Content Body: Adaptive by Layout Template */}
@@ -906,7 +994,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
         {/* ==================================================================== */}
         {layout === 'standard' && (
           <div className="space-y-3 my-auto w-full">
-            {slide.badge && (
+            {!isHidden('badge') && slide.badge && (
               <div
                 data-drag-key="badge"
                 className={`group relative inline-block cursor-pointer transition rounded-lg ${
@@ -943,7 +1031,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
               </div>
             )}
 
-            {slide.subtag && (
+            {!isHidden('subtag') && slide.subtag && (
               <div
                 data-drag-key="subtag"
                 className={`group relative cursor-pointer transition rounded-md p-1 ${
@@ -979,29 +1067,31 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
               </div>
             )}
 
-            <div
-              data-drag-key="title"
-              className={`group relative cursor-pointer transition rounded-xl p-1.5 ${
-                activeElementKey === 'title' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/40'
-              }`}
-              onClick={(e) => {
-                e.stopPropagation();
-                onSelectElement('title');
-              }}
-              style={getStyleFor('title')}
-            >
-              {renderActiveControls('title')}
-              <h2
-                contentEditable
-                suppressContentEditableWarning
-                onBlur={(e) => onUpdateField('title', e.currentTarget.innerText)}
-                className="outline-none drop-shadow-md"
+            {!isHidden('title') && (
+              <div
+                data-drag-key="title"
+                className={`group relative cursor-pointer transition rounded-xl p-1.5 ${
+                  activeElementKey === 'title' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/40'
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectElement('title');
+                }}
+                style={getStyleFor('title')}
               >
-                {slide.title || 'ESCRIBE AQUÍ EL TÍTULO O GANCHO'}
-              </h2>
-            </div>
+                {renderActiveControls('title')}
+                <h2
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => onUpdateField('title', e.currentTarget.innerText)}
+                  className="outline-none drop-shadow-md"
+                >
+                  {slide.title || 'ESCRIBE AQUÍ EL TÍTULO O GANCHO'}
+                </h2>
+              </div>
+            )}
 
-            {slide.body && (
+            {!isHidden('body') && slide.body && (
               <div
                 data-drag-key="body"
                 className={`group relative cursor-pointer transition rounded-xl p-1.5 ${
@@ -1037,7 +1127,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
               </div>
             )}
 
-            {slide.bullets && slide.bullets.length > 0 && (
+            {!isHidden('bullets-container') && slide.bullets && slide.bullets.length > 0 && (
               <div
                 data-drag-key="bullets-container"
                 className="space-y-2 pt-1"
@@ -1050,52 +1140,55 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                 }}
               >
                 {renderActiveControls('bullets-container', 'Mover Lista')}
-                {slide.bullets.map((bullet, idx) => (
-                  <div
-                    key={idx}
-                    data-drag-key={`bullet-${idx}`}
-                    className={`group relative flex items-center gap-2.5 rounded-xl px-3.5 py-2 cursor-pointer shadow-sm transition ${
-                      isCardBoxTransparent(`bullet-${idx}`)
-                        ? 'bg-transparent border border-slate-700/40 shadow-none'
-                        : 'bg-slate-900/80 border border-slate-800'
-                    } ${
-                      activeElementKey === `bullet-${idx}` ? 'ring-2 ring-rose-500' : 'hover:border-slate-700'
-                    }`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onSelectElement(`bullet-${idx}`);
-                    }}
-                    style={getStyleFor(`bullet-${idx}`)}
-                  >
-                    {renderActiveControls(`bullet-${idx}`)}
-                    <span
-                      className="font-bold text-sm leading-none shrink-0"
-                      style={{ color: primaryColor }}
+                {slide.bullets.map((bullet, idx) => {
+                  if (isHidden(`bullet-${idx}`)) return null;
+                  return (
+                    <div
+                      key={idx}
+                      data-drag-key={`bullet-${idx}`}
+                      className={`group relative flex items-center gap-2.5 rounded-xl px-3.5 py-2 cursor-pointer shadow-sm transition ${
+                        isCardBoxTransparent(`bullet-${idx}`)
+                          ? 'bg-transparent border border-slate-700/40 shadow-none'
+                          : 'bg-slate-900/80 border border-slate-800'
+                      } ${
+                        activeElementKey === `bullet-${idx}` ? 'ring-2 ring-rose-500' : 'hover:border-slate-700'
+                      }`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectElement(`bullet-${idx}`);
+                      }}
+                      style={getStyleFor(`bullet-${idx}`)}
                     >
-                      •
-                    </span>
-                    <span
-                      contentEditable
-                      suppressContentEditableWarning
-                      onBlur={(e) => onUpdateBullet(idx, e.currentTarget.innerText)}
-                      className="flex-1 outline-none"
-                    >
-                      {bullet}
-                    </span>
-                    {onDeleteBullet && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDeleteBullet(idx);
-                        }}
-                        className="no-export opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-400 transition rounded"
-                        title="Eliminar este punto"
+                      {renderActiveControls(`bullet-${idx}`)}
+                      <span
+                        className="font-bold text-sm leading-none shrink-0"
+                        style={{ color: primaryColor }}
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                ))}
+                        •
+                      </span>
+                      <span
+                        contentEditable
+                        suppressContentEditableWarning
+                        onBlur={(e) => onUpdateBullet(idx, e.currentTarget.innerText)}
+                        className="flex-1 outline-none"
+                      >
+                        {bullet}
+                      </span>
+                      {onDeleteBullet && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteBullet(idx);
+                          }}
+                          className="no-export opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-400 transition rounded"
+                          title="Eliminar este punto"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
 
                 {onAddBullet && (
                   <button
@@ -1121,7 +1214,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
         {layout === 'split_comparison' && (
           <div className="space-y-3.5 my-auto w-full">
             <div className="text-center space-y-1">
-              {slide.badge && (
+              {!isHidden('badge') && slide.badge && (
                 <div
                   data-drag-key="badge"
                   className={`group relative inline-block cursor-pointer transition rounded-lg ${
@@ -1145,247 +1238,267 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                   </span>
                 </div>
               )}
-              <div
-                data-drag-key="title"
-                className={`group relative cursor-pointer transition rounded-xl p-1 ${
-                  activeElementKey === 'title' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/40'
-                }`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSelectElement('title');
-                }}
-                style={getStyleFor('title')}
-              >
-                {renderActiveControls('title')}
-                <h2
-                  contentEditable
-                  suppressContentEditableWarning
-                  onBlur={(e) => onUpdateField('title', e.currentTarget.innerText)}
-                  className="outline-none"
+              {!isHidden('title') && (
+                <div
+                  data-drag-key="title"
+                  className={`group relative cursor-pointer transition rounded-xl p-1 ${
+                    activeElementKey === 'title' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/40'
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectElement('title');
+                  }}
+                  style={getStyleFor('title')}
                 >
-                  {slide.title || loc.comparison.title}
-                </h2>
-              </div>
+                  {renderActiveControls('title')}
+                  <h2
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => onUpdateField('title', e.currentTarget.innerText)}
+                    className="outline-none"
+                  >
+                    {slide.title || loc.comparison.title}
+                  </h2>
+                </div>
+              )}
             </div>
 
             {/* Comparison Grid (Movable Grid) */}
-            <div
-              data-drag-key="comp-grid"
-              className={`group/grid transition-all rounded-2xl ${
-                activeElementKey === 'comp-grid' ? 'ring-2 ring-rose-500 bg-slate-900/30' : ''
-              }`}
-              onClick={(e) => {
-                if (e.target === e.currentTarget) {
-                  e.stopPropagation();
-                  onSelectElement('comp-grid');
-                }
-              }}
-              style={getStyleFor('comp-grid')}
-            >
-              {renderActiveControls('comp-grid', 'Mover Comparativa')}
+            {!isHidden('comp-grid') && (
+              <div
+                data-drag-key="comp-grid"
+                className={`group/grid transition-all rounded-2xl ${
+                  activeElementKey === 'comp-grid' ? 'ring-2 ring-rose-500 bg-slate-900/30' : ''
+                }`}
+                onClick={(e) => {
+                  if (e.target === e.currentTarget) {
+                    e.stopPropagation();
+                    onSelectElement('comp-grid');
+                  }
+                }}
+                style={getStyleFor('comp-grid')}
+              >
+                {renderActiveControls('comp-grid', 'Mover Comparativa')}
 
-              <div className="grid grid-cols-2 gap-2.5">
-                {/* Left Column (Mistake / Before) */}
-                <div
-                  data-drag-key="comp-left-card"
-                  className={`rounded-2xl p-3 space-y-1.5 text-left transition group/card ${
-                    isCardBoxTransparent('comp-left-card')
-                      ? 'bg-transparent border border-red-500/30 shadow-none'
-                      : 'bg-red-950/40 border border-red-800/50 backdrop-blur-xs'
-                  } ${activeElementKey === 'comp-left-card' ? 'ring-2 ring-rose-500' : 'hover:border-red-500/60'}`}
-                  onClick={(e) => {
-                    if (e.target === e.currentTarget) {
-                      e.stopPropagation();
-                      onSelectElement('comp-left-card');
-                    }
-                  }}
-                  style={getStyleFor('comp-left-card')}
-                >
-                  {renderActiveControls('comp-left-card', 'Mover Recuadro')}
-
-                  {/* Drag Handle on hover for the card */}
-                  <div
-                    onPointerDown={(e) => startDrag('comp-left-card', e)}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onSelectElement('comp-left-card');
-                    }}
-                    className="no-export absolute top-1 right-1 opacity-0 group-hover/card:opacity-100 p-1 rounded bg-slate-900/80 hover:bg-rose-600 text-slate-300 hover:text-white cursor-grab active:cursor-grabbing transition"
-                    title="Arrastrar recuadro izquierdo"
-                  >
-                    <Move className="w-2.5 h-2.5" />
-                  </div>
-
-                  <div
-                    data-drag-key="comp-leftTag"
-                    className={`group relative inline-flex items-center gap-1.5 cursor-pointer rounded p-0.5 ${
-                      activeElementKey === 'comp-leftTag' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
-                    }`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onSelectElement('comp-leftTag');
-                    }}
-                    style={getStyleFor('comp-leftTag')}
-                  >
-                    {renderActiveControls('comp-leftTag')}
-                    <XCircle className="w-4 h-4 shrink-0 text-red-400" />
-                    <span
-                      contentEditable
-                      suppressContentEditableWarning
-                      onBlur={(e) => onUpdateComparison?.({ leftTag: e.currentTarget.innerText })}
-                      className="outline-none"
+                <div className="grid grid-cols-2 gap-2.5">
+                  {/* Left Column (Mistake / Before) */}
+                  {!isHidden('comp-left-card') && (
+                    <div
+                      data-drag-key="comp-left-card"
+                      className={`rounded-2xl p-3 space-y-1.5 text-left transition group/card ${
+                        isCardBoxTransparent('comp-left-card')
+                          ? 'bg-transparent border border-red-500/30 shadow-none'
+                          : 'bg-red-950/40 border border-red-800/50 backdrop-blur-xs'
+                      } ${activeElementKey === 'comp-left-card' ? 'ring-2 ring-rose-500' : 'hover:border-red-500/60'}`}
+                      onClick={(e) => {
+                        if (e.target === e.currentTarget) {
+                          e.stopPropagation();
+                          onSelectElement('comp-left-card');
+                        }
+                      }}
+                      style={getStyleFor('comp-left-card')}
                     >
-                      {slide.comparison?.leftTag || loc.comparison.leftTag}
-                    </span>
-                  </div>
+                      {renderActiveControls('comp-left-card', 'Mover Recuadro')}
 
-                  <div
-                    data-drag-key="comp-leftTitle"
-                    className={`group relative cursor-pointer rounded p-0.5 transition ${
-                      activeElementKey === 'comp-leftTitle' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
-                    }`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onSelectElement('comp-leftTitle');
-                    }}
-                    style={getStyleFor('comp-leftTitle')}
-                  >
-                    {renderActiveControls('comp-leftTitle')}
-                    <h4
-                      contentEditable
-                      suppressContentEditableWarning
-                      onBlur={(e) => onUpdateComparison?.({ leftTitle: e.currentTarget.innerText })}
-                      className="outline-none"
+                      {/* Drag Handle on hover for the card */}
+                      <div
+                        onPointerDown={(e) => startDrag('comp-left-card', e)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelectElement('comp-left-card');
+                        }}
+                        className="no-export absolute top-1 right-1 opacity-0 group-hover/card:opacity-100 p-1 rounded bg-slate-900/80 hover:bg-rose-600 text-slate-300 hover:text-white cursor-grab active:cursor-grabbing transition"
+                        title="Arrastrar recuadro izquierdo"
+                      >
+                        <Move className="w-2.5 h-2.5" />
+                      </div>
+
+                      {!isHidden('comp-leftTag') && (
+                        <div
+                          data-drag-key="comp-leftTag"
+                          className={`group relative inline-flex items-center gap-1.5 cursor-pointer rounded p-0.5 ${
+                            activeElementKey === 'comp-leftTag' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
+                          }`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectElement('comp-leftTag');
+                          }}
+                          style={getStyleFor('comp-leftTag')}
+                        >
+                          {renderActiveControls('comp-leftTag')}
+                          <XCircle className="w-4 h-4 shrink-0 text-red-400" />
+                          <span
+                            contentEditable
+                            suppressContentEditableWarning
+                            onBlur={(e) => onUpdateComparison?.({ leftTag: e.currentTarget.innerText })}
+                            className="outline-none"
+                          >
+                            {slide.comparison?.leftTag || loc.comparison.leftTag}
+                          </span>
+                        </div>
+                      )}
+
+                      {!isHidden('comp-leftTitle') && (
+                        <div
+                          data-drag-key="comp-leftTitle"
+                          className={`group relative cursor-pointer rounded p-0.5 transition ${
+                            activeElementKey === 'comp-leftTitle' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
+                          }`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectElement('comp-leftTitle');
+                          }}
+                          style={getStyleFor('comp-leftTitle')}
+                        >
+                          {renderActiveControls('comp-leftTitle')}
+                          <h4
+                            contentEditable
+                            suppressContentEditableWarning
+                            onBlur={(e) => onUpdateComparison?.({ leftTitle: e.currentTarget.innerText })}
+                            className="outline-none"
+                          >
+                            {slide.comparison?.leftTitle || loc.comparison.leftTitle}
+                          </h4>
+                        </div>
+                      )}
+
+                      {!isHidden('comp-leftText') && (
+                        <div
+                          data-drag-key="comp-leftText"
+                          className={`group relative cursor-pointer rounded p-0.5 transition ${
+                            activeElementKey === 'comp-leftText' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
+                          }`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectElement('comp-leftText');
+                          }}
+                          style={getStyleFor('comp-leftText')}
+                        >
+                          {renderActiveControls('comp-leftText')}
+                          <p
+                            contentEditable
+                            suppressContentEditableWarning
+                            onBlur={(e) => onUpdateComparison?.({ leftText: e.currentTarget.innerText })}
+                            className="outline-none"
+                          >
+                            {slide.comparison?.leftText || loc.comparison.leftText}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Right Column (Solution / After) */}
+                  {!isHidden('comp-right-card') && (
+                    <div
+                      data-drag-key="comp-right-card"
+                      className={`rounded-2xl p-3 space-y-1.5 text-left transition group/card ${
+                        isCardBoxTransparent('comp-right-card')
+                          ? 'bg-transparent border border-emerald-500/30 shadow-none'
+                          : 'bg-emerald-950/40 border border-emerald-700/60 backdrop-blur-xs'
+                      } ${activeElementKey === 'comp-right-card' ? 'ring-2 ring-rose-500' : 'hover:border-emerald-500/60'}`}
+                      onClick={(e) => {
+                        if (e.target === e.currentTarget) {
+                          e.stopPropagation();
+                          onSelectElement('comp-right-card');
+                        }
+                      }}
+                      style={getStyleFor('comp-right-card')}
                     >
-                      {slide.comparison?.leftTitle || loc.comparison.leftTitle}
-                    </h4>
-                  </div>
+                      {renderActiveControls('comp-right-card', 'Mover Recuadro')}
 
-                  <div
-                    data-drag-key="comp-leftText"
-                    className={`group relative cursor-pointer rounded p-0.5 transition ${
-                      activeElementKey === 'comp-leftText' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
-                    }`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onSelectElement('comp-leftText');
-                    }}
-                    style={getStyleFor('comp-leftText')}
-                  >
-                    {renderActiveControls('comp-leftText')}
-                    <p
-                      contentEditable
-                      suppressContentEditableWarning
-                      onBlur={(e) => onUpdateComparison?.({ leftText: e.currentTarget.innerText })}
-                      className="outline-none"
-                    >
-                      {slide.comparison?.leftText || loc.comparison.leftText}
-                    </p>
-                  </div>
-                </div>
+                      {/* Drag Handle on hover for the card */}
+                      <div
+                        onPointerDown={(e) => startDrag('comp-right-card', e)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelectElement('comp-right-card');
+                        }}
+                        className="no-export absolute top-1 right-1 opacity-0 group-hover/card:opacity-100 p-1 rounded bg-slate-900/80 hover:bg-emerald-600 text-slate-300 hover:text-white cursor-grab active:cursor-grabbing transition"
+                        title="Arrastrar recuadro derecho"
+                      >
+                        <Move className="w-2.5 h-2.5" />
+                      </div>
 
-                {/* Right Column (Solution / After) */}
-                <div
-                  data-drag-key="comp-right-card"
-                  className={`rounded-2xl p-3 space-y-1.5 text-left transition group/card ${
-                    isCardBoxTransparent('comp-right-card')
-                      ? 'bg-transparent border border-emerald-500/30 shadow-none'
-                      : 'bg-emerald-950/40 border border-emerald-700/60 backdrop-blur-xs'
-                  } ${activeElementKey === 'comp-right-card' ? 'ring-2 ring-rose-500' : 'hover:border-emerald-500/60'}`}
-                  onClick={(e) => {
-                    if (e.target === e.currentTarget) {
-                      e.stopPropagation();
-                      onSelectElement('comp-right-card');
-                    }
-                  }}
-                  style={getStyleFor('comp-right-card')}
-                >
-                  {renderActiveControls('comp-right-card', 'Mover Recuadro')}
+                      {!isHidden('comp-rightTag') && (
+                        <div
+                          data-drag-key="comp-rightTag"
+                          className={`group relative inline-flex items-center gap-1.5 cursor-pointer rounded p-0.5 ${
+                            activeElementKey === 'comp-rightTag' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
+                          }`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectElement('comp-rightTag');
+                          }}
+                          style={getStyleFor('comp-rightTag')}
+                        >
+                          {renderActiveControls('comp-rightTag')}
+                          <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                          <span
+                            contentEditable
+                            suppressContentEditableWarning
+                            onBlur={(e) => onUpdateComparison?.({ rightTag: e.currentTarget.innerText })}
+                            className="outline-none"
+                          >
+                            {slide.comparison?.rightTag || loc.comparison.rightTag}
+                          </span>
+                        </div>
+                      )}
 
-                  {/* Drag Handle on hover for the card */}
-                  <div
-                    onPointerDown={(e) => startDrag('comp-right-card', e)}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onSelectElement('comp-right-card');
-                    }}
-                    className="no-export absolute top-1 right-1 opacity-0 group-hover/card:opacity-100 p-1 rounded bg-slate-900/80 hover:bg-emerald-600 text-slate-300 hover:text-white cursor-grab active:cursor-grabbing transition"
-                    title="Arrastrar recuadro derecho"
-                  >
-                    <Move className="w-2.5 h-2.5" />
-                  </div>
+                      {!isHidden('comp-rightTitle') && (
+                        <div
+                          data-drag-key="comp-rightTitle"
+                          className={`group relative cursor-pointer rounded p-0.5 transition ${
+                            activeElementKey === 'comp-rightTitle' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
+                          }`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectElement('comp-rightTitle');
+                          }}
+                          style={getStyleFor('comp-rightTitle')}
+                        >
+                          {renderActiveControls('comp-rightTitle')}
+                          <h4
+                            contentEditable
+                            suppressContentEditableWarning
+                            onBlur={(e) => onUpdateComparison?.({ rightTitle: e.currentTarget.innerText })}
+                            className="outline-none"
+                          >
+                            {slide.comparison?.rightTitle || loc.comparison.rightTitle}
+                          </h4>
+                        </div>
+                      )}
 
-                  <div
-                    data-drag-key="comp-rightTag"
-                    className={`group relative inline-flex items-center gap-1.5 cursor-pointer rounded p-0.5 ${
-                      activeElementKey === 'comp-rightTag' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
-                    }`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onSelectElement('comp-rightTag');
-                    }}
-                    style={getStyleFor('comp-rightTag')}
-                  >
-                    {renderActiveControls('comp-rightTag')}
-                    <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
-                    <span
-                      contentEditable
-                      suppressContentEditableWarning
-                      onBlur={(e) => onUpdateComparison?.({ rightTag: e.currentTarget.innerText })}
-                      className="outline-none"
-                    >
-                      {slide.comparison?.rightTag || loc.comparison.rightTag}
-                    </span>
-                  </div>
-
-                  <div
-                    data-drag-key="comp-rightTitle"
-                    className={`group relative cursor-pointer rounded p-0.5 transition ${
-                      activeElementKey === 'comp-rightTitle' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
-                    }`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onSelectElement('comp-rightTitle');
-                    }}
-                    style={getStyleFor('comp-rightTitle')}
-                  >
-                    {renderActiveControls('comp-rightTitle')}
-                    <h4
-                      contentEditable
-                      suppressContentEditableWarning
-                      onBlur={(e) => onUpdateComparison?.({ rightTitle: e.currentTarget.innerText })}
-                      className="outline-none"
-                    >
-                      {slide.comparison?.rightTitle || loc.comparison.rightTitle}
-                    </h4>
-                  </div>
-
-                  <div
-                    data-drag-key="comp-rightText"
-                    className={`group relative cursor-pointer rounded p-0.5 transition ${
-                      activeElementKey === 'comp-rightText' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
-                    }`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onSelectElement('comp-rightText');
-                    }}
-                    style={getStyleFor('comp-rightText')}
-                  >
-                    {renderActiveControls('comp-rightText')}
-                    <p
-                      contentEditable
-                      suppressContentEditableWarning
-                      onBlur={(e) => onUpdateComparison?.({ rightText: e.currentTarget.innerText })}
-                      className="outline-none"
-                    >
-                      {slide.comparison?.rightText || loc.comparison.rightText}
-                    </p>
-                  </div>
+                      {!isHidden('comp-rightText') && (
+                        <div
+                          data-drag-key="comp-rightText"
+                          className={`group relative cursor-pointer rounded p-0.5 transition ${
+                            activeElementKey === 'comp-rightText' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
+                          }`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectElement('comp-rightText');
+                          }}
+                          style={getStyleFor('comp-rightText')}
+                        >
+                          {renderActiveControls('comp-rightText')}
+                          <p
+                            contentEditable
+                            suppressContentEditableWarning
+                            onBlur={(e) => onUpdateComparison?.({ rightText: e.currentTarget.innerText })}
+                            className="outline-none"
+                          >
+                            {slide.comparison?.rightText || loc.comparison.rightText}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
-            </div>
+            )}
 
-            {slide.body && (
+            {!isHidden('body') && slide.body && (
               <div
                 data-drag-key="body"
                 className={`group relative cursor-pointer transition rounded-xl p-1 text-center ${
@@ -1414,7 +1527,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
         {/* ==================================================================== */}
         {/* LAYOUT 3: QUOTE / TESTIMONIAL (Cita de Autoridad) */}
         {/* ==================================================================== */}
-        {layout === 'quote' && (
+        {layout === 'quote' && !isHidden('quote-container') && (
           <div
             data-drag-key="quote-container"
             className="space-y-4 my-auto text-center px-2 w-full"
@@ -1436,81 +1549,87 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
               </div>
             </div>
 
-            <div
-              data-drag-key="quote-text"
-              className={`group relative cursor-pointer transition rounded-2xl p-2 ${
-                isCardBoxTransparent('quote-text')
-                  ? 'bg-transparent border-0'
-                  : ''
-              } ${
-                activeElementKey === 'quote-text' || activeElementKey === 'body'
-                  ? 'ring-2 ring-rose-500 bg-slate-900/60'
-                  : 'hover:bg-slate-900/30'
-              }`}
-              onClick={(e) => {
-                e.stopPropagation();
-                onSelectElement('quote-text');
-              }}
-              style={getStyleFor('quote-text')}
-            >
-              {renderActiveControls('quote-text')}
-              <p
-                contentEditable
-                suppressContentEditableWarning
-                onBlur={(e) => {
-                  const val = e.currentTarget.innerText.replace(/^["“”]/, '').replace(/["“”]$/, '');
-                  onUpdateQuote?.({ quoteText: val });
-                }}
-                className="outline-none font-serif"
-              >
-                "{slide.quote?.quoteText || slide.body || loc.quote.quoteText}"
-              </p>
-            </div>
-
-            <div className="pt-2 border-t border-slate-800/80 inline-block px-4 space-y-0.5">
+            {!isHidden('quote-text') && !isHidden('body') && (
               <div
-                data-drag-key="quote-author"
-                className={`group relative cursor-pointer transition rounded-md p-1 ${
-                  activeElementKey === 'quote-author' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
+                data-drag-key="quote-text"
+                className={`group relative cursor-pointer transition rounded-2xl p-2 ${
+                  isCardBoxTransparent('quote-text')
+                    ? 'bg-transparent border-0'
+                    : ''
+                } ${
+                  activeElementKey === 'quote-text' || activeElementKey === 'body'
+                    ? 'ring-2 ring-rose-500 bg-slate-900/60'
+                    : 'hover:bg-slate-900/30'
                 }`}
                 onClick={(e) => {
                   e.stopPropagation();
-                  onSelectElement('quote-author');
+                  onSelectElement('quote-text');
                 }}
-                style={getStyleFor('quote-author')}
+                style={getStyleFor('quote-text')}
               >
-                {renderActiveControls('quote-author')}
-                <h4
-                  contentEditable
-                  suppressContentEditableWarning
-                  onBlur={(e) => onUpdateQuote?.({ authorName: e.currentTarget.innerText })}
-                  className="outline-none"
-                >
-                  {slide.quote?.authorName || brand.name || 'LA VISUAL MK'}
-                </h4>
-              </div>
-
-              <div
-                data-drag-key="quote-role"
-                className={`group relative cursor-pointer transition rounded-md p-1 ${
-                  activeElementKey === 'quote-role' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
-                }`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSelectElement('quote-role');
-                }}
-                style={getStyleFor('quote-role')}
-              >
-                {renderActiveControls('quote-role')}
+                {renderActiveControls('quote-text')}
                 <p
                   contentEditable
                   suppressContentEditableWarning
-                  onBlur={(e) => onUpdateQuote?.({ authorRole: e.currentTarget.innerText })}
-                  className="outline-none"
+                  onBlur={(e) => {
+                    const val = e.currentTarget.innerText.replace(/^["“”]/, '').replace(/["“”]$/, '');
+                    onUpdateQuote?.({ quoteText: val });
+                  }}
+                  className="outline-none font-serif"
                 >
-                  {slide.quote?.authorRole || loc.quote.authorRole}
+                  "{slide.quote?.quoteText || slide.body || loc.quote.quoteText}"
                 </p>
               </div>
+            )}
+
+            <div className="pt-2 border-t border-slate-800/80 inline-block px-4 space-y-0.5">
+              {!isHidden('quote-author') && (
+                <div
+                  data-drag-key="quote-author"
+                  className={`group relative cursor-pointer transition rounded-md p-1 ${
+                    activeElementKey === 'quote-author' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectElement('quote-author');
+                  }}
+                  style={getStyleFor('quote-author')}
+                >
+                  {renderActiveControls('quote-author')}
+                  <h4
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => onUpdateQuote?.({ authorName: e.currentTarget.innerText })}
+                    className="outline-none"
+                  >
+                    {slide.quote?.authorName || brand.name || 'LA VISUAL MK'}
+                  </h4>
+                </div>
+              )}
+
+              {!isHidden('quote-role') && (
+                <div
+                  data-drag-key="quote-role"
+                  className={`group relative cursor-pointer transition rounded-md p-1 ${
+                    activeElementKey === 'quote-role' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/30'
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectElement('quote-role');
+                  }}
+                  style={getStyleFor('quote-role')}
+                >
+                  {renderActiveControls('quote-role')}
+                  <p
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => onUpdateQuote?.({ authorRole: e.currentTarget.innerText })}
+                    className="outline-none"
+                  >
+                    {slide.quote?.authorRole || loc.quote.authorRole}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1518,7 +1637,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
         {/* ==================================================================== */}
         {/* LAYOUT 4: BIG STAT / MÉTRICA */}
         {/* ==================================================================== */}
-        {layout === 'big_number' && (
+        {layout === 'big_number' && !isHidden('stat-container') && (
           <div
             data-drag-key="stat-container"
             className="space-y-3.5 my-auto text-center w-full"
@@ -1531,7 +1650,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
             }}
           >
             {renderActiveControls('stat-container', 'Mover Métrica')}
-            {slide.badge && (
+            {!isHidden('badge') && slide.badge && (
               <div
                 data-drag-key="badge"
                 className={`group relative inline-block cursor-pointer transition rounded-lg ${
@@ -1557,96 +1676,104 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
             )}
 
             <div className="py-1 space-y-1">
-              <div
-                data-drag-key="stat-number"
-                className={`group relative cursor-pointer transition rounded-2xl p-1 inline-block ${
-                  activeElementKey === 'stat-number' ? 'ring-2 ring-rose-500 bg-slate-900/60' : 'hover:bg-slate-900/30'
-                }`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSelectElement('stat-number');
-                }}
-                style={getStyleFor('stat-number')}
-              >
-                {renderActiveControls('stat-number')}
-                <span
-                  contentEditable
-                  suppressContentEditableWarning
-                  onBlur={(e) => onUpdateStat?.({ statNumber: e.currentTarget.innerText })}
-                  className="tracking-tight outline-none block drop-shadow-lg"
+              {!isHidden('stat-number') && (
+                <div
+                  data-drag-key="stat-number"
+                  className={`group relative cursor-pointer transition rounded-2xl p-1 inline-block ${
+                    activeElementKey === 'stat-number' ? 'ring-2 ring-rose-500 bg-slate-900/60' : 'hover:bg-slate-900/30'
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectElement('stat-number');
+                  }}
+                  style={getStyleFor('stat-number')}
                 >
-                  {slide.stat?.statNumber || loc.stat.statNumber}
-                </span>
-              </div>
+                  {renderActiveControls('stat-number')}
+                  <span
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => onUpdateStat?.({ statNumber: e.currentTarget.innerText })}
+                    className="tracking-tight outline-none block drop-shadow-lg"
+                  >
+                    {slide.stat?.statNumber || loc.stat.statNumber}
+                  </span>
+                </div>
+              )}
 
-              <div
-                data-drag-key="stat-label"
-                className={`group relative cursor-pointer transition rounded-xl p-1 ${
-                  activeElementKey === 'stat-label' ? 'ring-2 ring-rose-500 bg-slate-900/60' : 'hover:bg-slate-900/30'
-                }`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSelectElement('stat-label');
-                }}
-                style={getStyleFor('stat-label')}
-              >
-                {renderActiveControls('stat-label')}
-                <p
-                  contentEditable
-                  suppressContentEditableWarning
-                  onBlur={(e) => onUpdateStat?.({ statLabel: e.currentTarget.innerText })}
-                  className="outline-none"
+              {!isHidden('stat-label') && (
+                <div
+                  data-drag-key="stat-label"
+                  className={`group relative cursor-pointer transition rounded-xl p-1 ${
+                    activeElementKey === 'stat-label' ? 'ring-2 ring-rose-500 bg-slate-900/60' : 'hover:bg-slate-900/30'
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectElement('stat-label');
+                  }}
+                  style={getStyleFor('stat-label')}
                 >
-                  {slide.stat?.statLabel || slide.title || loc.stat.statLabel}
-                </p>
-              </div>
+                  {renderActiveControls('stat-label')}
+                  <p
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => onUpdateStat?.({ statLabel: e.currentTarget.innerText })}
+                    className="outline-none"
+                  >
+                    {slide.stat?.statLabel || slide.title || loc.stat.statLabel}
+                  </p>
+                </div>
+              )}
             </div>
 
-            <div
-              data-drag-key="stat-subtext-box"
-              className={`rounded-2xl p-3.5 text-left transition ${
-                isCardBoxTransparent('stat-subtext-box')
-                  ? 'bg-transparent border border-slate-700/40 shadow-none'
-                  : 'bg-slate-900/80 border border-slate-800'
-              }`}
-              style={getStyleFor('stat-subtext-box')}
-              onClick={(e) => {
-                if (e.target === e.currentTarget) {
-                  e.stopPropagation();
-                  onSelectElement('stat-subtext-box');
-                }
-              }}
-            >
-              {renderActiveControls('stat-subtext-box', 'Mover Recuadro')}
+            {!isHidden('stat-subtext-box') && (
               <div
-                data-drag-key="stat-subtext"
-                className={`group relative cursor-pointer transition rounded-xl p-1 ${
-                  activeElementKey === 'stat-subtext' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/40'
+                data-drag-key="stat-subtext-box"
+                className={`rounded-2xl p-3.5 text-left transition ${
+                  isCardBoxTransparent('stat-subtext-box')
+                    ? 'bg-transparent border border-slate-700/40 shadow-none'
+                    : 'bg-slate-900/80 border border-slate-800'
                 }`}
+                style={getStyleFor('stat-subtext-box')}
                 onClick={(e) => {
-                  e.stopPropagation();
-                  onSelectElement('stat-subtext');
+                  if (e.target === e.currentTarget) {
+                    e.stopPropagation();
+                    onSelectElement('stat-subtext-box');
+                  }
                 }}
-                style={getStyleFor('stat-subtext')}
               >
-                {renderActiveControls('stat-subtext')}
-                <p
-                  contentEditable
-                  suppressContentEditableWarning
-                  onBlur={(e) => onUpdateStat?.({ statSubtext: e.currentTarget.innerText })}
-                  className="outline-none"
-                >
-                  {slide.stat?.statSubtext || slide.body || loc.stat.statSubtext}
-                </p>
+                {renderActiveControls('stat-subtext-box', 'Mover Recuadro')}
+                {!isHidden('stat-subtext') && (
+                  <div
+                    data-drag-key="stat-subtext"
+                    className={`group relative cursor-pointer transition rounded-xl p-1 ${
+                      activeElementKey === 'stat-subtext' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/40'
+                    }`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectElement('stat-subtext');
+                    }}
+                    style={getStyleFor('stat-subtext')}
+                  >
+                    {renderActiveControls('stat-subtext')}
+                    <p
+                      contentEditable
+                      suppressContentEditableWarning
+                      onBlur={(e) => onUpdateStat?.({ statSubtext: e.currentTarget.innerText })}
+                      className="outline-none"
+                    >
+                      {slide.stat?.statSubtext || slide.body || loc.stat.statSubtext}
+                    </p>
+                  </div>
+                )}
               </div>
-            </div>
+            )}
           </div>
         )}
 
         {/* ==================================================================== */}
         {/* LAYOUT 5: CHECKLIST / STEPS (Paso a Paso) */}
         {/* ==================================================================== */}
-        {layout === 'checklist' && (
+        {layout === 'checklist' && !isHidden('checklist-container') && (
           <div
             data-drag-key="checklist-container"
             className="space-y-3 my-auto w-full"
@@ -1660,7 +1787,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
           >
             {renderActiveControls('checklist-container', 'Mover Pasos')}
             <div className="space-y-1 text-center">
-              {slide.badge && (
+              {!isHidden('badge') && slide.badge && (
                 <div
                   data-drag-key="badge"
                   className={`group relative inline-block cursor-pointer transition rounded-lg ${
@@ -1684,80 +1811,85 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                   </span>
                 </div>
               )}
-              <div
-                data-drag-key="title"
-                className={`group relative cursor-pointer transition rounded-xl p-1 ${
-                  activeElementKey === 'title' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/40'
-                }`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSelectElement('title');
-                }}
-                style={getStyleFor('title')}
-              >
-                {renderActiveControls('title')}
-                <h2
-                  contentEditable
-                  suppressContentEditableWarning
-                  onBlur={(e) => onUpdateField('title', e.currentTarget.innerText)}
-                  className="outline-none"
+              {!isHidden('title') && (
+                <div
+                  data-drag-key="title"
+                  className={`group relative cursor-pointer transition rounded-xl p-1 ${
+                    activeElementKey === 'title' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/40'
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectElement('title');
+                  }}
+                  style={getStyleFor('title')}
                 >
-                  {slide.title || loc.checklist.title}
-                </h2>
-              </div>
+                  {renderActiveControls('title')}
+                  <h2
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => onUpdateField('title', e.currentTarget.innerText)}
+                    className="outline-none"
+                  >
+                    {slide.title || loc.checklist.title}
+                  </h2>
+                </div>
+              )}
             </div>
 
             <div className="space-y-2 pt-1">
               {(slide.bullets && slide.bullets.length > 0
                 ? resolveChecklistBullets(slide.bullets, language)
                 : loc.checklist.bullets
-              ).map((bullet, idx, arr) => (
-                <div
-                  key={idx}
-                  data-drag-key={`bullet-${idx}`}
-                  className={`group relative flex items-start gap-3 rounded-2xl p-3 shadow-sm cursor-pointer transition ${
-                    isCardBoxTransparent(`bullet-${idx}`)
-                      ? 'bg-transparent border border-slate-700/40 shadow-none'
-                      : 'bg-slate-900/85 border border-slate-800'
-                  } ${
-                    activeElementKey === `bullet-${idx}` ? 'ring-2 ring-rose-500 bg-slate-900' : 'hover:border-slate-700'
-                  }`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onSelectElement(`bullet-${idx}`);
-                  }}
-                  style={getStyleFor(`bullet-${idx}`)}
-                >
-                  {renderActiveControls(`bullet-${idx}`)}
+              ).map((bullet, idx, arr) => {
+                if (isHidden(`bullet-${idx}`)) return null;
+                return (
                   <div
-                    className="w-6 h-6 rounded-xl flex items-center justify-center text-[11px] font-black text-white shrink-0 mt-0.5 shadow-sm"
-                    style={{ backgroundColor: primaryColor }}
+                    key={idx}
+                    data-drag-key={`bullet-${idx}`}
+                    className={`group relative flex items-start gap-3 rounded-2xl p-3 shadow-sm cursor-pointer transition ${
+                      isCardBoxTransparent(`bullet-${idx}`)
+                        ? 'bg-transparent border border-slate-700/40 shadow-none'
+                        : 'bg-slate-900/85 border border-slate-800'
+                    } ${
+                      activeElementKey === `bullet-${idx}` ? 'ring-2 ring-rose-500 bg-slate-900' : 'hover:border-slate-700'
+                    }`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectElement(`bullet-${idx}`);
+                    }}
+                    style={getStyleFor(`bullet-${idx}`)}
                   >
-                    0{idx + 1}
-                  </div>
-                  <span
-                    contentEditable
-                    suppressContentEditableWarning
-                    onBlur={(e) => onUpdateBullet(idx, e.currentTarget.innerText)}
-                    className="flex-1 outline-none leading-relaxed"
-                  >
-                    {bullet}
-                  </span>
-                  {onDeleteBullet && arr.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDeleteBullet(idx);
-                      }}
-                      className="no-export opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-400 transition rounded"
-                      title={language === 'pt' ? 'Excluir este ponto' : language === 'en' ? 'Delete this step' : 'Eliminar este punto'}
+                    {renderActiveControls(`bullet-${idx}`)}
+                    <div
+                      className="w-6 h-6 rounded-xl flex items-center justify-center text-[11px] font-black text-white shrink-0 mt-0.5 shadow-sm"
+                      style={{ backgroundColor: primaryColor }}
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-              ))}
+                      0{idx + 1}
+                    </div>
+                    <span
+                      contentEditable
+                      suppressContentEditableWarning
+                      onBlur={(e) => onUpdateBullet(idx, e.currentTarget.innerText)}
+                      className="flex-1 outline-none leading-relaxed"
+                    >
+                      {bullet}
+                    </span>
+                    {onDeleteBullet && arr.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteBullet(idx);
+                        }}
+                        className="no-export opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-400 transition rounded"
+                        title={language === 'pt' ? 'Excluir este ponto' : language === 'en' ? 'Delete this step' : 'Eliminar este punto'}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
 
               {onAddBullet && (
                 <button
@@ -1783,7 +1915,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
         {/* ==================================================================== */}
         {/* LAYOUT 6: CTA FINAL / CONVERSIÓN */}
         {/* ==================================================================== */}
-        {layout === 'cta_final' && (
+        {layout === 'cta_final' && !isHidden('cta-container') && (
           <div
             data-drag-key="cta-container"
             className="space-y-4 my-auto text-center w-full"
@@ -1797,48 +1929,50 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
           >
             {renderActiveControls('cta-container', 'Mover CTA')}
             {/* Avatar or Logo Icon */}
-            <div
-              data-drag-key="cta-avatar"
-              className={`group relative inline-flex justify-center cursor-pointer transition rounded-3xl mx-auto ${
-                activeElementKey === 'cta-avatar' ? 'ring-2 ring-rose-500' : 'hover:opacity-90'
-              }`}
-              onClick={(e) => {
-                e.stopPropagation();
-                onSelectElement('cta-avatar');
-              }}
-              style={getStyleFor('cta-avatar')}
-            >
-              {renderActiveControls('cta-avatar', 'Mover Logo')}
-              {brand.logo ? (
-                <img
-                  src={brand.logo}
-                  alt={brand.name}
-                  className="w-16 h-16 rounded-3xl object-cover transition-all"
-                  style={{
-                    boxShadow: getStyleFor('cta-avatar').boxShadow || '0 20px 25px -5px rgba(0, 0, 0, 0.5)',
-                    borderColor: getStyleFor('cta-avatar').borderColor || 'rgba(255, 255, 255, 0.2)',
-                    borderWidth: getStyleFor('cta-avatar').borderWidth || '2px',
-                    borderStyle: (getStyleFor('cta-avatar').borderStyle as any) || 'solid',
-                  }}
-                />
-              ) : (
-                <div
-                  className="w-16 h-16 rounded-3xl flex items-center justify-center text-2xl font-black text-white transition-all"
-                  style={{
-                    backgroundColor: getStyleFor('cta-avatar').backgroundColor || primaryColor,
-                    boxShadow: getStyleFor('cta-avatar').boxShadow || '0 25px 50px -12px rgba(0, 0, 0, 0.6)',
-                    borderColor: getStyleFor('cta-avatar').borderColor || 'rgba(255, 255, 255, 0.2)',
-                    borderWidth: getStyleFor('cta-avatar').borderWidth || '2px',
-                    borderStyle: (getStyleFor('cta-avatar').borderStyle as any) || 'solid',
-                  }}
-                >
-                  {brand.name ? brand.name.charAt(0).toUpperCase() : '★'}
-                </div>
-              )}
-            </div>
+            {!isHidden('cta-avatar') && (
+              <div
+                data-drag-key="cta-avatar"
+                className={`group relative inline-flex justify-center cursor-pointer transition rounded-3xl mx-auto ${
+                  activeElementKey === 'cta-avatar' ? 'ring-2 ring-rose-500' : 'hover:opacity-90'
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectElement('cta-avatar');
+                }}
+                style={getStyleFor('cta-avatar')}
+              >
+                {renderActiveControls('cta-avatar', 'Mover Logo')}
+                {brand.logo ? (
+                  <img
+                    src={brand.logo}
+                    alt={brand.name}
+                    className="w-16 h-16 rounded-3xl object-cover transition-all"
+                    style={{
+                      boxShadow: getStyleFor('cta-avatar').boxShadow || '0 20px 25px -5px rgba(0, 0, 0, 0.5)',
+                      borderColor: getStyleFor('cta-avatar').borderColor || 'rgba(255, 255, 255, 0.2)',
+                      borderWidth: getStyleFor('cta-avatar').borderWidth || '2px',
+                      borderStyle: (getStyleFor('cta-avatar').borderStyle as any) || 'solid',
+                    }}
+                  />
+                ) : (
+                  <div
+                    className="w-16 h-16 rounded-3xl flex items-center justify-center text-2xl font-black text-white transition-all"
+                    style={{
+                      backgroundColor: getStyleFor('cta-avatar').backgroundColor || primaryColor,
+                      boxShadow: getStyleFor('cta-avatar').boxShadow || '0 25px 50px -12px rgba(0, 0, 0, 0.6)',
+                      borderColor: getStyleFor('cta-avatar').borderColor || 'rgba(255, 255, 255, 0.2)',
+                      borderWidth: getStyleFor('cta-avatar').borderWidth || '2px',
+                      borderStyle: (getStyleFor('cta-avatar').borderStyle as any) || 'solid',
+                    }}
+                  >
+                    {brand.name ? brand.name.charAt(0).toUpperCase() : '★'}
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="space-y-1.5">
-              {slide.badge && (
+              {!isHidden('badge') && slide.badge && (
                 <div
                   data-drag-key="badge"
                   className={`group relative inline-block cursor-pointer transition rounded-lg ${
@@ -1863,100 +1997,108 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                 </div>
               )}
 
-              <div
-                data-drag-key="cta-headline"
-                className={`group relative cursor-pointer transition rounded-xl p-1 ${
-                  activeElementKey === 'cta-headline' || activeElementKey === 'title'
-                    ? 'ring-2 ring-rose-500 bg-slate-900/70'
-                    : 'hover:bg-slate-900/40'
-                }`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSelectElement('cta-headline');
-                }}
-                style={getStyleFor('cta-headline')}
-              >
-                {renderActiveControls('cta-headline')}
-                <h2
-                  contentEditable
-                  suppressContentEditableWarning
-                  onBlur={(e) => onUpdateCtaFinal?.({ headline: e.currentTarget.innerText })}
-                  className="outline-none"
-                >
-                  {slide.ctaFinal?.headline || slide.title || loc.ctaFinal.headline}
-                </h2>
-              </div>
-            </div>
-
-            <div
-              data-drag-key="cta-subheadline-card"
-              className={`rounded-2xl p-3.5 space-y-2 transition ${
-                isCardBoxTransparent('cta-subheadline-card')
-                  ? 'bg-transparent border border-slate-700/40 shadow-none'
-                  : 'bg-slate-900/90 border border-slate-800'
-              }`}
-              style={getStyleFor('cta-subheadline-card')}
-              onClick={(e) => {
-                if (e.target === e.currentTarget) {
-                  e.stopPropagation();
-                  onSelectElement('cta-subheadline-card');
-                }
-              }}
-            >
-              {renderActiveControls('cta-subheadline-card', 'Mover Recuadro')}
-              <div
-                data-drag-key="cta-subheadline"
-                className={`group relative cursor-pointer transition rounded-xl p-1 ${
-                  activeElementKey === 'cta-subheadline' || activeElementKey === 'body'
-                    ? 'ring-2 ring-rose-500 bg-slate-900/70'
-                    : 'hover:bg-slate-900/30'
-                }`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSelectElement('cta-subheadline');
-                }}
-                style={getStyleFor('cta-subheadline')}
-              >
-                {renderActiveControls('cta-subheadline')}
-                <p
-                  contentEditable
-                  suppressContentEditableWarning
-                  onBlur={(e) => onUpdateCtaFinal?.({ subheadline: e.currentTarget.innerText })}
-                  className="outline-none"
-                >
-                  {slide.ctaFinal?.subheadline || slide.body || loc.ctaFinal.subheadline}
-                </p>
-              </div>
-
-              {/* Action Trigger Button Simulation */}
-              <div
-                data-drag-key="cta-pill"
-                className={`group relative cursor-pointer transition rounded-xl ${
-                  activeElementKey === 'cta-pill' ? 'ring-2 ring-rose-500' : ''
-                }`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSelectElement('cta-pill');
-                }}
-                style={getStyleFor('cta-pill')}
-              >
-                {renderActiveControls('cta-pill')}
+              {!isHidden('cta-headline') && (
                 <div
-                  className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl shadow-lg"
-                  style={getCtaPillStyle()}
+                  data-drag-key="cta-headline"
+                  className={`group relative cursor-pointer transition rounded-xl p-1 ${
+                    activeElementKey === 'cta-headline' || activeElementKey === 'title'
+                      ? 'ring-2 ring-rose-500 bg-slate-900/70'
+                      : 'hover:bg-slate-900/40'
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectElement('cta-headline');
+                  }}
+                  style={getStyleFor('cta-headline')}
                 >
-                  <MessageCircle className="w-4 h-4 shrink-0" />
-                  <span
+                  {renderActiveControls('cta-headline')}
+                  <h2
                     contentEditable
                     suppressContentEditableWarning
-                    onBlur={(e) => onUpdateCtaFinal?.({ actionPill: e.currentTarget.innerText })}
+                    onBlur={(e) => onUpdateCtaFinal?.({ headline: e.currentTarget.innerText })}
                     className="outline-none"
                   >
-                    {slide.ctaFinal?.actionPill || loc.ctaFinal.actionPill}
-                  </span>
+                    {slide.ctaFinal?.headline || slide.title || loc.ctaFinal.headline}
+                  </h2>
                 </div>
-              </div>
+              )}
             </div>
+
+            {!isHidden('cta-subheadline-card') && (
+              <div
+                data-drag-key="cta-subheadline-card"
+                className={`rounded-2xl p-3.5 space-y-2 transition ${
+                  isCardBoxTransparent('cta-subheadline-card')
+                    ? 'bg-transparent border border-slate-700/40 shadow-none'
+                    : 'bg-slate-900/90 border border-slate-800'
+                }`}
+                style={getStyleFor('cta-subheadline-card')}
+                onClick={(e) => {
+                  if (e.target === e.currentTarget) {
+                    e.stopPropagation();
+                    onSelectElement('cta-subheadline-card');
+                  }
+                }}
+              >
+                {renderActiveControls('cta-subheadline-card', 'Mover Recuadro')}
+                {!isHidden('cta-subheadline') && (
+                  <div
+                    data-drag-key="cta-subheadline"
+                    className={`group relative cursor-pointer transition rounded-xl p-1 ${
+                      activeElementKey === 'cta-subheadline' || activeElementKey === 'body'
+                        ? 'ring-2 ring-rose-500 bg-slate-900/70'
+                        : 'hover:bg-slate-900/30'
+                    }`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectElement('cta-subheadline');
+                    }}
+                    style={getStyleFor('cta-subheadline')}
+                  >
+                    {renderActiveControls('cta-subheadline')}
+                    <p
+                      contentEditable
+                      suppressContentEditableWarning
+                      onBlur={(e) => onUpdateCtaFinal?.({ subheadline: e.currentTarget.innerText })}
+                      className="outline-none"
+                    >
+                      {slide.ctaFinal?.subheadline || slide.body || loc.ctaFinal.subheadline}
+                    </p>
+                  </div>
+                )}
+
+                {/* Action Trigger Button Simulation */}
+                {!isHidden('cta-pill') && (
+                  <div
+                    data-drag-key="cta-pill"
+                    className={`group relative cursor-pointer transition rounded-xl ${
+                      activeElementKey === 'cta-pill' ? 'ring-2 ring-rose-500' : ''
+                    }`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectElement('cta-pill');
+                    }}
+                    style={getStyleFor('cta-pill')}
+                  >
+                    {renderActiveControls('cta-pill')}
+                    <div
+                      className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl shadow-lg"
+                      style={getCtaPillStyle()}
+                    >
+                      <MessageCircle className="w-4 h-4 shrink-0" />
+                      <span
+                        contentEditable
+                        suppressContentEditableWarning
+                        onBlur={(e) => onUpdateCtaFinal?.({ actionPill: e.currentTarget.innerText })}
+                        className="outline-none"
+                      >
+                        {slide.ctaFinal?.actionPill || loc.ctaFinal.actionPill}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -2189,49 +2331,53 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
 
         {/* Bottom Elements (CTA & Web sin barra divisoria, libres para trasladarse) */}
         <div className="w-full flex items-center justify-between gap-3 pointer-events-none text-xs mt-1">
-          <div
-            data-drag-key="cta"
-            className={`group relative pointer-events-auto cursor-pointer transition rounded-lg px-2 py-0.5 ${
-              activeElementKey === 'cta' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/40'
-            }`}
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelectElement('cta');
-            }}
-            style={getStyleFor('cta')}
-          >
-            {renderActiveControls('cta')}
-            <span
-              contentEditable
-              suppressContentEditableWarning
-              onBlur={(e) => onUpdateField('cta', e.currentTarget.innerText)}
-              className="outline-none flex items-center gap-1.5"
+          {!isHidden('cta') && (
+            <div
+              data-drag-key="cta"
+              className={`group relative pointer-events-auto cursor-pointer transition rounded-lg px-2 py-0.5 ${
+                activeElementKey === 'cta' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/40'
+              }`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectElement('cta');
+              }}
+              style={getStyleFor('cta')}
             >
-              {slide.cta || loc.standard.cta}
-            </span>
-          </div>
+              {renderActiveControls('cta')}
+              <span
+                contentEditable
+                suppressContentEditableWarning
+                onBlur={(e) => onUpdateField('cta', e.currentTarget.innerText)}
+                className="outline-none flex items-center gap-1.5"
+              >
+                {slide.cta || loc.standard.cta}
+              </span>
+            </div>
+          )}
 
-          <div
-            data-drag-key="brandWeb"
-            className={`group relative pointer-events-auto cursor-pointer transition rounded-lg px-2 py-0.5 ${
-              activeElementKey === 'brandWeb' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/40'
-            }`}
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelectElement('brandWeb');
-            }}
-            style={getStyleFor('brandWeb')}
-          >
-            {renderActiveControls('brandWeb')}
-            <span
-              contentEditable
-              suppressContentEditableWarning
-              onBlur={(e) => onUpdateBrand('web', e.currentTarget.innerText)}
-              className="outline-none hover:underline"
+          {!isHidden('brandWeb') && (
+            <div
+              data-drag-key="brandWeb"
+              className={`group relative pointer-events-auto cursor-pointer transition rounded-lg px-2 py-0.5 ${
+                activeElementKey === 'brandWeb' ? 'ring-2 ring-rose-500 bg-slate-900/70' : 'hover:bg-slate-900/40'
+              }`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectElement('brandWeb');
+              }}
+              style={getStyleFor('brandWeb')}
             >
-              {brand.web || (brand.handle ? `@${brand.handle.replace(/^@/, '')}` : 'lavisualmk.com')}
-            </span>
-          </div>
+              {renderActiveControls('brandWeb')}
+              <span
+                contentEditable
+                suppressContentEditableWarning
+                onBlur={(e) => onUpdateBrand('web', e.currentTarget.innerText)}
+                className="outline-none hover:underline"
+              >
+                {brand.web || (brand.handle ? `@${brand.handle.replace(/^@/, '')}` : 'lavisualmk.com')}
+              </span>
+            </div>
+          )}
         </div>
 
       </div>

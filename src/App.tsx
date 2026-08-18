@@ -30,6 +30,8 @@ import {
   initClientLanguagesFromDB,
 } from './services/clientLanguageStorage';
 import { apiTranslateCarousel } from './services/api';
+import { saveProjectDB } from './services/storageDb';
+import { getActiveDirectoryHandle, saveProjectToDiskFolder } from './services/localFolderSync';
 import { Header } from './components/Header';
 import { CanvasSlide } from './components/CanvasSlide';
 import { SlideNavigation } from './components/SlideNavigation';
@@ -156,6 +158,23 @@ export default function App() {
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isSlideRewriteOpen, setIsSlideRewriteOpen] = useState(false);
   const [isMediaPopupOpen, setIsMediaPopupOpen] = useState(false);
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>(() => {
+    if (isExistingSession) {
+      try {
+        return localStorage.getItem('lavisualmk_current_project_id') || null;
+      } catch {}
+    }
+    return null;
+  });
+  const [currentProjectTitle, setCurrentProjectTitle] = useState<string | null>(() => {
+    if (isExistingSession) {
+      try {
+        return localStorage.getItem('lavisualmk_current_project_title') || null;
+      } catch {}
+    }
+    return null;
+  });
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'saved' | 'saving' | 'idle'>('idle');
 
   // Mark session as active in sessionStorage so F5 / reloads keep current work
   useEffect(() => {
@@ -226,6 +245,8 @@ export default function App() {
     if (proj.targetAudience) setTargetAudience(proj.targetAudience);
     if (proj.postMeta) setPostMeta(proj.postMeta);
     if (proj.aspectRatio) setAspectRatio(proj.aspectRatio);
+    setCurrentProjectId(proj.id);
+    setCurrentProjectTitle(proj.title);
     setEscenasPorDiapositiva({});
     setCurrentIndex(0);
   };
@@ -233,6 +254,8 @@ export default function App() {
   const handleCreateNewBlankProject = () => {
     setSlides(INITIAL_DEFAULT_SLIDES);
     setBrief('');
+    setCurrentProjectId(null);
+    setCurrentProjectTitle(null);
     setEscenasPorDiapositiva({});
     setCurrentIndex(0);
   };
@@ -245,6 +268,16 @@ export default function App() {
       localStorage.setItem(LOCAL_STORAGE_DOCS_KEY, JSON.stringify(documents));
       localStorage.setItem(LOCAL_STORAGE_POST_KEY, JSON.stringify(postMeta));
       localStorage.setItem('lavisualmk_carousel_brief_v3', brief || '');
+      if (currentProjectId) {
+        localStorage.setItem('lavisualmk_current_project_id', currentProjectId);
+      } else {
+        localStorage.removeItem('lavisualmk_current_project_id');
+      }
+      if (currentProjectTitle) {
+        localStorage.setItem('lavisualmk_current_project_title', currentProjectTitle);
+      } else {
+        localStorage.removeItem('lavisualmk_current_project_title');
+      }
       if (selectedClient) {
         localStorage.setItem(LOCAL_STORAGE_CLIENT_KEY, JSON.stringify(selectedClient));
       }
@@ -253,7 +286,58 @@ export default function App() {
 
   useEffect(() => {
     persistCurrentWorkspaceState();
-  }, [slides, brand, documents, postMeta, selectedClient, brief]);
+  }, [slides, brand, documents, postMeta, selectedClient, brief, currentProjectId, currentProjectTitle]);
+
+  // Debounced Auto-save to IndexedDB & Physical Disk Folder when editing an existing project
+  useEffect(() => {
+    if (!currentProjectId) {
+      setAutoSaveStatus('idle');
+      return;
+    }
+
+    setAutoSaveStatus('saving');
+    const timer = setTimeout(async () => {
+      try {
+        const projToSave: SavedCarouselProject = {
+          id: currentProjectId,
+          title: currentProjectTitle || `Carrusel ${brand.name || 'Proyecto'}`,
+          clientName: brand.name || 'General',
+          clientId: brand.clientId,
+          createdAt: new Date().toLocaleDateString('es-ES', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          }),
+          updatedAt: new Date().toISOString(),
+          slides,
+          brand,
+          brief,
+          targetAudience,
+          postMeta,
+          aspectRatio,
+        };
+
+        await saveProjectDB(projToSave);
+
+        const dirHandle = getActiveDirectoryHandle();
+        if (dirHandle) {
+          saveProjectToDiskFolder(dirHandle, projToSave).catch(console.warn);
+        }
+
+        setAutoSaveStatus('saved');
+        setTimeout(() => {
+          setAutoSaveStatus((prev) => (prev === 'saved' ? 'idle' : prev));
+        }, 3000);
+      } catch (e) {
+        console.warn('Auto-save error', e);
+        setAutoSaveStatus('idle');
+      }
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [slides, brand, brief, targetAudience, postMeta, aspectRatio, currentProjectId, currentProjectTitle]);
 
   // Listeners for window blur, tab visibility change, and before page unload/refresh
   useEffect(() => {
@@ -273,7 +357,7 @@ export default function App() {
       window.removeEventListener('blur', handleSaveTrigger);
       window.removeEventListener('beforeunload', handleSaveTrigger);
     };
-  }, [slides, brand, documents, postMeta, selectedClient, brief]);
+  }, [slides, brand, documents, postMeta, selectedClient, brief, currentProjectId, currentProjectTitle]);
 
   // Active slide safety check
   const currentSlide = slides[currentIndex] || slides[0] || INITIAL_DEFAULT_SLIDES[0];
@@ -528,50 +612,156 @@ export default function App() {
 
   const handleDeleteActiveElement = (key: string) => {
     if (!key) return;
-    if (key === 'brandLogo') {
-      handleUpdateTextPos('brandLogo', null);
-      handleResetTextStyle('brandLogo');
+
+    // 1. Custom Text / Box / Image Layers
+    if (key.startsWith('custom-')) {
+      handleDeleteCustomText(key);
+      handleUpdateTextPos(key, null);
+      handleResetTextStyle(key);
       setActiveElementKey(null);
-    } else if (key === 'badge' || key === 'subtag' || key === 'title' || key === 'body' || key === 'cta') {
-      handleUpdateSlideField(key as keyof Slide, '');
-      setActiveElementKey(null);
-    } else if (key === 'brandHandle') {
-      handleUpdateBrand('handle', '');
-      setActiveElementKey(null);
-    } else if (key.startsWith('bullet-')) {
+      return;
+    }
+
+    // 2. Individual Bullets
+    if (key.startsWith('bullet-')) {
       const idx = parseInt(key.replace('bullet-', ''), 10);
       handleDeleteBullet(idx);
+      handleUpdateTextPos(key, null);
+      handleResetTextStyle(key);
       setActiveElementKey(null);
-    } else if (key.startsWith('custom-')) {
-      handleDeleteCustomText(key);
-      setActiveElementKey(null);
-    } else if (key.startsWith('comp-')) {
-      if (key === 'comp-left-card' || key === 'comp-right-card' || key === 'comp-grid') {
-        handleResetTextStyle(key);
-      } else {
-        const field = key.replace('comp-', '') as keyof ComparisonData;
-        handleUpdateComparison({ [field]: '' });
-      }
-      setActiveElementKey(null);
-    } else if (key.startsWith('quote-')) {
-      if (key === 'quote-text') handleUpdateQuote({ quoteText: '' });
-      if (key === 'quote-author') handleUpdateQuote({ authorName: '' });
-      if (key === 'quote-role') handleUpdateQuote({ authorRole: '' });
-      if (key === 'quote-icon' || key === 'quote-container') handleResetTextStyle(key);
-      setActiveElementKey(null);
-    } else if (key.startsWith('stat-')) {
-      if (key === 'stat-number') handleUpdateStat({ statNumber: '' });
-      if (key === 'stat-label') handleUpdateStat({ statLabel: '' });
-      if (key === 'stat-subtext') handleUpdateStat({ statSubtext: '' });
-      if (key === 'stat-subtext-box' || key === 'stat-container') handleResetTextStyle(key);
-      setActiveElementKey(null);
-    } else if (key.startsWith('cta-')) {
-      if (key === 'cta-headline') handleUpdateCtaFinal({ headline: '' });
-      if (key === 'cta-subheadline') handleUpdateCtaFinal({ subheadline: '' });
-      if (key === 'cta-pill') handleUpdateCtaFinal({ actionPill: '' });
-      if (key === 'cta-avatar' || key === 'cta-container' || key === 'cta-subheadline-card') handleResetTextStyle(key);
-      setActiveElementKey(null);
+      return;
     }
+
+    // 3. Bullets Container
+    if (key === 'bullets-container' || key === 'bullets') {
+      setSlides((prev) => {
+        const copy = [...prev];
+        if (!copy[currentIndex]) return prev;
+        const hidden = Array.from(new Set([...(copy[currentIndex].hiddenElements || []), 'bullets-container', 'bullets']));
+        copy[currentIndex] = { ...copy[currentIndex], bullets: [], hiddenElements: hidden };
+        return copy;
+      });
+      handleUpdateTextPos('bullets-container', null);
+      handleResetTextStyle('bullets-container');
+      setActiveElementKey(null);
+      return;
+    }
+
+    // 4. Brand Elements (Logo, Name, Handle, Web)
+    if (key === 'brandLogo' || key === 'brandName' || key === 'brandHandle' || key === 'brandWeb') {
+      setBrand((prev) => ({
+        ...prev,
+        hiddenElements: Array.from(new Set([...(prev.hiddenElements || []), key])),
+      }));
+      setSlides((prev) => {
+        const copy = [...prev];
+        if (!copy[currentIndex]) return prev;
+        const hidden = Array.from(new Set([...(copy[currentIndex].hiddenElements || []), key]));
+        copy[currentIndex] = { ...copy[currentIndex], hiddenElements: hidden };
+        return copy;
+      });
+      handleUpdateTextPos(key, null);
+      handleResetTextStyle(key);
+      setActiveElementKey(null);
+      return;
+    }
+
+    // 5. Comparison Layout Elements
+    if (key.startsWith('comp-')) {
+      setSlides((prev) => {
+        const copy = [...prev];
+        if (!copy[currentIndex]) return prev;
+        const hidden = Array.from(new Set([...(copy[currentIndex].hiddenElements || []), key]));
+        const comp = { ...(copy[currentIndex].comparison || {}) };
+        if (key === 'comp-leftTag') comp.leftTag = '';
+        if (key === 'comp-leftTitle') comp.leftTitle = '';
+        if (key === 'comp-leftText') comp.leftText = '';
+        if (key === 'comp-rightTag') comp.rightTag = '';
+        if (key === 'comp-rightTitle') comp.rightTitle = '';
+        if (key === 'comp-rightText') comp.rightText = '';
+        copy[currentIndex] = { ...copy[currentIndex], hiddenElements: hidden, comparison: comp };
+        return copy;
+      });
+      handleUpdateTextPos(key, null);
+      handleResetTextStyle(key);
+      setActiveElementKey(null);
+      return;
+    }
+
+    // 6. Quote Layout Elements
+    if (key.startsWith('quote-')) {
+      setSlides((prev) => {
+        const copy = [...prev];
+        if (!copy[currentIndex]) return prev;
+        const hidden = Array.from(new Set([...(copy[currentIndex].hiddenElements || []), key]));
+        const quote = { ...(copy[currentIndex].quote || {}) };
+        if (key === 'quote-text') quote.quoteText = '';
+        if (key === 'quote-author') quote.authorName = '';
+        if (key === 'quote-role') quote.authorRole = '';
+        copy[currentIndex] = { ...copy[currentIndex], hiddenElements: hidden, quote };
+        return copy;
+      });
+      handleUpdateTextPos(key, null);
+      handleResetTextStyle(key);
+      setActiveElementKey(null);
+      return;
+    }
+
+    // 7. Stat Layout Elements
+    if (key.startsWith('stat-')) {
+      setSlides((prev) => {
+        const copy = [...prev];
+        if (!copy[currentIndex]) return prev;
+        const hidden = Array.from(new Set([...(copy[currentIndex].hiddenElements || []), key]));
+        const stat = { ...(copy[currentIndex].stat || {}) };
+        if (key === 'stat-number') stat.statNumber = '';
+        if (key === 'stat-label') stat.statLabel = '';
+        if (key === 'stat-subtext') stat.statSubtext = '';
+        copy[currentIndex] = { ...copy[currentIndex], hiddenElements: hidden, stat };
+        return copy;
+      });
+      handleUpdateTextPos(key, null);
+      handleResetTextStyle(key);
+      setActiveElementKey(null);
+      return;
+    }
+
+    // 8. CTA Final Elements (Avatar, Headline, Subheadline, Card, Pill/Button)
+    if (key.startsWith('cta-')) {
+      setSlides((prev) => {
+        const copy = [...prev];
+        if (!copy[currentIndex]) return prev;
+        const hidden = Array.from(new Set([...(copy[currentIndex].hiddenElements || []), key]));
+        const ctaFinal = { ...(copy[currentIndex].ctaFinal || {}) };
+        if (key === 'cta-headline') ctaFinal.headline = '';
+        if (key === 'cta-subheadline') ctaFinal.subheadline = '';
+        if (key === 'cta-pill') ctaFinal.actionPill = '';
+        copy[currentIndex] = { ...copy[currentIndex], hiddenElements: hidden, ctaFinal };
+        return copy;
+      });
+      handleUpdateTextPos(key, null);
+      handleResetTextStyle(key);
+      setActiveElementKey(null);
+      return;
+    }
+
+    // 9. Standard Slide Text Elements (badge, subtag, title, body, cta) and any other element
+    setSlides((prev) => {
+      const copy = [...prev];
+      if (!copy[currentIndex]) return prev;
+      const hidden = Array.from(new Set([...(copy[currentIndex].hiddenElements || []), key]));
+      const updatedSlide: Slide = { ...copy[currentIndex], hiddenElements: hidden };
+      if (key === 'badge') updatedSlide.badge = '';
+      if (key === 'subtag') updatedSlide.subtag = '';
+      if (key === 'title') updatedSlide.title = '';
+      if (key === 'body') updatedSlide.body = '';
+      if (key === 'cta') updatedSlide.cta = '';
+      copy[currentIndex] = updatedSlide;
+      return copy;
+    });
+    handleUpdateTextPos(key, null);
+    handleResetTextStyle(key);
+    setActiveElementKey(null);
   };
 
   const handleAddCustomText = (
@@ -760,15 +950,28 @@ export default function App() {
     });
   };
 
-  const handleUpdateTextPos = (key: string, pos: { left: number; top: number } | null) => {
+  const handleUpdateTextPos = (
+    key: string | Record<string, { left: number; top: number } | null>,
+    pos?: { left: number; top: number } | null
+  ) => {
     setSlides((prev) => {
       const copy = [...prev];
       if (!copy[currentIndex]) return prev;
       const currentPos = { ...(copy[currentIndex].textPos || {}) };
-      if (pos === null) {
-        delete currentPos[key];
-      } else {
-        currentPos[key] = pos;
+      if (typeof key === 'object' && key !== null) {
+        Object.entries(key).forEach(([k, p]) => {
+          if (p === null) {
+            delete currentPos[k];
+          } else {
+            currentPos[k] = p;
+          }
+        });
+      } else if (typeof key === 'string') {
+        if (pos === null || pos === undefined) {
+          delete currentPos[key];
+        } else {
+          currentPos[key] = pos;
+        }
       }
       copy[currentIndex] = {
         ...copy[currentIndex],
@@ -947,6 +1150,9 @@ export default function App() {
         onChangeLanguage={setLanguage}
         onTranslateCarousel={handleTranslateCarousel}
         isTranslating={isTranslating}
+        currentProjectTitle={currentProjectTitle}
+        autoSaveStatus={autoSaveStatus}
+        onOpenProjects={() => setIsProjectsOpen(true)}
         onOpenClientSelector={() => setIsClientSelectorOpen(true)}
         onResetCarousel={handleResetCarousel}
       />
@@ -1227,8 +1433,14 @@ export default function App() {
         currentTargetAudience={targetAudience}
         currentPostMeta={postMeta}
         currentAspectRatio={aspectRatio}
+        currentProjectId={currentProjectId}
+        currentProjectTitle={currentProjectTitle}
         onLoadProject={handleLoadSavedProject}
         onNewProject={handleCreateNewBlankProject}
+        onProjectSaved={(p) => {
+          setCurrentProjectId(p.id);
+          setCurrentProjectTitle(p.title);
+        }}
         onUpdateBrand={handleUpdateBrand}
       />
 

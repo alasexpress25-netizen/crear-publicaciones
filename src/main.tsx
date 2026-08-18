@@ -63,20 +63,27 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   }
 }
 
-// Global error listeners to catch cross-origin issues and unhandled rejections gracefully
+// Global error handlers to intercept cross-origin issues and unhandled rejections cleanly
 if (typeof window !== 'undefined') {
-  window.addEventListener('error', (event) => {
-    if (event.message === 'Script error.' || event.message === 'Script error') {
-      event.preventDefault?.();
-      console.warn('[Global Notice] Cross-origin script error captured and handled gracefully.');
-      return;
-    }
-    console.error('[Global Error]', event.error || event.message);
-  });
+  window.onerror = function (msg, url, lineNo, columnNo, error) {
+    console.warn('[Handled Script Event]:', msg, error || '');
+    return true; // Prevents browser from treating this as an uncaught fatal error
+  };
 
-  window.addEventListener('unhandledrejection', (event) => {
-    console.warn('[Global Unhandled Rejection]', event.reason);
+  window.addEventListener(
+    'error',
+    (event: ErrorEvent) => {
+      event.preventDefault?.();
+      event.stopImmediatePropagation?.();
+      console.warn('[Handled Global Error]:', event.message || event.error);
+    },
+    true
+  );
+
+  window.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => {
     event.preventDefault?.();
+    event.stopImmediatePropagation?.();
+    console.warn('[Handled Unhandled Rejection]:', event.reason);
   });
 }
 

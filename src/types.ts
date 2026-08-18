@@ -120,6 +120,7 @@ export interface Slide {
   backgroundColor?: string; // Color sólido de fondo de la diapositiva (Capa 0)
   cardBackground?: 'translucent' | 'transparent' | 'solid';
   hideCardBoxes?: boolean;
+  hiddenElements?: string[]; // Array of element keys that the user explicitly deleted/hidden
   accentColor?: string;
   imageSuggestion?: string;
   mediaSearchKeywords?: string[]; // Media Director Keywords (English/Spanish) for auto stock photo matching
@@ -140,6 +141,7 @@ export interface BrandInfo {
   handle?: string;
   fontFamily?: string;
   clientId?: string;
+  hiddenElements?: string[]; // Array of brand element keys (brandLogo, brandName, etc.) that the user explicitly deleted/hidden
   textStyle?: Record<string, TextStyleItem>;
   technicalTerms?: string[];
 }

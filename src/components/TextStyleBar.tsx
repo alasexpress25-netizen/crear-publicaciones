@@ -32,6 +32,7 @@ import {
   PaintBucket,
   Image as ImageIcon,
   Upload,
+  Trash2,
 } from 'lucide-react';
 import { Slide, BrandInfo, TextStyleItem, SlideLayoutTemplate } from '../types';
 
@@ -53,7 +54,7 @@ interface TextStyleBarProps {
   onUpdateSlideOverlayType?: (type: 'gradient' | 'solid' | 'card' | 'cinematic') => void;
   onUpdateSlideAccentColor?: (color: string) => void;
   onUpdateSlideBackgroundColor?: (color: string) => void;
-  onUpdateTextPos?: (key: string, pos: { left: number; top: number } | null) => void;
+  onUpdateTextPos?: (key: string | Record<string, { left: number; top: number } | null>, pos?: { left: number; top: number } | null) => void;
   onUpdateSlideContentAlign?: (align: 'top' | 'center' | 'bottom') => void;
   onUpdateSlideLayout?: (layout: SlideLayoutTemplate) => void;
   onOpenAiRewriteSlide?: () => void;
@@ -123,6 +124,8 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
   onTranslateCarousel,
   isTranslating = false,
   onUpdateStyle,
+  onResetStyle,
+  onDeleteActiveElement,
   onAddCustomText,
   onAddCustomImage,
   onSelectElement,
@@ -260,7 +263,8 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
       });
     }
 
-    return list;
+    const hiddenSet = new Set([...(slide.hiddenElements || []), ...(brand.hiddenElements || [])]);
+    return list.filter((item) => !hiddenSet.has(item.key));
   };
 
   return (
@@ -514,6 +518,19 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
                 <option value="40">40%</option>
               </select>
             </div>
+          )}
+
+          {/* Botón Eliminar Elemento Activo en Fila 1 */}
+          {activeKey && (
+            <button
+              type="button"
+              onClick={() => onDeleteActiveElement?.(activeKey)}
+              className="flex items-center gap-1 bg-rose-950/90 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-800/80 px-2.5 py-1 rounded-xl text-xs font-bold transition shrink-0 shadow-sm"
+              title="Eliminar este objeto del lienzo"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+              <span>Eliminar</span>
+            </button>
           )}
 
           {/* Solapa Fondo / Capa 0: Color de fondo sólido de la diapositiva */}
@@ -1204,304 +1221,226 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
         {/* ========================================================================= */}
         {/* PANEL EXPANDIBLE DE MOVER (POSICIÓN, STEPPERS Y ALINEACIONES RÁPIDAS) */}
         {/* ========================================================================= */}
-        {openSubmenu === 'move' && (
-          <div className="bg-slate-950/95 border border-rose-500/40 rounded-xl p-3 shadow-2xl space-y-3">
-            <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
-              <div className="flex items-center gap-2">
-                <Move className="w-4 h-4 text-rose-400" />
-                <span className="text-xs font-bold text-white">Mover y Posicionar Elemento</span>
-                {slide.textPos?.[activeKey] && (
-                  <span className="text-[10px] font-mono text-rose-300 bg-rose-950 px-2 py-0.5 rounded-full border border-rose-500/40">
-                    X: {Math.round(slide.textPos[activeKey].left)}% | Y: {Math.round(slide.textPos[activeKey].top)}%
+        {openSubmenu === 'move' && (() => {
+          const getEffectiveTargetKey = (key: string): string => {
+            if (key.startsWith('bullet-')) {
+              return slide.layoutTemplate === 'checklist' ? 'checklist-container' : 'bullets-container';
+            }
+            if (key === 'stat-subtext') return 'stat-subtext-box';
+            if (key === 'cta-subheadline') return 'cta-subheadline-card';
+            if (key === 'comp-leftTag' || key === 'comp-leftTitle' || key === 'comp-leftText') return 'comp-grid';
+            if (key === 'comp-rightTag' || key === 'comp-rightTitle' || key === 'comp-rightText') return 'comp-grid';
+            if (key === 'quote-text' || key === 'quote-author' || key === 'quote-role' || key === 'quote-icon') return 'quote-container';
+            return key;
+          };
+
+          const targetKey = getEffectiveTargetKey(activeKey);
+          const hasPos = Boolean(slide.textPos && (slide.textPos[targetKey] || slide.textPos[activeKey]));
+
+          const getElementPos = (): { left: number; top: number } => {
+            let currentPos = slide.textPos?.[targetKey] || slide.textPos?.[activeKey];
+            if (!currentPos && typeof document !== 'undefined') {
+              const el = (document.querySelector(`[data-drag-key="${targetKey}"]`) || document.querySelector(`[data-drag-key="${activeKey}"]`)) as HTMLElement;
+              const cont = document.getElementById('active-canvas-slide-container');
+              if (el && cont) {
+                const rEl = el.getBoundingClientRect();
+                const rCont = cont.getBoundingClientRect();
+                currentPos = {
+                  left: Math.round((((rEl.left - rCont.left) / rCont.width) * 100) * 10) / 10,
+                  top: Math.round((((rEl.top - rCont.top) / rCont.height) * 100) * 10) / 10,
+                };
+              }
+            }
+            return currentPos || { left: 5, top: 40 };
+          };
+
+          const getElementDimensions = (): { widthPct: number; heightPct: number } => {
+            let widthPct = 85;
+            let heightPct = 15;
+            if (typeof document !== 'undefined') {
+              const el = (document.querySelector(`[data-drag-key="${targetKey}"]`) || document.querySelector(`[data-drag-key="${activeKey}"]`)) as HTMLElement;
+              const cont = document.getElementById('active-canvas-slide-container');
+              if (el && cont) {
+                const rEl = el.getBoundingClientRect();
+                const rCont = cont.getBoundingClientRect();
+                widthPct = Math.round(((rEl.width / rCont.width) * 100) * 10) / 10;
+                heightPct = Math.round(((rEl.height / rCont.height) * 100) * 10) / 10;
+              }
+            }
+            return { widthPct, heightPct };
+          };
+
+          return (
+            <div className="bg-slate-950/95 border border-rose-500/40 rounded-xl p-3 shadow-2xl space-y-3">
+              <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                <div className="flex items-center gap-2">
+                  <Move className="w-4 h-4 text-rose-400" />
+                  <span className="text-xs font-bold text-white">
+                    {targetKey.startsWith('bullets-container') || targetKey.startsWith('checklist-container')
+                      ? 'Posición Libre (Lista Completa de Puntos Clave)'
+                      : targetKey.includes('card') || targetKey.includes('box') || targetKey.includes('grid')
+                      ? 'Posición Libre del Recuadro / Tarjeta'
+                      : 'Posición Libre en el Lienzo'}
                   </span>
-                )}
-              </div>
-              <div className="flex items-center gap-1.5">
-                {slide.textPos?.[activeKey] && (
+                  <span className="text-[10px] text-slate-400 bg-slate-900 px-2 py-0.5 rounded-full border border-slate-800">
+                    {slide.textPos?.[targetKey]
+                      ? `X: ${slide.textPos[targetKey]!.left}% | Y: ${slide.textPos[targetKey]!.top}%`
+                      : 'Posición automática'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {hasPos && (
+                    <button
+                      onClick={() => onUpdateTextPos?.({ [targetKey]: null, [activeKey]: null } as any)}
+                      className="text-[10px] bg-slate-900 hover:bg-rose-900 text-slate-300 hover:text-rose-200 px-2 py-1 rounded-lg font-bold border border-slate-800 transition"
+                      title="Restablecer posición original"
+                    >
+                      Resetear Posición
+                    </button>
+                  )}
                   <button
-                    onClick={() => onUpdateTextPos?.(activeKey, null)}
-                    className="text-[10px] bg-slate-900 hover:bg-rose-900 text-slate-300 hover:text-rose-200 px-2 py-1 rounded-lg font-bold border border-slate-800 transition"
-                    title="Restablecer posición original"
+                    onClick={() => setOpenSubmenu(null)}
+                    className="p-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition"
+                    title="Cerrar panel"
                   >
-                    Resetear Posición
-                  </button>
-                )}
-                <button
-                  onClick={() => setOpenSubmenu(null)}
-                  className="p-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition"
-                  title="Cerrar panel"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {/* Steppers con flechas */}
-              <div className="space-y-1.5">
-                <span className="text-[11px] font-semibold text-slate-400">Paso a Paso (Flechas):</span>
-                <div className="flex items-center justify-center gap-1 bg-slate-900 border border-slate-800 rounded-xl p-1.5">
-                  <button
-                    onClick={() => {
-                      let currentPos = slide.textPos?.[activeKey];
-                      if (!currentPos && typeof document !== 'undefined') {
-                        const el = document.querySelector(`[data-drag-key="${activeKey}"]`) as HTMLElement;
-                        const cont = document.getElementById('active-canvas-slide-container');
-                        if (el && cont) {
-                          const rEl = el.getBoundingClientRect();
-                          const rCont = cont.getBoundingClientRect();
-                          currentPos = {
-                            left: Math.round((((rEl.left - rCont.left) / rCont.width) * 100) * 10) / 10,
-                            top: Math.round((((rEl.top - rCont.top) / rCont.height) * 100) * 10) / 10,
-                          };
-                        }
-                      }
-                      const pos = currentPos || { left: 5, top: 40 };
-                      onUpdateTextPos?.(activeKey, { left: Math.max(-50, pos.left - 4), top: pos.top });
-                    }}
-                    className="p-2 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-white transition"
-                    title="Izquierda (←)"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => {
-                      let currentPos = slide.textPos?.[activeKey];
-                      if (!currentPos && typeof document !== 'undefined') {
-                        const el = document.querySelector(`[data-drag-key="${activeKey}"]`) as HTMLElement;
-                        const cont = document.getElementById('active-canvas-slide-container');
-                        if (el && cont) {
-                          const rEl = el.getBoundingClientRect();
-                          const rCont = cont.getBoundingClientRect();
-                          currentPos = {
-                            left: Math.round((((rEl.left - rCont.left) / rCont.width) * 100) * 10) / 10,
-                            top: Math.round((((rEl.top - rCont.top) / rCont.height) * 100) * 10) / 10,
-                          };
-                        }
-                      }
-                      const pos = currentPos || { left: 5, top: 40 };
-                      onUpdateTextPos?.(activeKey, { left: Math.min(150, pos.left + 4), top: pos.top });
-                    }}
-                    className="p-2 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-white transition"
-                    title="Derecha (→)"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => {
-                      let currentPos = slide.textPos?.[activeKey];
-                      if (!currentPos && typeof document !== 'undefined') {
-                        const el = document.querySelector(`[data-drag-key="${activeKey}"]`) as HTMLElement;
-                        const cont = document.getElementById('active-canvas-slide-container');
-                        if (el && cont) {
-                          const rEl = el.getBoundingClientRect();
-                          const rCont = cont.getBoundingClientRect();
-                          currentPos = {
-                            left: Math.round((((rEl.left - rCont.left) / rCont.width) * 100) * 10) / 10,
-                            top: Math.round((((rEl.top - rCont.top) / rCont.height) * 100) * 10) / 10,
-                          };
-                        }
-                      }
-                      const pos = currentPos || { left: 5, top: 40 };
-                      onUpdateTextPos?.(activeKey, { left: pos.left, top: Math.max(-50, pos.top - 4) });
-                    }}
-                    className="p-2 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-white transition"
-                    title="Arriba (↑)"
-                  >
-                    <ChevronUp className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => {
-                      let currentPos = slide.textPos?.[activeKey];
-                      if (!currentPos && typeof document !== 'undefined') {
-                        const el = document.querySelector(`[data-drag-key="${activeKey}"]`) as HTMLElement;
-                        const cont = document.getElementById('active-canvas-slide-container');
-                        if (el && cont) {
-                          const rEl = el.getBoundingClientRect();
-                          const rCont = cont.getBoundingClientRect();
-                          currentPos = {
-                            left: Math.round((((rEl.left - rCont.left) / rCont.width) * 100) * 10) / 10,
-                            top: Math.round((((rEl.top - rCont.top) / rCont.height) * 100) * 10) / 10,
-                          };
-                        }
-                      }
-                      const pos = currentPos || { left: 5, top: 40 };
-                      onUpdateTextPos?.(activeKey, { left: pos.left, top: Math.min(150, pos.top + 4) });
-                    }}
-                    className="p-2 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-white transition"
-                    title="Abajo (↓)"
-                  >
-                    <ChevronDown className="w-4 h-4" />
+                    <X className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
 
-              {/* Horizontal Rápido */}
-              <div className="space-y-1.5">
-                <span className="text-[11px] font-semibold text-slate-400">Horizontal:</span>
-                <div className="grid grid-cols-3 gap-1 bg-slate-900 border border-slate-800 rounded-xl p-1.5">
-                  <button
-                    onClick={() => {
-                      let currentPos = slide.textPos?.[activeKey];
-                      if (!currentPos && typeof document !== 'undefined') {
-                        const el = document.querySelector(`[data-drag-key="${activeKey}"]`) as HTMLElement;
-                        const cont = document.getElementById('active-canvas-slide-container');
-                        if (el && cont) {
-                          const rEl = el.getBoundingClientRect();
-                          const rCont = cont.getBoundingClientRect();
-                          currentPos = {
-                            left: Math.round((((rEl.left - rCont.left) / rCont.width) * 100) * 10) / 10,
-                            top: Math.round((((rEl.top - rCont.top) / rCont.height) * 100) * 10) / 10,
-                          };
-                        }
-                      }
-                      const pos = currentPos || { left: 4, top: 40 };
-                      onUpdateTextPos?.(activeKey, { left: 4, top: pos.top });
-                    }}
-                    className="py-1.5 px-2 bg-slate-950 hover:bg-slate-800 rounded-lg text-xs font-bold text-slate-300 hover:text-white transition text-center"
-                    title="Izquierda (X: 4%)"
-                  >
-                    Izquierda
-                  </button>
-                  <button
-                    onClick={() => {
-                      let currentPos = slide.textPos?.[activeKey];
-                      let elemWidthPct = 85;
-                      if (typeof document !== 'undefined') {
-                        const el = document.querySelector(`[data-drag-key="${activeKey}"]`) as HTMLElement;
-                        const cont = document.getElementById('active-canvas-slide-container');
-                        if (el && cont) {
-                          const rEl = el.getBoundingClientRect();
-                          const rCont = cont.getBoundingClientRect();
-                          elemWidthPct = Math.round(((rEl.width / rCont.width) * 100) * 10) / 10;
-                          currentPos = {
-                            left: Math.round((((rEl.left - rCont.left) / rCont.width) * 100) * 10) / 10,
-                            top: Math.round((((rEl.top - rCont.top) / rCont.height) * 100) * 10) / 10,
-                          };
-                        }
-                      }
-                      const pos = currentPos || { left: 5, top: 40 };
-                      const centerLeft = Math.max(0, Math.round(((100 - elemWidthPct) / 2) * 10) / 10);
-                      onUpdateTextPos?.(activeKey, { left: centerLeft, top: pos.top });
-                    }}
-                    className="py-1.5 px-2 bg-slate-950 hover:bg-slate-800 rounded-lg text-xs font-bold text-slate-300 hover:text-white transition text-center"
-                    title="Centrar horizontalmente"
-                  >
-                    Centro
-                  </button>
-                  <button
-                    onClick={() => {
-                      let currentPos = slide.textPos?.[activeKey];
-                      let elemWidthPct = 85;
-                      if (typeof document !== 'undefined') {
-                        const el = document.querySelector(`[data-drag-key="${activeKey}"]`) as HTMLElement;
-                        const cont = document.getElementById('active-canvas-slide-container');
-                        if (el && cont) {
-                          const rEl = el.getBoundingClientRect();
-                          const rCont = cont.getBoundingClientRect();
-                          elemWidthPct = Math.round(((rEl.width / rCont.width) * 100) * 10) / 10;
-                          currentPos = {
-                            left: Math.round((((rEl.left - rCont.left) / rCont.width) * 100) * 10) / 10,
-                            top: Math.round((((rEl.top - rCont.top) / rCont.height) * 100) * 10) / 10,
-                          };
-                        }
-                      }
-                      const pos = currentPos || { left: 5, top: 40 };
-                      const rightLeft = Math.max(8, Math.round(((96 - elemWidthPct)) * 10) / 10);
-                      onUpdateTextPos?.(activeKey, { left: rightLeft, top: pos.top });
-                    }}
-                    className="py-1.5 px-2 bg-slate-950 hover:bg-slate-800 rounded-lg text-xs font-bold text-slate-300 hover:text-white transition text-center"
-                    title="Derecha"
-                  >
-                    Derecha
-                  </button>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* Steppers con flechas */}
+                <div className="space-y-1.5">
+                  <span className="text-[11px] font-semibold text-slate-400">Paso a Paso (Flechas):</span>
+                  <div className="flex items-center justify-center gap-1 bg-slate-900 border border-slate-800 rounded-xl p-1.5">
+                    <button
+                      onClick={() => {
+                        const pos = getElementPos();
+                        onUpdateTextPos?.(targetKey, { left: Math.max(-50, pos.left - 4), top: pos.top });
+                      }}
+                      className="p-2 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-white transition"
+                      title="Izquierda (←)"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        const pos = getElementPos();
+                        onUpdateTextPos?.(targetKey, { left: Math.min(150, pos.left + 4), top: pos.top });
+                      }}
+                      className="p-2 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-white transition"
+                      title="Derecha (→)"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        const pos = getElementPos();
+                        onUpdateTextPos?.(targetKey, { left: pos.left, top: Math.max(-50, pos.top - 4) });
+                      }}
+                      className="p-2 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-white transition"
+                      title="Arriba (↑)"
+                    >
+                      <ChevronUp className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        const pos = getElementPos();
+                        onUpdateTextPos?.(targetKey, { left: pos.left, top: Math.min(150, pos.top + 4) });
+                      }}
+                      className="p-2 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-white transition"
+                      title="Abajo (↓)"
+                    >
+                      <ChevronDown className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
-              </div>
 
-              {/* Vertical Rápido */}
-              <div className="space-y-1.5">
-                <span className="text-[11px] font-semibold text-slate-400">Vertical (Todo el Lienzo):</span>
-                <div className="grid grid-cols-3 gap-1 bg-slate-900 border border-slate-800 rounded-xl p-1.5">
-                  <button
-                    onClick={() => {
-                      let currentPos = slide.textPos?.[activeKey];
-                      if (!currentPos && typeof document !== 'undefined') {
-                        const el = document.querySelector(`[data-drag-key="${activeKey}"]`) as HTMLElement;
-                        const cont = document.getElementById('active-canvas-slide-container');
-                        if (el && cont) {
-                          const rEl = el.getBoundingClientRect();
-                          const rCont = cont.getBoundingClientRect();
-                          currentPos = {
-                            left: Math.round((((rEl.left - rCont.left) / rCont.width) * 100) * 10) / 10,
-                            top: Math.round((((rEl.top - rCont.top) / rCont.height) * 100) * 10) / 10,
-                          };
-                        }
-                      }
-                      const pos = currentPos || { left: 6, top: 18 };
-                      onUpdateTextPos?.(activeKey, { left: pos.left, top: 3 });
-                    }}
-                    className="py-1.5 px-2 bg-slate-950 hover:bg-slate-800 rounded-lg text-xs font-bold text-slate-300 hover:text-white transition text-center"
-                    title="Tope superior (Y: 3%)"
-                  >
-                    Arriba
-                  </button>
-                  <button
-                    onClick={() => {
-                      let currentPos = slide.textPos?.[activeKey];
-                      let elemHeightPct = 15;
-                      if (typeof document !== 'undefined') {
-                        const el = document.querySelector(`[data-drag-key="${activeKey}"]`) as HTMLElement;
-                        const cont = document.getElementById('active-canvas-slide-container');
-                        if (el && cont) {
-                          const rEl = el.getBoundingClientRect();
-                          const rCont = cont.getBoundingClientRect();
-                          elemHeightPct = Math.round(((rEl.height / rCont.height) * 100) * 10) / 10;
-                          currentPos = {
-                            left: Math.round((((rEl.left - rCont.left) / rCont.width) * 100) * 10) / 10,
-                            top: Math.round((((rEl.top - rCont.top) / rCont.height) * 100) * 10) / 10,
-                          };
-                        }
-                      }
-                      const pos = currentPos || { left: 6, top: 45 };
-                      const centerTop = Math.max(0, Math.round(((100 - elemHeightPct) / 2) * 10) / 10);
-                      onUpdateTextPos?.(activeKey, { left: pos.left, top: centerTop });
-                    }}
-                    className="py-1.5 px-2 bg-slate-950 hover:bg-slate-800 rounded-lg text-xs font-bold text-slate-300 hover:text-white transition text-center"
-                    title="Centro vertical"
-                  >
-                    Medio
-                  </button>
-                  <button
-                    onClick={() => {
-                      let currentPos = slide.textPos?.[activeKey];
-                      let elemHeightPct = 12;
-                      if (typeof document !== 'undefined') {
-                        const el = document.querySelector(`[data-drag-key="${activeKey}"]`) as HTMLElement;
-                        const cont = document.getElementById('active-canvas-slide-container');
-                        if (el && cont) {
-                          const rEl = el.getBoundingClientRect();
-                          const rCont = cont.getBoundingClientRect();
-                          elemHeightPct = Math.round(((rEl.height / rCont.height) * 100) * 10) / 10;
-                          currentPos = {
-                            left: Math.round((((rEl.left - rCont.left) / rCont.width) * 100) * 10) / 10,
-                            top: Math.round((((rEl.top - rCont.top) / rCont.height) * 100) * 10) / 10,
-                          };
-                        }
-                      }
-                      const pos = currentPos || { left: 6, top: 78 };
-                      const bottomTop = Math.max(4, Math.round(((96 - elemHeightPct)) * 10) / 10);
-                      onUpdateTextPos?.(activeKey, { left: pos.left, top: bottomTop });
-                    }}
-                    className="py-1.5 px-2 bg-slate-950 hover:bg-slate-800 rounded-lg text-xs font-bold text-slate-300 hover:text-white transition text-center"
-                    title="Fondo inferior (Y: 96% - alto)"
-                  >
-                    Abajo
-                  </button>
+                {/* Horizontal Rápido */}
+                <div className="space-y-1.5">
+                  <span className="text-[11px] font-semibold text-slate-400">Horizontal:</span>
+                  <div className="grid grid-cols-3 gap-1 bg-slate-900 border border-slate-800 rounded-xl p-1.5">
+                    <button
+                      onClick={() => {
+                        const pos = getElementPos();
+                        onUpdateTextPos?.(targetKey, { left: 4, top: pos.top });
+                      }}
+                      className="py-1.5 px-2 bg-slate-950 hover:bg-slate-800 rounded-lg text-xs font-bold text-slate-300 hover:text-white transition text-center"
+                      title="Izquierda (X: 4%)"
+                    >
+                      Izquierda
+                    </button>
+                    <button
+                      onClick={() => {
+                        const pos = getElementPos();
+                        const { widthPct } = getElementDimensions();
+                        const centerLeft = Math.max(0, Math.round(((100 - widthPct) / 2) * 10) / 10);
+                        onUpdateTextPos?.(targetKey, { left: centerLeft, top: pos.top });
+                      }}
+                      className="py-1.5 px-2 bg-slate-950 hover:bg-slate-800 rounded-lg text-xs font-bold text-slate-300 hover:text-white transition text-center"
+                      title="Centrar horizontalmente"
+                    >
+                      Centro
+                    </button>
+                    <button
+                      onClick={() => {
+                        const pos = getElementPos();
+                        const { widthPct } = getElementDimensions();
+                        const rightLeft = Math.max(8, Math.round((96 - widthPct) * 10) / 10);
+                        onUpdateTextPos?.(targetKey, { left: rightLeft, top: pos.top });
+                      }}
+                      className="py-1.5 px-2 bg-slate-950 hover:bg-slate-800 rounded-lg text-xs font-bold text-slate-300 hover:text-white transition text-center"
+                      title="Derecha"
+                    >
+                      Derecha
+                    </button>
+                  </div>
+                </div>
+
+                {/* Vertical Rápido */}
+                <div className="space-y-1.5">
+                  <span className="text-[11px] font-semibold text-slate-400">Vertical (Todo el Lienzo):</span>
+                  <div className="grid grid-cols-3 gap-1 bg-slate-900 border border-slate-800 rounded-xl p-1.5">
+                    <button
+                      onClick={() => {
+                        const pos = getElementPos();
+                        onUpdateTextPos?.(targetKey, { left: pos.left, top: 3 });
+                      }}
+                      className="py-1.5 px-2 bg-slate-950 hover:bg-slate-800 rounded-lg text-xs font-bold text-slate-300 hover:text-white transition text-center"
+                      title="Tope superior (Y: 3%)"
+                    >
+                      Arriba
+                    </button>
+                    <button
+                      onClick={() => {
+                        const pos = getElementPos();
+                        const { heightPct } = getElementDimensions();
+                        const centerTop = Math.max(0, Math.round(((100 - heightPct) / 2) * 10) / 10);
+                        onUpdateTextPos?.(targetKey, { left: pos.left, top: centerTop });
+                      }}
+                      className="py-1.5 px-2 bg-slate-950 hover:bg-slate-800 rounded-lg text-xs font-bold text-slate-300 hover:text-white transition text-center"
+                      title="Centro vertical"
+                    >
+                      Medio
+                    </button>
+                    <button
+                      onClick={() => {
+                        const pos = getElementPos();
+                        const { heightPct } = getElementDimensions();
+                        const bottomTop = Math.max(4, Math.round((96 - heightPct) * 10) / 10);
+                        onUpdateTextPos?.(targetKey, { left: pos.left, top: bottomTop });
+                      }}
+                      className="py-1.5 px-2 bg-slate-950 hover:bg-slate-800 rounded-lg text-xs font-bold text-slate-300 hover:text-white transition text-center"
+                      title="Fondo inferior (Y: 96% - alto)"
+                    >
+                      Abajo
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* ========================================================================= */}
         {/* PANEL EXPANDIBLE DE CAPAS (4 BOTONES: ATRÁS, ADELANTE, +, -) */}
