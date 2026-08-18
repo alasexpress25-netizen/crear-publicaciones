@@ -34,6 +34,7 @@ export interface TextStyleItem {
   textTransform?: 'uppercase' | 'none' | 'capitalize';
   transparentBox?: boolean;
   backgroundColor?: string;
+  zIndex?: number; // Capas: orden de apilamiento / superposición
 }
 
 export interface TextPosition {
@@ -108,6 +109,7 @@ export interface Slide {
   blur?: number; // 0 - 25px blur / out of focus
   overlayIntensity?: number; // 0 - 100
   overlayType?: 'gradient' | 'solid' | 'card' | 'cinematic';
+  backgroundColor?: string; // Color sólido de fondo de la diapositiva (Capa 0)
   cardBackground?: 'translucent' | 'transparent' | 'solid';
   hideCardBoxes?: boolean;
   accentColor?: string;

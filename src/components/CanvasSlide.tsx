@@ -99,14 +99,14 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
     const startX = e.clientX;
     const startY = e.clientY;
 
-    // Find the exact DOM element to measure initial visual center relative to containerRef
+    // Measure the element's actual top-left relative to the canvas container
     const targetEl = (e.currentTarget.closest(`[data-drag-key="${key}"]`) || e.currentTarget) as HTMLElement;
     const elemRect = targetEl.getBoundingClientRect();
-    const elemCenterX = elemRect.left + elemRect.width / 2;
-    const elemCenterY = elemRect.top + elemRect.height / 2;
 
-    const initialLeftPct = slide.textPos?.[key]?.left ?? (((elemCenterX - containerRect.left) / containerRect.width) * 100);
-    const initialTopPct = slide.textPos?.[key]?.top ?? (((elemCenterY - containerRect.top) / containerRect.height) * 100);
+    // If already positioned with pos.left/pos.top (which is top-left % on canvas), use it.
+    // Otherwise calculate current DOM top-left % relative to container.
+    const currentLeftPct = slide.textPos?.[key]?.left ?? (((elemRect.left - containerRect.left) / containerRect.width) * 100);
+    const currentTopPct = slide.textPos?.[key]?.top ?? (((elemRect.top - containerRect.top) / containerRect.height) * 100);
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
       const deltaX = moveEvent.clientX - startX;
@@ -115,9 +115,9 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
       const deltaXPct = (deltaX / containerRect.width) * 100;
       const deltaYPct = (deltaY / containerRect.height) * 100;
 
-      // Unconstrained freeform movement across entire canvas
-      const newLeft = Math.max(-10, Math.min(110, Math.round((initialLeftPct + deltaXPct) * 10) / 10));
-      const newTop = Math.max(-10, Math.min(110, Math.round((initialTopPct + deltaYPct) * 10) / 10));
+      // Completely free, smooth movement across and beyond canvas edges with zero snapping or magnet pull
+      const newLeft = Math.round((currentLeftPct + deltaXPct) * 10) / 10;
+      const newTop = Math.round((currentTopPct + deltaYPct) * 10) / 10;
 
       onUpdateTextPos?.(key, { left: newLeft, top: newTop });
     };
@@ -419,8 +419,9 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
       styleObj.position = 'absolute';
       styleObj.left = `${pos.left}%`;
       styleObj.top = `${pos.top}%`;
-      styleObj.transform = 'translate(-50%, -50%)';
-      styleObj.zIndex = 30;
+      // Use direct top-left coordinate positioning without center-pivot magnetism
+      styleObj.transform = 'none';
+      styleObj.zIndex = custom.zIndex !== undefined ? custom.zIndex : 30;
 
       // Prevent squishing: maintain generous proportional width when dragged freely
       if (!custom.width) {
@@ -453,6 +454,12 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
       }
     } else if (activeElementKey === key) {
       styleObj.position = 'relative';
+      if (custom.zIndex !== undefined) {
+        styleObj.zIndex = custom.zIndex;
+      }
+    } else if (custom.zIndex !== undefined) {
+      styleObj.position = 'relative';
+      styleObj.zIndex = custom.zIndex;
     }
 
     return styleObj;
@@ -476,13 +483,20 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
       ref={containerRef}
       id={isExportMode ? undefined : 'active-canvas-slide-container'}
       data-slide-id={slide.id}
-      className={`relative w-full ${aspectClassMap[aspectRatio] || aspectClassMap['4:5']} mx-auto rounded-2xl overflow-hidden shadow-2xl border border-slate-800 bg-slate-950 select-none transition-transform duration-150 flex flex-col justify-between`}
+      className={`relative w-full ${aspectClassMap[aspectRatio] || aspectClassMap['4:5']} mx-auto rounded-2xl overflow-hidden shadow-2xl border border-slate-800 select-none transition-transform duration-150 flex flex-col justify-between`}
       style={{
+        backgroundColor: slide.backgroundColor || '#020617',
         transform: `scale(${zoomLevel})`,
         transformOrigin: 'top center',
       }}
     >
-      {/* Background Media */}
+      {/* CAPA 0: Base sólida inmutable (Color de Fondo) */}
+      <div
+        className="absolute inset-0 w-full h-full pointer-events-none"
+        style={{ backgroundColor: slide.backgroundColor || '#020617' }}
+      />
+
+      {/* CAPA 1: Objeto Independiente de Media (Imagen / Video con movimiento libre y encuadre fluido) */}
       {slide.mediaType === 'video' && slide.image ? (
         <div className="absolute inset-0 w-full h-full overflow-hidden pointer-events-none">
           <video
@@ -491,10 +505,10 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
             loop
             muted
             playsInline
-            className="w-full h-full object-cover pointer-events-none transition-all duration-150"
+            className="absolute -inset-[30%] w-[160%] h-[160%] max-w-none object-cover pointer-events-none transition-transform duration-75"
             style={{
-              transformOrigin: `${bgPosX}% ${bgPosY}%`,
-              transform: `scale(${effectiveZoom}) translate(${(bgPosX - 50) * -0.5 * Math.max(1, effectiveZoom)}%, ${(bgPosY - 50) * -0.5 * Math.max(1, effectiveZoom)}%)`,
+              transform: `translate(${(bgPosX - 50) * 0.6}%, ${(bgPosY - 50) * 0.6}%) scale(${effectiveZoom})`,
+              transformOrigin: 'center center',
               filter: bgBlur > 0 ? `blur(${bgBlur}px)` : undefined,
             }}
           />
@@ -505,20 +519,21 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
             src={slide.image}
             alt=""
             crossOrigin="anonymous"
-            className="w-full h-full object-cover pointer-events-none transition-all duration-150"
+            className="absolute -inset-[30%] w-[160%] h-[160%] max-w-none object-cover pointer-events-none transition-transform duration-75"
             style={{
-              objectPosition: `${bgPosX}% ${bgPosY}%`,
-              transformOrigin: `${bgPosX}% ${bgPosY}%`,
-              transform: `scale(${effectiveZoom}) translate(${(bgPosX - 50) * -0.5 * Math.max(1, effectiveZoom)}%, ${(bgPosY - 50) * -0.5 * Math.max(1, effectiveZoom)}%)`,
+              transform: `translate(${(bgPosX - 50) * 0.6}%, ${(bgPosY - 50) * 0.6}%) scale(${effectiveZoom})`,
+              transformOrigin: 'center center',
               filter: bgBlur > 0 ? `blur(${bgBlur}px)` : undefined,
             }}
           />
         </div>
       ) : (
         <div
-          className="absolute inset-0"
+          className="absolute inset-0 pointer-events-none"
           style={{
-            background: `radial-gradient(circle at top right, ${primaryColor}22, #020617 80%)`,
+            background: slide.backgroundColor
+              ? undefined
+              : `radial-gradient(circle at top right, ${primaryColor}22, #020617 80%)`,
           }}
         />
       )}

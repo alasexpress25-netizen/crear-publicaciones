@@ -256,10 +256,18 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       <div
         aria-hidden="true"
         className="fixed -left-[9999px] -top-[9999px] pointer-events-none opacity-100 flex flex-col gap-10"
-        style={{ width: '540px' }}
+        style={{
+          width: aspectRatio === '9:16' ? '370px' : aspectRatio === '16:9' ? '550px' : '450px',
+        }}
       >
         {slides.map((s) => (
-          <div key={s.id} id={`export-dom-slide-${s.id}`} style={{ width: '540px' }}>
+          <div
+            key={s.id}
+            id={`export-dom-slide-${s.id}`}
+            style={{
+              width: aspectRatio === '9:16' ? '370px' : aspectRatio === '16:9' ? '550px' : '450px',
+            }}
+          >
             <CanvasSlide
               slide={s}
               brand={brand}

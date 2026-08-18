@@ -24,6 +24,12 @@ import {
   X,
   Blend,
   Palette,
+  Layers,
+  BringToFront,
+  SendToBack,
+  ArrowUp,
+  ArrowDown,
+  PaintBucket,
 } from 'lucide-react';
 import { Slide, BrandInfo, TextStyleItem, SlideLayoutTemplate } from '../types';
 
@@ -41,6 +47,7 @@ interface TextStyleBarProps {
   onAddCustomText?: (type?: 'heading' | 'body' | 'badge') => void;
   onUpdateSlideOverlayType?: (type: 'gradient' | 'solid' | 'card' | 'cinematic') => void;
   onUpdateSlideAccentColor?: (color: string) => void;
+  onUpdateSlideBackgroundColor?: (color: string) => void;
   onUpdateTextPos?: (key: string, pos: { left: number; top: number } | null) => void;
   onUpdateSlideContentAlign?: (align: 'top' | 'center' | 'bottom') => void;
   onUpdateSlideLayout?: (layout: SlideLayoutTemplate) => void;
@@ -105,12 +112,13 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
   onAddCustomText,
   onUpdateSlideOverlayType,
   onUpdateSlideAccentColor,
+  onUpdateSlideBackgroundColor,
   onUpdateTextPos,
   onUpdateSlideContentAlign,
   onToggleHideCardBoxes,
 }) => {
   const primaryColor = slide.accentColor || brand.primaryColor || '#e11d48';
-  const [openSubmenu, setOpenSubmenu] = useState<'outline' | 'shadow' | null>(null);
+  const [openSubmenu, setOpenSubmenu] = useState<'outline' | 'shadow' | 'layers' | 'background' | null>(null);
   const [colorTargetMode, setColorTargetMode] = useState<'text' | 'fill'>('text');
   const [outlineTab, setOutlineTab] = useState<'text' | 'box'>('text');
 
@@ -121,6 +129,8 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
       ? brand.textStyle?.[activeKey]
       : slide.textStyle?.[activeKey]
     : undefined;
+
+  const currentZIndex = currentItemStyle?.zIndex !== undefined ? currentItemStyle.zIndex : 30;
 
   const isOutlineActive = Boolean(currentItemStyle?.outline);
   const currentOutlineColor = currentItemStyle?.outlineColor || '#000000';
@@ -703,6 +713,41 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
             )}
           </button>
 
+          {/* Capas / Layers (Traer al frente, enviar al fondo, avanzar, retroceder) */}
+          <button
+            onClick={() => setOpenSubmenu((prev) => (prev === 'layers' ? null : 'layers'))}
+            className={`flex items-center gap-1 border px-2 py-1 rounded-lg text-xs font-semibold transition shrink-0 ${
+              openSubmenu === 'layers'
+                ? 'bg-indigo-950/80 border-indigo-500 text-indigo-300'
+                : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white'
+            }`}
+            title="Gestionar orden de capas (Traer adelante, Enviar al fondo, etc.)"
+          >
+            <Layers className="w-3 h-3 text-indigo-400" />
+            <span className="hidden sm:inline">Capas</span>
+            <span className="text-[10px] font-mono text-indigo-400/90 ml-0.5 bg-slate-900 px-1 rounded border border-slate-800">
+              {currentZIndex}
+            </span>
+          </button>
+
+          {/* Solapa Fondo / Capa 0: Color de fondo sólido de la diapositiva */}
+          <button
+            onClick={() => setOpenSubmenu((prev) => (prev === 'background' ? null : 'background'))}
+            className={`flex items-center gap-1 border px-2 py-1 rounded-lg text-xs font-semibold transition shrink-0 ${
+              openSubmenu === 'background'
+                ? 'bg-purple-950/80 border-purple-500 text-purple-300'
+                : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white'
+            }`}
+            title="Color sólido de fondo de la diapositiva (Capa 0)"
+          >
+            <PaintBucket className="w-3 h-3 text-purple-400" />
+            <span className="hidden sm:inline">Fondo</span>
+            <span
+              className="w-2.5 h-2.5 rounded-full border border-slate-700 ml-0.5 shadow-sm"
+              style={{ backgroundColor: slide.backgroundColor || '#020617' }}
+            />
+          </button>
+
         </div>
 
         {/* ========================================================================= */}
@@ -1067,6 +1112,183 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
                   </label>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* PANEL EXPANDIBLE DE CAPAS (ORDERING / Z-INDEX: AL FRENTE, AL FONDO, ETC.) */}
+        {/* ========================================================================= */}
+        {openSubmenu === 'layers' && (
+          <div className="bg-slate-950/95 border border-indigo-500/40 rounded-xl p-3 shadow-2xl space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+              <div className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-indigo-400" />
+                <span className="text-xs font-bold text-white">Orden de Capas (Posición de Superposición)</span>
+                <span className="text-[10px] font-mono text-indigo-300 bg-indigo-950 px-2 py-0.5 rounded-full border border-indigo-500/40">
+                  Capa actual: {currentZIndex}
+                </span>
+              </div>
+              <button
+                onClick={() => setOpenSubmenu(null)}
+                className="p-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition"
+                title="Cerrar panel"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {/* Traer al frente (Top absolute: zIndex 50) */}
+              <button
+                onClick={() => onUpdateStyle(activeKey, { zIndex: 50 })}
+                className="flex items-center justify-center gap-1.5 p-2 bg-slate-900 border border-slate-800 hover:border-indigo-500/60 hover:bg-indigo-950/40 rounded-xl text-xs font-bold text-slate-200 hover:text-indigo-300 transition group"
+                title="Colocar por encima de todos los demás elementos (Capa 50)"
+              >
+                <BringToFront className="w-4 h-4 text-indigo-400 group-hover:scale-110 transition" />
+                <span>Traer al Frente</span>
+              </button>
+
+              {/* Avanzar una capa (+1 capa) */}
+              <button
+                onClick={() => onUpdateStyle(activeKey, { zIndex: Math.min(60, currentZIndex + 2) })}
+                className="flex items-center justify-center gap-1.5 p-2 bg-slate-900 border border-slate-800 hover:border-indigo-500/60 hover:bg-indigo-950/40 rounded-xl text-xs font-bold text-slate-200 hover:text-indigo-300 transition group"
+                title="Mover una capa hacia adelante (+1 nivel)"
+              >
+                <ArrowUp className="w-4 h-4 text-indigo-400 group-hover:scale-110 transition" />
+                <span>Avanzar Capa</span>
+              </button>
+
+              {/* Retroceder una capa (-1 capa) */}
+              <button
+                onClick={() => onUpdateStyle(activeKey, { zIndex: Math.max(10, currentZIndex - 2) })}
+                className="flex items-center justify-center gap-1.5 p-2 bg-slate-900 border border-slate-800 hover:border-indigo-500/60 hover:bg-indigo-950/40 rounded-xl text-xs font-bold text-slate-200 hover:text-indigo-300 transition group"
+                title="Mover una capa hacia atrás (-1 nivel)"
+              >
+                <ArrowDown className="w-4 h-4 text-indigo-400 group-hover:scale-110 transition" />
+                <span>Retroceder Capa</span>
+              </button>
+
+              {/* Enviar al fondo (Detrás de los textos, sobre la foto/fondo: zIndex 15) */}
+              <button
+                onClick={() => onUpdateStyle(activeKey, { zIndex: 15 })}
+                className="flex items-center justify-center gap-1.5 p-2 bg-slate-900 border border-slate-800 hover:border-indigo-500/60 hover:bg-indigo-950/40 rounded-xl text-xs font-bold text-slate-200 hover:text-indigo-300 transition group"
+                title="Enviar detrás de otros textos y tarjetas (Capa 15)"
+              >
+                <SendToBack className="w-4 h-4 text-indigo-400 group-hover:scale-110 transition" />
+                <span>Enviar al Fondo</span>
+              </button>
+            </div>
+
+            {/* Presets rápidos de capas numéricas */}
+            <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-800/80">
+              <span className="font-semibold text-slate-400">Nivel de Capa Rápido:</span>
+              <div className="flex items-center gap-1">
+                {[
+                  { z: 15, label: 'Fondo (15)' },
+                  { z: 25, label: 'Baja (25)' },
+                  { z: 30, label: 'Normal (30)' },
+                  { z: 40, label: 'Alta (40)' },
+                  { z: 50, label: 'Frente (50)' },
+                ].map((lvl) => (
+                  <button
+                    key={lvl.z}
+                    onClick={() => onUpdateStyle(activeKey, { zIndex: lvl.z })}
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold border transition ${
+                      currentZIndex === lvl.z
+                        ? 'bg-indigo-600 text-white border-indigo-400'
+                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {lvl.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* PANEL EXPANDIBLE DE FONDO (CAPA 0: COLOR SÓLIDO DE LA DIAPOSITIVA) */}
+        {/* ========================================================================= */}
+        {openSubmenu === 'background' && (
+          <div className="bg-slate-950/95 border border-purple-500/40 rounded-xl p-3 shadow-2xl space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+              <div className="flex items-center gap-2">
+                <PaintBucket className="w-4 h-4 text-purple-400" />
+                <span className="text-xs font-bold text-white">Color de Fondo de la Diapositiva (Capa Base 0)</span>
+                <span className="text-[10px] font-mono text-purple-300 bg-purple-950 px-2 py-0.5 rounded-full border border-purple-500/40">
+                  {slide.backgroundColor || '#020617'}
+                </span>
+              </div>
+              <button
+                onClick={() => setOpenSubmenu(null)}
+                className="p-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition"
+                title="Cerrar panel"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Selector de color personalizado + Paleta de colores rápidos */}
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Color Picker HTML5 */}
+              <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-xl p-1.5 shrink-0">
+                <input
+                  type="color"
+                  value={slide.backgroundColor || '#020617'}
+                  onChange={(e) => onUpdateSlideBackgroundColor?.(e.target.value)}
+                  className="w-7 h-7 rounded-lg cursor-pointer bg-transparent border-0"
+                  title="Elegir color personalizado"
+                />
+                <span className="text-xs font-mono font-bold text-slate-200">
+                  {slide.backgroundColor || '#020617'}
+                </span>
+              </div>
+
+              {/* Presets de Color de Fondo para Redes Sociales */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {[
+                  { color: '#020617', name: 'Negro Obsidian' },
+                  { color: '#09090b', name: 'Zinc Oscuro' },
+                  { color: '#0f172a', name: 'Azul Noche' },
+                  { color: '#1e1b4b', name: 'Índigo Profundo' },
+                  { color: '#4c0519', name: 'Bordó Pasión' },
+                  { color: '#18181b', name: 'Grafito' },
+                  { color: '#ffffff', name: 'Blanco Puro' },
+                  { color: '#f8fafc', name: 'Gris Nube' },
+                  { color: '#e11d48', name: 'Rose Red' },
+                  { color: '#2563eb', name: 'Azul Real' },
+                  { color: '#059669', name: 'Esmeralda' },
+                  { color: '#d97706', name: 'Ámbar' },
+                ].map((item) => (
+                  <button
+                    key={item.color}
+                    onClick={() => onUpdateSlideBackgroundColor?.(item.color)}
+                    className={`w-7 h-7 rounded-xl border transition-all flex items-center justify-center relative ${
+                      (slide.backgroundColor || '#020617').toLowerCase() === item.color.toLowerCase()
+                        ? 'border-purple-400 ring-2 ring-purple-500/50 scale-110 shadow-lg'
+                        : 'border-slate-700/80 hover:border-slate-400 hover:scale-105'
+                    }`}
+                    style={{ backgroundColor: item.color }}
+                    title={item.name}
+                  >
+                    {(slide.backgroundColor || '#020617').toLowerCase() === item.color.toLowerCase() && (
+                      <span className={`w-2 h-2 rounded-full ${item.color === '#ffffff' || item.color === '#f8fafc' ? 'bg-black' : 'bg-white'}`} />
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between text-[11px] text-slate-400 pt-2 border-t border-slate-800/80">
+              <span>El fondo actúa como una base fija independiente detrás de las fotos, videos y textos.</span>
+              <button
+                onClick={() => onUpdateSlideBackgroundColor?.('#020617')}
+                className="text-[10px] font-bold text-slate-400 hover:text-white bg-slate-900 border border-slate-800 px-2 py-0.5 rounded transition"
+              >
+                Restablecer a Negro Obsidian (#020617)
+              </button>
             </div>
           </div>
         )}

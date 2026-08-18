@@ -53,8 +53,12 @@ const LOCAL_STORAGE_BRAND_KEY = 'lavisualmk_carousel_brand_v3';
 const LOCAL_STORAGE_DOCS_KEY = 'lavisualmk_carousel_docs_v3';
 const LOCAL_STORAGE_POST_KEY = 'lavisualmk_carousel_post_v3';
 const LOCAL_STORAGE_CLIENT_KEY = 'lavisualmk_carousel_client_v3';
+const SESSION_ACTIVE_KEY = 'lavisualmk_session_active_v1';
 
 export default function App() {
+  // Determine if this is a fresh application open (session start) vs page refresh
+  const isExistingSession = typeof window !== 'undefined' && Boolean(sessionStorage.getItem(SESSION_ACTIVE_KEY));
+
   // Agency Client State (Supabase connected)
   const [selectedClient, setSelectedClient] = useState<AgencyClient | null>(() => {
     let client: AgencyClient | null = null;
@@ -89,15 +93,17 @@ export default function App() {
     };
   });
 
-  // Carousel Slides State
+  // Carousel Slides State: On fresh app startup, start with a fresh new project; on page reload/refresh, restore current work
   const [slides, setSlides] = useState<Slide[]>(() => {
-    try {
-      const saved = localStorage.getItem(LOCAL_STORAGE_SLIDES_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {}
+    if (isExistingSession) {
+      try {
+        const saved = localStorage.getItem(LOCAL_STORAGE_SLIDES_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch {}
+    }
     return INITIAL_DEFAULT_SLIDES;
   });
 
@@ -109,9 +115,15 @@ export default function App() {
   const [mobileTab, setMobileTab] = useState<WorkspaceTab>('canvas');
 
   // AI & Marketing Strategist Controls State
-  const [brief, setBrief] = useState<string>(
-    'Agencia de marketing digital y producción de contenido que ayuda a pymes y profesionales a conseguir clientes calificados sin depender de la suerte.'
-  );
+  const [brief, setBrief] = useState<string>(() => {
+    if (isExistingSession) {
+      try {
+        const saved = localStorage.getItem('lavisualmk_carousel_brief_v3');
+        if (saved) return saved;
+      } catch {}
+    }
+    return '';
+  });
   const [targetAudience, setTargetAudience] = useState<string>(
     'Dueños de negocios, emprendedores y profesionales que quieren vender más por redes'
   );
@@ -133,6 +145,23 @@ export default function App() {
     return getStoredAppLanguage('es');
   });
   const [isTranslating, setIsTranslating] = useState<boolean>(false);
+
+  // Modals state: If opening the app fresh (session start), open Projects modal automatically
+  const [isClientSelectorOpen, setIsClientSelectorOpen] = useState(false);
+  const [isProjectsOpen, setIsProjectsOpen] = useState(() => !isExistingSession);
+  const [isKnowledgeOpen, setIsKnowledgeOpen] = useState(false);
+  const [isHookLabOpen, setIsHookLabOpen] = useState(false);
+  const [isPostCaptionOpen, setIsPostCaptionOpen] = useState(false);
+  const [isExportOpen, setIsExportOpen] = useState(false);
+  const [isSlideRewriteOpen, setIsSlideRewriteOpen] = useState(false);
+  const [isMediaPopupOpen, setIsMediaPopupOpen] = useState(false);
+
+  // Mark session as active in sessionStorage so F5 / reloads keep current work
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(SESSION_ACTIVE_KEY, 'true');
+    } catch {}
+  }, []);
 
   // Reconcile languages from IndexedDB on startup
   useEffect(() => {
@@ -171,16 +200,6 @@ export default function App() {
     };
   });
 
-  // Modals state
-  const [isClientSelectorOpen, setIsClientSelectorOpen] = useState(false);
-  const [isProjectsOpen, setIsProjectsOpen] = useState(false);
-  const [isKnowledgeOpen, setIsKnowledgeOpen] = useState(false);
-  const [isHookLabOpen, setIsHookLabOpen] = useState(false);
-  const [isPostCaptionOpen, setIsPostCaptionOpen] = useState(false);
-  const [isExportOpen, setIsExportOpen] = useState(false);
-  const [isSlideRewriteOpen, setIsSlideRewriteOpen] = useState(false);
-  const [isMediaPopupOpen, setIsMediaPopupOpen] = useState(false);
-
   // Concrete Scene Memory for Art Director (Paso B memory across carousel)
   const [escenasPorDiapositiva, setEscenasPorDiapositiva] = useState<Record<string | number, string>>({});
 
@@ -217,18 +236,43 @@ export default function App() {
     setCurrentIndex(0);
   };
 
-  // Sync to LocalStorage
-  useEffect(() => {
+  // Sync to LocalStorage (Reactive Persistence + Save on Blur / Visibility Change / Before Unload)
+  const persistCurrentWorkspaceState = () => {
     try {
       localStorage.setItem(LOCAL_STORAGE_SLIDES_KEY, JSON.stringify(slides));
       localStorage.setItem(LOCAL_STORAGE_BRAND_KEY, JSON.stringify(brand));
       localStorage.setItem(LOCAL_STORAGE_DOCS_KEY, JSON.stringify(documents));
       localStorage.setItem(LOCAL_STORAGE_POST_KEY, JSON.stringify(postMeta));
+      localStorage.setItem('lavisualmk_carousel_brief_v3', brief || '');
       if (selectedClient) {
         localStorage.setItem(LOCAL_STORAGE_CLIENT_KEY, JSON.stringify(selectedClient));
       }
     } catch {}
-  }, [slides, brand, documents, postMeta, selectedClient]);
+  };
+
+  useEffect(() => {
+    persistCurrentWorkspaceState();
+  }, [slides, brand, documents, postMeta, selectedClient, brief]);
+
+  // Listeners for window blur, tab visibility change, and before page unload/refresh
+  useEffect(() => {
+    const handleSaveTrigger = () => {
+      persistCurrentWorkspaceState();
+    };
+
+    window.addEventListener('blur', handleSaveTrigger);
+    window.addEventListener('beforeunload', handleSaveTrigger);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        handleSaveTrigger();
+      }
+    });
+
+    return () => {
+      window.removeEventListener('blur', handleSaveTrigger);
+      window.removeEventListener('beforeunload', handleSaveTrigger);
+    };
+  }, [slides, brand, documents, postMeta, selectedClient, brief]);
 
   // Active slide safety check
   const currentSlide = slides[currentIndex] || slides[0] || INITIAL_DEFAULT_SLIDES[0];
@@ -354,6 +398,10 @@ export default function App() {
 
   const handleUpdateSlideAccentColor = (color: string) => {
     handleUpdateSlideField('accentColor', color);
+  };
+
+  const handleUpdateSlideBackgroundColor = (color: string) => {
+    handleUpdateSlideField('backgroundColor', color);
   };
 
   const handleUpdateComparison = (partial: Partial<ComparisonData>) => {
@@ -926,6 +974,7 @@ export default function App() {
                 onAddCustomText={handleAddCustomText}
                 onUpdateSlideOverlayType={handleUpdateSlideOverlayType}
                 onUpdateSlideAccentColor={handleUpdateSlideAccentColor}
+                onUpdateSlideBackgroundColor={handleUpdateSlideBackgroundColor}
                 onUpdateTextPos={handleUpdateTextPos}
                 onUpdateSlideContentAlign={handleUpdateSlideContentAlign}
                 onToggleHideCardBoxes={handleToggleHideCardBoxes}
