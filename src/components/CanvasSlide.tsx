@@ -375,157 +375,20 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
   const renderActiveControls = (key: string, label?: string) => {
     if (activeElementKey !== key || isExportMode) return null;
     const hasPos = Boolean(slide.textPos && slide.textPos[key]);
-    const isImg = key === 'brandLogo' || key.startsWith('custom-img-') || key.startsWith('custom-image-') || key.startsWith('custom-accent-');
-
-    const sizeNum = getNumericHeight(key);
 
     return (
       <div
-        className="no-export absolute -top-10 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5 bg-slate-950/95 border border-rose-500/80 shadow-2xl px-2.5 py-1 rounded-full text-[11px] font-bold text-white select-none whitespace-nowrap backdrop-blur-md"
+        className="no-export absolute -top-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5 bg-slate-950/95 border border-rose-500/80 shadow-2xl px-2 py-0.5 rounded-full text-[11px] font-bold text-white select-none whitespace-nowrap backdrop-blur-md"
         onClick={(e) => e.stopPropagation()}
       >
-        {isImg ? (
-          <>
-            {/* Control 1: Tirador dedicado para MOVER */}
-            <div
-              onPointerDown={(e) => startDrag(key, e)}
-              className="flex items-center gap-1 bg-rose-600/90 hover:bg-rose-600 text-white px-2 py-0.5 rounded-full cursor-grab active:cursor-grabbing shadow-sm transition"
-              title="Presiona y arrastra para MOVER la imagen a cualquier lugar"
-            >
-              <Move className="w-3 h-3 text-white" />
-              <span>Mover</span>
-            </div>
-
-            {/* Control 2: Tirador dedicado para DIMENSIONAR (arrastra para cambiar escala) */}
-            <div
-              onPointerDown={(e) => startScaleDirect(key, e)}
-              className="flex items-center gap-1 bg-amber-600/90 hover:bg-amber-600 text-white px-2 py-0.5 rounded-full cursor-nwse-resize active:cursor-nwse-resize shadow-sm transition"
-              title="Presiona y arrastra hacia la derecha/arriba para AGRANDAR o izquierda/abajo para ACHICAR"
-            >
-              <Maximize2 className="w-3 h-3 text-white" />
-              <span>Dimensionar</span>
-            </div>
-
-            {/* Control 3: Stepper de Tamaño con lectura en px */}
-            <div className="flex items-center gap-0.5 bg-slate-900 border border-slate-800 rounded-full px-1.5 py-0.5">
-              <button
-                type="button"
-                onClick={() => {
-                  const next = Math.max(16, sizeNum - 8);
-                  onUpdateTextStyle?.(key, { height: next });
-                  if (key === 'brandLogo' && onUpdateBrand) onUpdateBrand('logoSize', next);
-                }}
-                className="text-slate-300 hover:text-white px-1.5 hover:bg-slate-800 rounded-full font-bold text-xs"
-                title="Achicar imagen (-8px)"
-              >
-                -
-              </button>
-              <span className="font-mono text-[10px] text-amber-300 font-bold px-1 min-w-[32px] text-center">
-                {sizeNum}px
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  const next = Math.min(480, sizeNum + 8);
-                  onUpdateTextStyle?.(key, { height: next });
-                  if (key === 'brandLogo' && onUpdateBrand) onUpdateBrand('logoSize', next);
-                }}
-                className="text-slate-300 hover:text-white px-1.5 hover:bg-slate-800 rounded-full font-bold text-xs"
-                title="Agrandar imagen (+8px)"
-              >
-                +
-              </button>
-            </div>
-
-            {/* Presets Rápidos de Tamaño */}
-            <div className="hidden sm:flex items-center gap-0.5">
-              {[40, 80, 140, 220].map((sz) => (
-                <button
-                  key={sz}
-                  type="button"
-                  onClick={() => {
-                    onUpdateTextStyle?.(key, { height: sz });
-                    if (key === 'brandLogo' && onUpdateBrand) onUpdateBrand('logoSize', sz);
-                  }}
-                  className={`px-1.5 py-0.5 rounded text-[9px] font-bold transition ${
-                    sizeNum === sz
-                      ? 'bg-amber-500 text-slate-950'
-                      : 'bg-slate-900 text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  {sz}
-                </button>
-              ))}
-            </div>
-
-            {/* Control 4: Selector de Redondeo de Esquinas */}
-            <div className="hidden sm:flex items-center gap-0.5 border-l border-slate-800 pl-1">
-              {[
-                { label: 'Recto', val: 0 },
-                { label: 'Suave', val: 12 },
-                { label: 'Redondo', val: 24 },
-                { label: 'Círculo', val: 9999 },
-              ].map((rd) => {
-                const curRad = getNumericBorderRadius(key, 12);
-                const isMatch = (rd.val === 9999 && curRad >= 9000) || (rd.val !== 9999 && Math.abs(curRad - rd.val) <= 2);
-                return (
-                  <button
-                    key={rd.label}
-                    type="button"
-                    onClick={() => {
-                      onUpdateTextStyle?.(key, { borderRadius: rd.val });
-                    }}
-                    className={`px-1.5 py-0.5 rounded text-[9px] font-bold transition ${
-                      isMatch
-                        ? 'bg-rose-600 text-white'
-                        : 'bg-slate-900 text-slate-400 hover:text-slate-200'
-                    }`}
-                    title={`Esquinas: ${rd.label}`}
-                  >
-                    {rd.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Control 5: Sombra rápida */}
-            <div className="hidden sm:flex items-center gap-0.5 border-l border-slate-800 pl-1">
-              {(() => {
-                const custom = (slide.textStyle && slide.textStyle[key]) || (brand.textStyle && brand.textStyle[key]) || {};
-                const hasShadow = Boolean(custom.shadow);
-                return (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onUpdateTextStyle?.(key, {
-                        shadow: !hasShadow,
-                        shadowColor: custom.shadowColor || '#000000',
-                        shadowType: custom.shadowType || 'soft',
-                      });
-                    }}
-                    className={`px-1.5 py-0.5 rounded text-[9px] font-bold transition flex items-center gap-0.5 ${
-                      hasShadow
-                        ? 'bg-amber-500 text-slate-950 shadow-sm'
-                        : 'bg-slate-900 text-slate-400 hover:text-slate-200'
-                    }`}
-                    title="Alternar Sombra / Relieve de la imagen"
-                  >
-                    <span>☀ Sombra</span>
-                  </button>
-                );
-              })()}
-            </div>
-          </>
-        ) : (
-          <div
-            onPointerDown={(e) => startDrag(key, e)}
-            className="flex items-center gap-1 cursor-grab active:cursor-grabbing text-rose-300 hover:text-white px-1 py-0.5 transition"
-            title="Mantén presionado y arrastra para mover libremente por la diapositiva"
-          >
-            <Move className="w-3 h-3 text-rose-400" />
-            <span>{label || 'Mover'}</span>
-          </div>
-        )}
+        <div
+          onPointerDown={(e) => startDrag(key, e)}
+          className="flex items-center gap-1 cursor-grab active:cursor-grabbing text-rose-300 hover:text-white px-1 py-0.5 transition"
+          title="Mantén presionado y arrastra para mover libremente"
+        >
+          <Move className="w-3 h-3 text-rose-400" />
+          <span>{label || 'Mover'}</span>
+        </div>
 
         {hasPos && (
           <button
