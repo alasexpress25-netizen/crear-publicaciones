@@ -11,6 +11,7 @@ import {
   FolderArchive,
   Check,
   RefreshCw,
+  FilePlus2,
 } from 'lucide-react';
 import { AspectRatio, BrandInfo } from '../types';
 import { safeAlert } from '../utils/notifications';
@@ -30,6 +31,7 @@ interface HeaderProps {
   autoSaveStatus?: 'saved' | 'saving' | 'idle';
   onOpenClientSelector: () => void;
   onOpenProjects?: () => void;
+  onNewProject?: () => void;
   onOpenExport?: () => void;
   onResetCarousel: () => void;
 }
@@ -49,6 +51,7 @@ export const Header: React.FC<HeaderProps> = ({
   autoSaveStatus = 'idle',
   onOpenClientSelector,
   onOpenProjects,
+  onNewProject,
   onResetCarousel,
 }) => {
   const [installPrompt, setInstallPrompt] = useState<any>(null);
@@ -134,7 +137,7 @@ export const Header: React.FC<HeaderProps> = ({
             <Users className="w-3.5 h-3.5 text-slate-400 group-hover:text-rose-400" />
           </button>
 
-          {/* Project & Autosave Pill */}
+          {/* Project & Autosave Pill (Opens Projects Library) */}
           {onOpenProjects && (
             <button
               onClick={onOpenProjects}
@@ -147,7 +150,7 @@ export const Header: React.FC<HeaderProps> = ({
               <div className="text-left">
                 <div className="flex items-center gap-1.5">
                   <span className="text-[9px] text-slate-400 block uppercase font-bold leading-none">
-                    Proyecto
+                    Proyectos
                   </span>
                   {autoSaveStatus === 'saving' && (
                     <span className="text-[8px] bg-amber-950/80 text-amber-300 px-1 py-0.2 rounded border border-amber-800/60 font-bold flex items-center gap-0.5">
@@ -158,14 +161,29 @@ export const Header: React.FC<HeaderProps> = ({
                   {autoSaveStatus === 'saved' && (
                     <span className="text-[8px] bg-emerald-950/80 text-emerald-300 px-1 py-0.2 rounded border border-emerald-800/60 font-bold flex items-center gap-0.5">
                       <Check className="w-2 h-2" />
-                      Autoguardado
+                      Guardado
                     </span>
                   )}
                 </div>
                 <span className="text-xs font-bold text-slate-200 group-hover:text-indigo-300 transition truncate max-w-[120px] block">
-                  {currentProjectTitle || 'Nuevo en blanco'}
+                  {currentProjectTitle || 'Biblioteca'}
                 </span>
               </div>
+            </button>
+          )}
+
+          {/* Dedicated New Blank Project Button (Creates fresh blank project directly) */}
+          {onNewProject && (
+            <button
+              onClick={onNewProject}
+              className="flex items-center gap-1.5 bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 hover:border-rose-500/60 text-slate-200 hover:text-white font-bold text-xs px-3 py-1.5 rounded-xl shadow-sm transition group"
+              title="Crear un nuevo carrusel en blanco desde cero"
+            >
+              <div className="w-4 h-4 rounded-lg bg-rose-600/80 group-hover:bg-rose-600 flex items-center justify-center text-white shrink-0">
+                <FilePlus2 className="w-2.5 h-2.5" />
+              </div>
+              <span className="hidden sm:inline">Nuevo en blanco</span>
+              <span className="sm:hidden">Nuevo</span>
             </button>
           )}
         </div>

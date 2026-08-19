@@ -492,7 +492,14 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
     const custom = (slide.textStyle && slide.textStyle[key]) || (brand.textStyle && brand.textStyle[key]) || {};
     // Inner child elements (like individual bullets, stat subtext, quote text) belong to their container layout and must not receive individual position: absolute
     const targetKey = getDragTargetKey(key);
-    const pos = isInnerChildElement(key)
+    
+    // Ignore parent container position if any child card/element has its own position (prevents nested coordinate trap from older saves)
+    const hasChildPosition =
+      (key === 'cta-container' && Boolean(slide.textPos?.['cta-subheadline-card'] || slide.textPos?.['cta-headline'] || slide.textPos?.['cta-avatar'])) ||
+      (key === 'comp-grid' && Boolean(slide.textPos?.['comp-left-card'] || slide.textPos?.['comp-right-card'])) ||
+      (key === 'stat-container' && Boolean(slide.textPos?.['stat-subtext-box'] || slide.textPos?.['stat-number']));
+
+    const pos = (isInnerChildElement(key) || hasChildPosition)
       ? undefined
       : (slide.textPos?.[key] || (key === targetKey ? slide.textPos?.[targetKey] : undefined));
     const def = getDefaultsForElement(key, primaryColor);

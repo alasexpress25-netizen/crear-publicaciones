@@ -1,4 +1,4 @@
-const CACHE_NAME = 'la-visual-carrusel-v1';
+const CACHE_NAME = 'la-visual-carrusel-v4';
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',

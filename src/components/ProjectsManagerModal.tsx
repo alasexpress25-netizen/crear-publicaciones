@@ -673,6 +673,19 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
             {activeTab === 'projects' && (
               <>
                 <button
+                  type="button"
+                  onClick={() => {
+                    onNewProject();
+                    onClose();
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-rose-600 hover:from-indigo-500 hover:to-rose-500 text-white text-xs font-bold transition shadow-sm border border-indigo-400/30"
+                  title="Crear un proyecto nuevo en blanco desde cero"
+                >
+                  <FilePlus2 className="w-3.5 h-3.5" />
+                  <span>+ Nuevo en Blanco</span>
+                </button>
+
+                <button
                   onClick={handleExportJSON}
                   className="p-2 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition text-xs font-semibold flex items-center gap-1.5 border border-slate-800"
                   title="Descargar copia de seguridad en JSON de todos tus proyectos"
@@ -825,6 +838,18 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
               {/* Left: Project List */}
               <div className="md:col-span-5 border-r border-slate-800 flex flex-col overflow-hidden bg-slate-900/40">
                 <div className="p-3 border-b border-slate-800 space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onNewProject();
+                      onClose();
+                    }}
+                    className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-gradient-to-r from-indigo-600/90 to-rose-600/90 hover:from-indigo-500 hover:to-rose-500 text-white border border-indigo-400/40 text-xs font-bold transition shadow-sm"
+                  >
+                    <FilePlus2 className="w-4 h-4" />
+                    <span>+ Crear Proyecto Nuevo en Blanco</span>
+                  </button>
+
                   <input
                     type="text"
                     value={searchQuery}
@@ -868,8 +893,19 @@ export const ProjectsManagerModal: React.FC<ProjectsManagerModalProps> = ({
 
                 <div className="flex-1 overflow-y-auto p-3 space-y-2 scrollbar-thin">
                   {filtered.length === 0 ? (
-                    <div className="p-8 text-center text-slate-500 text-xs">
-                      {searchQuery ? 'No se encontraron proyectos con ese criterio.' : 'Aún no has guardado ningún carrusel.'}
+                    <div className="p-8 text-center text-slate-500 text-xs space-y-3">
+                      <p>{searchQuery ? 'No se encontraron proyectos con ese criterio.' : 'Aún no has guardado ningún carrusel.'}</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onNewProject();
+                          onClose();
+                        }}
+                        className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition shadow-sm"
+                      >
+                        <FilePlus2 className="w-3.5 h-3.5" />
+                        <span>Empezar Proyecto en Blanco</span>
+                      </button>
                     </div>
                   ) : (
                     filtered.map((proj) => {

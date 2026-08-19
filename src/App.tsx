@@ -252,12 +252,26 @@ export default function App() {
   };
 
   const handleCreateNewBlankProject = () => {
-    setSlides(INITIAL_DEFAULT_SLIDES);
+    const loc = getTemplateLocalization(language);
+    const primaryCol = brand.primaryColor || '#e11d48';
+
+    const freshSlides: Slide[] = INITIAL_DEFAULT_SLIDES.map((s, idx) => ({
+      ...s,
+      _uid: `sl-${Date.now()}-${idx + 1}`,
+      accentColor: primaryCol,
+      textPos: undefined,
+      customTexts: undefined,
+    }));
+
+    setSlides(freshSlides);
     setBrief('');
+    setTargetAudience('');
     setCurrentProjectId(null);
     setCurrentProjectTitle(null);
     setEscenasPorDiapositiva({});
+    setActiveElementKey(null);
     setCurrentIndex(0);
+    safeAlert('¡Nuevo proyecto en blanco creado!');
   };
 
   // Sync to LocalStorage (Reactive Persistence + Save on Blur / Visibility Change / Before Unload)
@@ -971,6 +985,17 @@ export default function App() {
           delete currentPos[key];
         } else {
           currentPos[key] = pos;
+          // Auto-sanitize: remove parent wrapper containers if moving an individual card/element
+          // This guarantees older saved projects won't suffer from nested-positioning bounds/limits
+          if (key === 'cta-subheadline-card' || key === 'cta-headline' || key === 'cta-avatar') {
+            delete currentPos['cta-container'];
+          } else if (key === 'comp-left-card' || key === 'comp-right-card') {
+            delete currentPos['comp-grid'];
+          } else if (key === 'stat-subtext-box' || key === 'stat-number' || key === 'stat-label') {
+            delete currentPos['stat-container'];
+          } else if (key === 'quote-text' || key === 'quote-author' || key === 'quote-role') {
+            delete currentPos['quote-container'];
+          }
         }
       }
       copy[currentIndex] = {
@@ -1154,7 +1179,8 @@ export default function App() {
         autoSaveStatus={autoSaveStatus}
         onOpenProjects={() => setIsProjectsOpen(true)}
         onOpenClientSelector={() => setIsClientSelectorOpen(true)}
-        onResetCarousel={handleResetCarousel}
+        onNewProject={handleCreateNewBlankProject}
+        onResetCarousel={handleCreateNewBlankProject}
       />
 
       {/* Main Workspace Area */}
