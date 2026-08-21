@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Slide,
   BrandInfo,
@@ -237,6 +237,178 @@ export default function App() {
     }));
   };
 
+  // ==========================================
+  // HISTORIAL DESHACER / REHACER (UNDO / REDO)
+  // ==========================================
+  interface HistorySnapshot {
+    slides: Slide[];
+    brand: BrandInfo;
+    currentIndex: number;
+  }
+
+  const [past, setPast] = useState<HistorySnapshot[]>([]);
+  const [future, setFuture] = useState<HistorySnapshot[]>([]);
+  const isUndoRedoActionRef = useRef<boolean>(false);
+  const lastRecordedStateRef = useRef<string>('');
+
+  // Sincronizar instantáneas de historial de forma reactiva y con debounce para no saturar la memoria
+  useEffect(() => {
+    const currentSerialized = JSON.stringify({ slides, brand });
+
+    if (isUndoRedoActionRef.current) {
+      isUndoRedoActionRef.current = false;
+      lastRecordedStateRef.current = currentSerialized;
+      return;
+    }
+
+    if (!lastRecordedStateRef.current) {
+      lastRecordedStateRef.current = currentSerialized;
+      return;
+    }
+
+    if (currentSerialized === lastRecordedStateRef.current) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      try {
+        const prevData = JSON.parse(lastRecordedStateRef.current);
+        const snapshot: HistorySnapshot = {
+          slides: prevData.slides,
+          brand: prevData.brand,
+          currentIndex,
+        };
+        setPast((prevPast) => {
+          const updated = [...prevPast, snapshot];
+          return updated.length > 40 ? updated.slice(updated.length - 40) : updated;
+        });
+        setFuture([]);
+        lastRecordedStateRef.current = currentSerialized;
+      } catch (e) {
+        lastRecordedStateRef.current = currentSerialized;
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [slides, brand, currentIndex]);
+
+  const handleUndo = () => {
+    const currentSerialized = JSON.stringify({ slides, brand });
+    const hasUncommittedChange = Boolean(lastRecordedStateRef.current && currentSerialized !== lastRecordedStateRef.current);
+
+    if (hasUncommittedChange) {
+      try {
+        const prevData = JSON.parse(lastRecordedStateRef.current);
+        const currentSnapshot: HistorySnapshot = {
+          slides: JSON.parse(JSON.stringify(slides)),
+          brand: JSON.parse(JSON.stringify(brand)),
+          currentIndex,
+        };
+        isUndoRedoActionRef.current = true;
+        setFuture((prev) => [currentSnapshot, ...prev]);
+        setSlides(prevData.slides);
+        setBrand(prevData.brand);
+        if (prevData.currentIndex !== undefined && prevData.currentIndex < prevData.slides.length) {
+          setCurrentIndex(prevData.currentIndex);
+        }
+        lastRecordedStateRef.current = JSON.stringify({ slides: prevData.slides, brand: prevData.brand });
+        safeAlert('Deshecho');
+        return;
+      } catch (e) {
+        console.warn('Undo error', e);
+      }
+    }
+
+    if (past.length === 0) {
+      safeAlert('No hay más acciones para deshacer');
+      return;
+    }
+
+    const previous = past[past.length - 1];
+    const newPast = past.slice(0, past.length - 1);
+
+    const currentSnapshot: HistorySnapshot = {
+      slides: JSON.parse(JSON.stringify(slides)),
+      brand: JSON.parse(JSON.stringify(brand)),
+      currentIndex,
+    };
+
+    isUndoRedoActionRef.current = true;
+    setFuture((prev) => [currentSnapshot, ...prev]);
+    setPast(newPast);
+
+    setSlides(previous.slides);
+    setBrand(previous.brand);
+    if (previous.currentIndex !== undefined && previous.currentIndex < previous.slides.length) {
+      setCurrentIndex(previous.currentIndex);
+    }
+    lastRecordedStateRef.current = JSON.stringify({ slides: previous.slides, brand: previous.brand });
+    safeAlert('Deshecho');
+  };
+
+  const handleRedo = () => {
+    if (future.length === 0) {
+      safeAlert('No hay más acciones para rehacer');
+      return;
+    }
+
+    const next = future[0];
+    const newFuture = future.slice(1);
+
+    const currentSnapshot: HistorySnapshot = {
+      slides: JSON.parse(JSON.stringify(slides)),
+      brand: JSON.parse(JSON.stringify(brand)),
+      currentIndex,
+    };
+
+    isUndoRedoActionRef.current = true;
+    setPast((prev) => [...prev, currentSnapshot]);
+    setFuture(newFuture);
+
+    setSlides(next.slides);
+    setBrand(next.brand);
+    if (next.currentIndex !== undefined && next.currentIndex < next.slides.length) {
+      setCurrentIndex(next.currentIndex);
+    }
+    lastRecordedStateRef.current = JSON.stringify({ slides: next.slides, brand: next.brand });
+    safeAlert('Rehecho');
+  };
+
+  const canUndo = past.length > 0 || (Boolean(lastRecordedStateRef.current) && JSON.stringify({ slides, brand }) !== lastRecordedStateRef.current);
+  const canRedo = future.length > 0;
+
+  // Atajos de teclado para Deshacer (Ctrl+Z / Cmd+Z) y Rehacer (Ctrl+Y / Ctrl+Shift+Z / Cmd+Shift+Z)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const isInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+
+      const isZ = e.key === 'z' || e.key === 'Z';
+      const isY = e.key === 'y' || e.key === 'Y';
+      const isCmdOrCtrl = e.metaKey || e.ctrlKey;
+
+      if (isCmdOrCtrl && isZ) {
+        if (e.shiftKey) {
+          e.preventDefault();
+          handleRedo();
+        } else {
+          if (!isInput) {
+            e.preventDefault();
+            handleUndo();
+          }
+        }
+      } else if (isCmdOrCtrl && isY) {
+        if (!isInput) {
+          e.preventDefault();
+          handleRedo();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [past, future, slides, brand, currentIndex]);
+
   // Load Saved Project Handler
   const handleLoadSavedProject = (proj: SavedCarouselProject) => {
     if (proj.slides && proj.slides.length > 0) setSlides(proj.slides);
@@ -249,6 +421,9 @@ export default function App() {
     setCurrentProjectTitle(proj.title);
     setEscenasPorDiapositiva({});
     setCurrentIndex(0);
+    setPast([]);
+    setFuture([]);
+    lastRecordedStateRef.current = '';
   };
 
   const handleCreateNewBlankProject = () => {
@@ -271,6 +446,9 @@ export default function App() {
     setEscenasPorDiapositiva({});
     setActiveElementKey(null);
     setCurrentIndex(0);
+    setPast([]);
+    setFuture([]);
+    lastRecordedStateRef.current = '';
     safeAlert('¡Nuevo proyecto en blanco creado!');
   };
 
@@ -1320,6 +1498,10 @@ export default function App() {
                 onChangeLanguage={setLanguage}
                 onTranslateCarousel={handleTranslateCarousel}
                 isTranslating={isTranslating}
+                onUndo={handleUndo}
+                onRedo={handleRedo}
+                canUndo={canUndo}
+                canRedo={canRedo}
                 onUpdateStyle={handleUpdateTextStyle}
                 onResetStyle={handleResetTextStyle}
                 onDeleteActiveElement={handleDeleteActiveElement}

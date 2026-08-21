@@ -33,6 +33,8 @@ import {
   Image as ImageIcon,
   Upload,
   Trash2,
+  Undo2,
+  Redo2,
 } from 'lucide-react';
 import { Slide, BrandInfo, TextStyleItem, SlideLayoutTemplate } from '../types';
 
@@ -44,6 +46,10 @@ interface TextStyleBarProps {
   onChangeLanguage?: (lang: 'es' | 'pt' | 'en') => void;
   onTranslateCarousel?: (lang: 'es' | 'pt' | 'en') => void;
   isTranslating?: boolean;
+  onUndo?: () => void;
+  onRedo?: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
   onUpdateStyle: (key: string, style: Partial<TextStyleItem>) => void;
   onResetStyle?: (key: string) => void;
   onDeleteActiveElement?: (key: string) => void;
@@ -123,6 +129,10 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
   onChangeLanguage,
   onTranslateCarousel,
   isTranslating = false,
+  onUndo,
+  onRedo,
+  canUndo = false,
+  canRedo = false,
   onUpdateStyle,
   onResetStyle,
   onDeleteActiveElement,
@@ -430,6 +440,41 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
             className="hidden"
           />
         </div>
+
+        {/* Botones Deshacer (Undo) y Rehacer (Redo) - Solo Iconos */}
+        {(onUndo && onRedo) && (
+          <div className="flex items-center bg-slate-900 border border-slate-700/80 rounded-xl p-0.5 shrink-0 shadow-sm">
+            <button
+              type="button"
+              onClick={onUndo}
+              disabled={!canUndo}
+              className={`p-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center ${
+                canUndo
+                  ? 'text-slate-200 hover:text-white hover:bg-slate-800 active:scale-95 cursor-pointer'
+                  : 'text-slate-600 cursor-not-allowed opacity-40'
+              }`}
+              title="Deshacer último cambio (Ctrl+Z)"
+            >
+              <Undo2 className="w-3.5 h-3.5" />
+            </button>
+
+            <div className="w-[1px] h-3.5 bg-slate-800 mx-0.5" />
+
+            <button
+              type="button"
+              onClick={onRedo}
+              disabled={!canRedo}
+              className={`p-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center ${
+                canRedo
+                  ? 'text-slate-200 hover:text-white hover:bg-slate-800 active:scale-95 cursor-pointer'
+                  : 'text-slate-600 cursor-not-allowed opacity-40'
+              }`}
+              title="Rehacer cambio (Ctrl+Y o Ctrl+Shift+Z)"
+            >
+              <Redo2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
 
         {/* Scrollable toolbar items for secondary controls */}
         <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-0.5 min-w-0 flex-1 whitespace-nowrap">
