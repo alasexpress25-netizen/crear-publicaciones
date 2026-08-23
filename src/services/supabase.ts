@@ -2,7 +2,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 // Default Agency Supabase configuration
 export const DEFAULT_SUPABASE_URL = 'https://redaqqxoeciycqgjhpbv.supabase.co';
-export const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJlZGFxcXhvZWNpeWNxZ2pocGJ2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgxMDcyMjEsImV4cCI6MjA5MzY4MzIyMX0.HqpOrWPtbYImgy57TafbaB4qriqmq4FI9GIa4Vg9FhI';
+export const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_XYeljNeSm2awnovoTvzXiQ_va4cFyvU';
 
 export const LOCAL_STORAGE_SUPABASE_URL = 'lavisualmk_supabase_url';
 export const LOCAL_STORAGE_SUPABASE_KEY = 'lavisualmk_supabase_key';
