@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { AspectRatio, BrandInfo } from '../types';
 import { safeAlert } from '../utils/notifications';
+import { LogoutButton } from './AuthGate';
 
 interface HeaderProps {
   brand: BrandInfo;
@@ -290,6 +291,9 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <RotateCcw className="w-3.5 h-3.5" />
           </button>
+
+          {/* Logout */}
+          <LogoutButton />
 
         </div>
 

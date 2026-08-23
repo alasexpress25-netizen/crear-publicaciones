@@ -40,7 +40,7 @@ export function getSupabaseClient(): SupabaseClient | null {
     }
     if (!supabaseInstance) {
       supabaseInstance = createClient(url, key, {
-        auth: { persistSession: false },
+        auth: { persistSession: true, autoRefreshToken: true, storageKey: 'lavisualmk_auth_session' },
       });
     }
     return supabaseInstance;

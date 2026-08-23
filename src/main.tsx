@@ -1,6 +1,7 @@
 import React, { StrictMode, Component, ErrorInfo, ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
+import { AuthGate } from './components/AuthGate.tsx';
 import './index.css';
 
 interface ErrorBoundaryProps {
@@ -118,7 +119,9 @@ if (typeof window !== 'undefined' && 'serviceWorker' in navigator && import.meta
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
-      <App />
+      <AuthGate>
+        <App />
+      </AuthGate>
     </ErrorBoundary>
   </StrictMode>,
 );
