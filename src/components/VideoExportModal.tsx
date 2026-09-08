@@ -15,7 +15,7 @@ import {
   Play,
   RotateCcw
 } from 'lucide-react';
-import { Slide, BrandInfo, AspectRatio, VideoAudioTrack } from '../types';
+import { Slide, BrandInfo, AspectRatio, VideoAudioTrack, SubtitleItem, VoiceoverTrack } from '../types';
 import { renderCarouselToVideo, RenderResult, RenderProgress } from '../utils/videoRenderer';
 import { CanvasSlide } from './CanvasSlide';
 import confetti from 'canvas-confetti';
@@ -27,6 +27,9 @@ interface VideoExportModalProps {
   brand: BrandInfo;
   currentAspectRatio: AspectRatio;
   audioTrack: VideoAudioTrack | null;
+  subtitles?: SubtitleItem[];
+  voiceoverTrack?: VoiceoverTrack | null;
+  extraAudioTracks?: VideoAudioTrack[];
 }
 
 export const VideoExportModal: React.FC<VideoExportModalProps> = ({
@@ -36,6 +39,9 @@ export const VideoExportModal: React.FC<VideoExportModalProps> = ({
   brand,
   currentAspectRatio,
   audioTrack,
+  subtitles,
+  voiceoverTrack,
+  extraAudioTracks,
 }) => {
   const [aspect, setAspect] = useState<AspectRatio>(currentAspectRatio);
   const [quality, setQuality] = useState<'720p' | '1080p' | '4k'>('1080p');
@@ -69,6 +75,9 @@ export const VideoExportModal: React.FC<VideoExportModalProps> = ({
           quality,
           fps,
           audioTrack,
+          subtitles,
+          voiceoverTrack,
+          extraAudioTracks,
           onProgress: (p) => setProgress(p),
           shouldCancel: () => cancelRef.current,
         },

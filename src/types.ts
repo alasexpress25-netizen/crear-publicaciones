@@ -107,8 +107,14 @@ export interface CtaFinalData {
 export interface CustomTextLayer {
   id: string;
   text?: string;
-  type?: 'heading' | 'body' | 'badge' | 'tag' | 'cta' | 'accent' | 'box' | 'image';
+  type?: 'heading' | 'body' | 'badge' | 'tag' | 'cta' | 'accent' | 'box' | 'image' | 'video';
   imageUrl?: string;
+  videoUrl?: string;
+  volume?: number;
+  isMuted?: boolean;
+  opacity?: number;
+  scale?: number;
+  duration?: number;
   fontSize?: number;
   color?: string;
   align?: 'left' | 'center' | 'right';
@@ -128,6 +134,33 @@ export interface CustomTextLayer {
   animationOut?: ElementAnimationOut;
   animationOutDuration?: number;
   outTime?: number;
+}
+
+export interface SubtitleItem {
+  id: string;
+  startTime: number;
+  endTime: number;
+  text: string;
+  stylePreset?: 'hormozi' | 'minimal' | 'neon' | 'box';
+  color?: string;
+  backgroundColor?: string;
+}
+
+export interface VoiceoverTrack {
+  id?: string;
+  url?: string;
+  audioUrl?: string;
+  name: string;
+  volume: number;
+  isMuted?: boolean;
+  duration?: number;
+  startOffset?: number;
+  text?: string;
+  scriptText?: string;
+  language?: string;
+  voiceName?: string;
+  rate?: number;
+  pitch?: number;
 }
 
 export type TransitionType =
@@ -172,6 +205,7 @@ export type AudioEffectType =
   | 'vintage_radio';
 
 export interface VideoAudioTrack {
+  id?: string;
   url: string;
   name: string;
   volume: number; // 0 - 1
@@ -183,6 +217,18 @@ export interface VideoAudioTrack {
   fadeOut?: number; // Segundos de fundido de salida (0 a 5s)
   loop?: boolean; // Repetir en bucle si el video es más largo
   audioEffect?: AudioEffectType; // Filtros y efectos de masterización
+  channelType?: 'music' | 'voiceover' | 'sfx' | 'ambient' | 'custom';
+  color?: string;
+}
+
+export interface AudioChannelLane {
+  id: string;
+  name: string;
+  channelNumber?: number; // ej. 4, 5, 6...
+  volume: number;
+  isMuted?: boolean;
+  color?: string;
+  clips: VideoAudioTrack[];
 }
 
 export interface Slide {
@@ -306,4 +352,9 @@ export interface SavedCarouselProject {
   postMeta: CarouselPostMeta;
   aspectRatio: AspectRatio;
   audioTrack?: VideoAudioTrack;
+  subtitles?: SubtitleItem[];
+  voiceoverTrack?: VoiceoverTrack;
+  sfxClips?: VideoAudioTrack[];
+  extraAudioTracks?: VideoAudioTrack[];
+  extraAudioChannels?: AudioChannelLane[];
 }

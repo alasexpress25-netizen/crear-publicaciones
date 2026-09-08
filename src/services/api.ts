@@ -250,3 +250,76 @@ export async function apiRewriteSlide(params: {
   return data.data;
 }
 
+export async function apiGenerateSubtitlesAI(params: {
+  text: string;
+  totalDuration: number;
+  stylePreset?: string;
+  language?: string;
+}): Promise<any[]> {
+  const res = await fetch('/api/generate-subtitles-ai', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || `Error ${res.status} al generar subtítulos con IA`);
+  }
+
+  const data = await res.json();
+  return data.data || data.subtitles || [];
+}
+
+export async function apiOptimizeVoiceoverScript(params: {
+  script: string;
+  language?: string;
+  tone?: string;
+}): Promise<string> {
+  const res = await fetch('/api/optimize-voiceover-script', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || `Error ${res.status} al optimizar guión con IA`);
+  }
+
+  const data = await res.json();
+  return data.data || data.optimizedScript || params.script;
+}
+
+export interface SynthesizeVoiceoverParams {
+  text: string;
+  voiceName?: string;
+  language?: string;
+  tone?: string;
+}
+
+export interface SynthesizeVoiceoverResult {
+  success: boolean;
+  audioUrl: string;
+  duration: number;
+  voiceName: string;
+  mimeType: string;
+}
+
+export async function apiSynthesizeVoiceover(
+  params: SynthesizeVoiceoverParams
+): Promise<SynthesizeVoiceoverResult> {
+  const res = await fetch('/api/synthesize-voiceover', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.error || `Error ${res.status} al sintetizar locución de IA`);
+  }
+
+  return await res.json();
+}
+

@@ -1,7 +1,8 @@
-import { Slide, BrandInfo, AspectRatio, TransitionType, SceneMotionEffect, VideoAudioTrack } from '../types';
+import { Slide, BrandInfo, AspectRatio, TransitionType, SceneMotionEffect, VideoAudioTrack, SubtitleItem, VoiceoverTrack } from '../types';
 import { renderSlideToCanvas } from './exportUtils';
-import { generateProceduralAudioBuffer } from './audioLibrary';
+import { generateProceduralAudioBuffer, generateProceduralSFXBuffer } from './audioLibrary';
 import { toBlob } from 'html-to-image';
+import { apiSynthesizeVoiceover } from '../services/api';
 
 export interface RenderProgress {
   currentFrame: number;
@@ -16,6 +17,9 @@ export interface RenderOptions {
   quality: '720p' | '1080p' | '4k';
   fps?: number;
   audioTrack?: VideoAudioTrack | null;
+  subtitles?: SubtitleItem[];
+  voiceoverTrack?: VoiceoverTrack | null;
+  extraAudioTracks?: VideoAudioTrack[];
   onProgress?: (p: RenderProgress) => void;
   shouldCancel?: () => boolean;
 }
@@ -255,6 +259,82 @@ export function calculateTimelineInfo(slides: Slide[]) {
   return { totalTime, slideTimings };
 }
 
+function drawSubtitleOnCanvas(
+  ctx: CanvasRenderingContext2D,
+  sub: SubtitleItem,
+  cw: number,
+  ch: number
+) {
+  ctx.save();
+  const text = (sub.text || '').trim();
+  if (!text) {
+    ctx.restore();
+    return;
+  }
+
+  const preset = sub.stylePreset || 'hormozi';
+  const fontSize = Math.round(cw * (preset === 'hormozi' ? 0.046 : 0.04));
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `900 ${fontSize}px "Inter", -apple-system, BlinkMacSystemFont, sans-serif`;
+
+  const yPos = ch * 0.82;
+  const xPos = cw / 2;
+
+  if (preset === 'hormozi') {
+    ctx.lineJoin = 'round';
+    ctx.miterLimit = 2;
+    ctx.lineWidth = Math.max(6, Math.round(fontSize * 0.22));
+    ctx.strokeStyle = '#000000';
+    ctx.strokeText(text.toUpperCase(), xPos, yPos);
+
+    ctx.fillStyle = '#fde047'; // Hormozi vibrant yellow
+    ctx.fillText(text.toUpperCase(), xPos, yPos);
+  } else if (preset === 'neon') {
+    ctx.shadowColor = '#06b6d4';
+    ctx.shadowBlur = 16;
+    ctx.lineWidth = Math.max(4, Math.round(fontSize * 0.16));
+    ctx.strokeStyle = '#083344';
+    ctx.strokeText(text.toUpperCase(), xPos, yPos);
+
+    ctx.fillStyle = '#67e8f9';
+    ctx.fillText(text.toUpperCase(), xPos, yPos);
+  } else if (preset === 'box') {
+    const metrics = ctx.measureText(text.toUpperCase());
+    const boxW = metrics.width + fontSize * 1.4;
+    const boxH = fontSize * 1.5;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    if (typeof (ctx as any).roundRect === 'function') {
+      (ctx as any).roundRect(xPos - boxW / 2, yPos - boxH / 2, boxW, boxH, fontSize * 0.25);
+    } else {
+      ctx.rect(xPos - boxW / 2, yPos - boxH / 2, boxW, boxH);
+    }
+    ctx.fill();
+
+    ctx.fillStyle = '#000000';
+    ctx.fillText(text.toUpperCase(), xPos, yPos);
+  } else {
+    // Classic / Clean Subtitle
+    const metrics = ctx.measureText(text);
+    const boxW = metrics.width + fontSize * 1.4;
+    const boxH = fontSize * 1.5;
+    ctx.fillStyle = 'rgba(2, 6, 23, 0.82)';
+    ctx.beginPath();
+    if (typeof (ctx as any).roundRect === 'function') {
+      (ctx as any).roundRect(xPos - boxW / 2, yPos - boxH / 2, boxW, boxH, fontSize * 0.35);
+    } else {
+      ctx.rect(xPos - boxW / 2, yPos - boxH / 2, boxW, boxH);
+    }
+    ctx.fill();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(text, xPos, yPos);
+  }
+
+  ctx.restore();
+}
+
 /**
  * Render complete video with transitions, motion effects, and audio
  */
@@ -312,6 +392,8 @@ export async function renderCarouselToVideo(
   let audioContext: AudioContext | null = null;
   let audioStreamNode: MediaStreamAudioDestinationNode | null = null;
   let audioSourceNode: AudioBufferSourceNode | null = null;
+  let voSourceNode: AudioBufferSourceNode | null = null;
+  const extraSourceNodes: { source: AudioBufferSourceNode; startOffset: number }[] = [];
 
   try {
     const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
@@ -354,6 +436,16 @@ export async function renderCarouselToVideo(
           gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + totalTime);
         }
 
+        // Auto-ducking during export if voiceover is present and active
+        if (options.voiceoverTrack && !options.voiceoverTrack.isMuted && options.voiceoverTrack.scriptText) {
+          const duckedVol = baseVolume * 0.28;
+          const voDur = options.voiceoverTrack.duration || Math.min(totalTime, 10);
+          gainNode.gain.setValueAtTime(baseVolume, audioContext.currentTime);
+          gainNode.gain.linearRampToValueAtTime(duckedVol, audioContext.currentTime + 0.3);
+          gainNode.gain.setValueAtTime(duckedVol, audioContext.currentTime + Math.max(0.4, voDur - 0.4));
+          gainNode.gain.linearRampToValueAtTime(baseVolume, audioContext.currentTime + voDur);
+        }
+
         audioSourceNode = audioContext.createBufferSource();
         audioSourceNode.buffer = audioBuffer;
         audioSourceNode.playbackRate.value = track?.speed || 1;
@@ -392,6 +484,107 @@ export async function renderCarouselToVideo(
 
         lastNode.connect(gainNode);
         gainNode.connect(audioStreamNode);
+      }
+
+      // Voiceover Track Mixing (Track A2)
+      if (options.voiceoverTrack && !options.voiceoverTrack.isMuted) {
+        let voBuffer: AudioBuffer | null = null;
+        let voAudioUrl = options.voiceoverTrack.audioUrl;
+
+        // If voiceover is TTS without a pre-rendered audio file, synthesize it on the fly!
+        const needsSynthesis = (!voAudioUrl || voAudioUrl === 'voiceover://tts' || voAudioUrl.startsWith('voiceover://')) &&
+          Boolean(options.voiceoverTrack.scriptText?.trim());
+
+        if (needsSynthesis) {
+          try {
+            if (options.onProgress) {
+              options.onProgress({
+                currentFrame: 0,
+                totalFrames: Math.ceil(totalTime * fps),
+                percent: 3,
+                currentSlideIndex: 0,
+                statusText: 'Sintetizando locución de IA para el video...',
+              });
+            }
+            const synthRes = await apiSynthesizeVoiceover({
+              text: options.voiceoverTrack.scriptText!,
+              voiceName: options.voiceoverTrack.voiceName || 'Kore',
+              language: options.voiceoverTrack.language || 'es-ES',
+            });
+            if (synthRes && synthRes.audioUrl) {
+              voAudioUrl = synthRes.audioUrl;
+              options.voiceoverTrack.audioUrl = synthRes.audioUrl;
+              if (synthRes.duration) {
+                options.voiceoverTrack.duration = synthRes.duration;
+              }
+            }
+          } catch (synthErr) {
+            console.warn('Auto-synthesize voiceover error during export:', synthErr);
+          }
+        }
+
+        if (voAudioUrl && !voAudioUrl.startsWith('voiceover://')) {
+          try {
+            const voResp = await fetch(voAudioUrl);
+            const voArr = await voResp.arrayBuffer();
+            voBuffer = await audioContext.decodeAudioData(voArr);
+          } catch (voErr) {
+            console.warn('Voiceover audio fetch/decode error:', voErr);
+          }
+        }
+
+        if (voBuffer) {
+          const voGainNode = audioContext.createGain();
+          const voVol = options.voiceoverTrack.volume ?? 1.0;
+          voGainNode.gain.setValueAtTime(voVol, audioContext.currentTime);
+
+          voSourceNode = audioContext.createBufferSource();
+          voSourceNode.buffer = voBuffer;
+          voSourceNode.playbackRate.value = options.voiceoverTrack.rate || 1;
+          voSourceNode.connect(voGainNode);
+          voGainNode.connect(audioStreamNode);
+        }
+      }
+
+      // Extra Audio Tracks Mixing (A3: SFX, A4: Ambiente / Sonido secundario)
+      if (options.extraAudioTracks && options.extraAudioTracks.length > 0) {
+        for (const extra of options.extraAudioTracks) {
+          if (!extra.url || extra.isMuted) continue;
+          let extraBuffer: AudioBuffer | null = null;
+          if (extra.url.startsWith('sfx:')) {
+            const sfxId = extra.url.replace('sfx:', '');
+            extraBuffer = generateProceduralSFXBuffer(audioContext, sfxId);
+          } else if (extra.url.startsWith('preset:')) {
+            const presetId = extra.url.replace('preset:', '');
+            extraBuffer = generateProceduralAudioBuffer(audioContext, presetId, Math.max(30, totalTime + 2));
+          } else {
+            try {
+              const res = await fetch(extra.url);
+              const ab = await res.arrayBuffer();
+              extraBuffer = await audioContext.decodeAudioData(ab);
+            } catch (err) {
+              console.warn('Failed to load extra audio track buffer:', extra.name, err);
+            }
+          }
+
+          if (extraBuffer) {
+            const extraGainNode = audioContext.createGain();
+            const vol = extra.volume ?? 0.85;
+            extraGainNode.gain.setValueAtTime(vol, audioContext.currentTime);
+
+            const src = audioContext.createBufferSource();
+            src.buffer = extraBuffer;
+            src.playbackRate.value = extra.speed || 1;
+            src.loop = extra.loop === true;
+            src.connect(extraGainNode);
+            extraGainNode.connect(audioStreamNode);
+
+            extraSourceNodes.push({
+              source: src,
+              startOffset: Math.max(0, extra.startOffset || 0),
+            });
+          }
+        }
       }
     }
   } catch (audioErr) {
@@ -452,6 +645,21 @@ export async function renderCarouselToVideo(
       audioSourceNode.start(0);
     } catch {}
   }
+  if (voSourceNode) {
+    try {
+      const voOffset = options.voiceoverTrack?.startOffset || 0;
+      voSourceNode.start(audioContext ? audioContext.currentTime + voOffset : 0);
+    } catch (voStartErr) {
+      console.warn('Error starting voiceover source node:', voStartErr);
+    }
+  }
+  extraSourceNodes.forEach(({ source, startOffset }) => {
+    try {
+      source.start(audioContext ? audioContext.currentTime + startOffset : 0);
+    } catch (e) {
+      console.warn('Error starting extra source node:', e);
+    }
+  });
 
   // 5. Draw Frame Compositor Loop
   const totalFrames = Math.ceil(totalTime * fps);
@@ -830,6 +1038,16 @@ export async function renderCarouselToVideo(
         // Fallback crossfade
         drawSlideLayer(currentAssets, currentTiming.effect, slideProgress, 1 - t);
         drawSlideLayer(nextAssets, nextTiming.effect, t * 0.15, t);
+      }
+    }
+
+    // 5. Draw Dynamic Multi-track Subtitles / Captions if active at currentTime
+    if (options.subtitles && options.subtitles.length > 0) {
+      const activeSub = options.subtitles.find(
+        (s) => currentTime >= s.startTime && currentTime <= s.endTime
+      );
+      if (activeSub && activeSub.text) {
+        drawSubtitleOnCanvas(ctx, activeSub, canvas.width, canvas.height);
       }
     }
 

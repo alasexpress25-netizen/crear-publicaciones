@@ -24,8 +24,9 @@ import {
   Clock,
   Film,
   Zap,
+  Type,
 } from 'lucide-react';
-import { Slide, BrandInfo, AspectRatio, TransitionType, SceneMotionEffect, VideoAudioTrack } from '../types';
+import { Slide, BrandInfo, AspectRatio, TransitionType, SceneMotionEffect, VideoAudioTrack, SubtitleItem, VoiceoverTrack, AudioChannelLane } from '../types';
 import { CanvasSlide } from './CanvasSlide';
 import { Timeline } from './Timeline';
 import { getActiveTransitionState, VideoPreviewPlayer } from '../utils/transitionEngine';
@@ -36,6 +37,14 @@ interface VideoStudioViewProps {
   brand: BrandInfo;
   aspectRatio: AspectRatio;
   audioTrack: VideoAudioTrack | null;
+  subtitles?: SubtitleItem[];
+  onUpdateSubtitles?: (subtitles: SubtitleItem[]) => void;
+  voiceoverTrack?: VoiceoverTrack | null;
+  onUpdateVoiceoverTrack?: (track: VoiceoverTrack | null) => void;
+  sfxClips?: VideoAudioTrack[];
+  onUpdateSfxClips?: (clips: VideoAudioTrack[]) => void;
+  audioChannels?: AudioChannelLane[];
+  onUpdateAudioChannels?: (channels: AudioChannelLane[]) => void;
   isPlaying: boolean;
   currentTime: number;
   onTogglePlay: () => void;
@@ -58,6 +67,14 @@ export const VideoStudioView: React.FC<VideoStudioViewProps> = ({
   brand,
   aspectRatio,
   audioTrack,
+  subtitles = [],
+  onUpdateSubtitles,
+  voiceoverTrack = null,
+  onUpdateVoiceoverTrack,
+  sfxClips,
+  onUpdateSfxClips,
+  audioChannels,
+  onUpdateAudioChannels,
   isPlaying,
   currentTime,
   onTogglePlay,
@@ -237,6 +254,7 @@ export const VideoStudioView: React.FC<VideoStudioViewProps> = ({
               brand={brand}
               aspectRatio={aspectRatio}
               currentTime={currentTime}
+              subtitles={subtitles}
             />
 
             {/* Click-to-Play Overlay */}
@@ -364,8 +382,14 @@ export const VideoStudioView: React.FC<VideoStudioViewProps> = ({
                 </button>
               </div>
 
-              {/* Timecode & Audio Pill */}
+              {/* Timecode & Audio / Subtitle Pills */}
               <div className="flex items-center gap-2">
+                {subtitles && subtitles.length > 0 && (
+                  <div className="hidden md:flex items-center gap-1 text-[11px] text-amber-300 bg-amber-950/70 border border-amber-800/60 px-2 py-0.5 rounded-lg shadow-sm">
+                    <Type className="w-3 h-3 text-amber-400" />
+                    <span>{subtitles.length} Subs (TTS)</span>
+                  </div>
+                )}
                 {audioTrack && (
                   <div className="hidden sm:flex items-center gap-1 text-[11px] text-indigo-400 bg-indigo-950/60 border border-indigo-800/60 px-2 py-0.5 rounded-lg">
                     <Music className="w-3 h-3" />
@@ -405,6 +429,14 @@ export const VideoStudioView: React.FC<VideoStudioViewProps> = ({
           currentIndex={activeSlideIndex}
           aspectRatio={aspectRatio}
           audioTrack={audioTrack}
+          subtitles={subtitles}
+          onUpdateSubtitles={onUpdateSubtitles}
+          voiceoverTrack={voiceoverTrack}
+          onUpdateVoiceoverTrack={onUpdateVoiceoverTrack}
+          sfxClips={sfxClips}
+          onUpdateSfxClips={onUpdateSfxClips}
+          audioChannels={audioChannels}
+          onUpdateAudioChannels={onUpdateAudioChannels}
           onSelectSlide={(idx) => {
             onSelectSlide(idx);
             onSeek(slideTimings[idx]?.startTime || 0);

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Slide, BrandInfo, AspectRatio, TransitionType, SceneMotionEffect } from '../types';
+import { Slide, BrandInfo, AspectRatio, TransitionType, SceneMotionEffect, SubtitleItem } from '../types';
 import { CanvasSlide } from '../components/CanvasSlide';
 
 export interface TransitionState {
@@ -325,6 +325,7 @@ interface VideoPreviewPlayerProps {
   brand: BrandInfo;
   aspectRatio: AspectRatio;
   currentTime: number;
+  subtitles?: SubtitleItem[];
 }
 
 /**
@@ -336,8 +337,12 @@ export const VideoPreviewPlayer: React.FC<VideoPreviewPlayerProps> = ({
   brand,
   aspectRatio,
   currentTime,
+  subtitles,
 }) => {
   const transState = getActiveTransitionState(slides, currentTime);
+  const activeSubtitle = subtitles?.find(
+    (s) => currentTime >= s.startTime && currentTime <= s.endTime
+  ) || null;
 
   if (transState.isTransitioning) {
     const motionStyleA = getMotionStyle(transState.effectA, transState.progA);
@@ -362,8 +367,11 @@ export const VideoPreviewPlayer: React.FC<VideoPreviewPlayerProps> = ({
             aspectRatio={aspectRatio}
             isExportMode={true}
             currentTimeInSlide={transState.timeInA}
+            currentSubtitle={activeSubtitle}
             activeElementKey={null}
             onSelectElement={() => {}}
+            allSlides={slides}
+            slideIndex={transState.slideIndexA}
           />
         </div>
 
@@ -378,8 +386,11 @@ export const VideoPreviewPlayer: React.FC<VideoPreviewPlayerProps> = ({
             aspectRatio={aspectRatio}
             isExportMode={true}
             currentTimeInSlide={transState.timeInB}
+            currentSubtitle={activeSubtitle}
             activeElementKey={null}
             onSelectElement={() => {}}
+            allSlides={slides}
+            slideIndex={transState.slideIndexB}
           />
         </div>
 
@@ -404,8 +415,11 @@ export const VideoPreviewPlayer: React.FC<VideoPreviewPlayerProps> = ({
           aspectRatio={aspectRatio}
           isExportMode={true}
           currentTimeInSlide={transState.timeInA}
+          currentSubtitle={activeSubtitle}
           activeElementKey={null}
           onSelectElement={() => {}}
+          allSlides={slides}
+          slideIndex={transState.slideIndexA}
         />
       </div>
     </div>

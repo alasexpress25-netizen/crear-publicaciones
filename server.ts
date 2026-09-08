@@ -1052,6 +1052,207 @@ Devuelve EXCLUSIVAMENTE un JSON con:
     }
   });
 
+  // 6. Generate timed AI Subtitles for Video
+  app.post("/api/generate-subtitles-ai", async (req, res) => {
+    try {
+      const { text, totalDuration = 15, stylePreset = "hormozi" } = req.body || {};
+      if (!text || typeof text !== "string") {
+        return res.status(400).json({ error: "Falta el texto o guión a subtitular" });
+      }
+
+      const dur = Math.max(2, Number(totalDuration) || 15);
+      const prompt = `Actúa como un editor de video profesional estilo Alex Hormozi / Reels.
+Divide el siguiente texto en fragmentos muy cortos, directos e impactantes (máximo 2 a 5 palabras por fragmento) para mostrar como subtítulos dinámicos sincronizados.
+La duración total del video es de exactamente ${dur.toFixed(1)} segundos.
+Distribuye uniformemente los tiempos startTime y endTime a lo largo de esos ${dur.toFixed(1)} segundos sin que se solapen, cubriendo desde 0 hasta el final.
+
+Texto base:
+"${text}"
+
+Devuelve estrictamente un arreglo JSON de subtítulos con este formato:
+[
+  {
+    "id": "sub-1",
+    "text": "EL MAYOR SECRETO",
+    "startTime": 0.0,
+    "endTime": 2.0,
+    "stylePreset": "${stylePreset}"
+  }
+]`;
+
+      const response = await executeWithFallback((ai, modelName) =>
+        ai.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+            temperature: 0.3,
+          },
+        })
+      );
+
+      const parsed = JSON.parse(response.text || "[]");
+      res.json({ success: true, data: parsed });
+    } catch (err: any) {
+      console.error("Error generating subtitles:", err);
+      res.status(500).json({ error: err.message || "Error al generar subtítulos con IA" });
+    }
+  });
+
+  // 7. Optimize Voiceover / TTS Script
+  app.post("/api/optimize-voiceover-script", async (req, res) => {
+    try {
+      const { script = "", language = "es", tone = "energético y persuasivo" } = req.body || {};
+      if (!script || typeof script !== "string") {
+        return res.status(400).json({ error: "Falta el guión para optimizar" });
+      }
+
+      const prompt = `Actúa como un copywriter y locutor publicitario experto en videos cortos virales.
+Reescribe y pule el siguiente guión para que suene dinámico, natural, fácil de pronunciar y altamente persuasivo para locución (Text-to-Speech).
+Idioma objetivo: ${language}.
+Tono: ${tone}.
+Elimina tecnicismos innecesarios o abreviaturas que confundan al sintetizador de voz. Usa puntuación estratégica para crear pausas rítmicas.
+
+Guión original:
+"${script}"
+
+Devuelve únicamente un JSON con la propiedad "optimizedScript":
+{
+  "optimizedScript": "texto pulido aquí..."
+}`;
+
+      const response = await executeWithFallback((ai, modelName) =>
+        ai.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+            temperature: 0.4,
+          },
+        })
+      );
+
+      const parsed = JSON.parse(response.text || "{}");
+      res.json({ success: true, data: parsed.optimizedScript || script });
+    } catch (err: any) {
+      console.error("Error optimizing voiceover script:", err);
+      res.status(500).json({ error: err.message || "Error al optimizar guión de locución" });
+    }
+  });
+
+  // Helper to package raw 24kHz mono L16 PCM into standard RIFF WAV
+  function pcmToWav(pcmBuffer: Buffer, sampleRate = 24000, numChannels = 1): Buffer {
+    const byteRate = sampleRate * numChannels * 2;
+    const blockAlign = numChannels * 2;
+    const dataSize = pcmBuffer.length;
+    const header = Buffer.alloc(44);
+
+    header.write("RIFF", 0);
+    header.writeUInt32LE(36 + dataSize, 4);
+    header.write("WAVE", 8);
+    header.write("fmt ", 12);
+    header.writeUInt32LE(16, 16); // 16 for standard PCM
+    header.writeUInt16LE(1, 20);  // Format 1 = PCM
+    header.writeUInt16LE(numChannels, 22);
+    header.writeUInt32LE(sampleRate, 24);
+    header.writeUInt32LE(byteRate, 28);
+    header.writeUInt16LE(blockAlign, 32);
+    header.writeUInt16LE(16, 34); // 16 bits per sample
+    header.write("data", 36);
+    header.writeUInt32LE(dataSize, 40);
+
+    return Buffer.concat([header, pcmBuffer]);
+  }
+
+  // 7. Synthesize High-Quality AI Voiceover Audio (Gemini TTS)
+  app.post("/api/synthesize-voiceover", async (req, res) => {
+    try {
+      const { text, voiceName = "Kore", language = "es-ES", tone = "natural, profesional y persuasivo" } = req.body || {};
+      if (!text || typeof text !== "string" || !text.trim()) {
+        return res.status(400).json({ error: "El texto es obligatorio para sintetizar la locución" });
+      }
+
+      const ai = getAI();
+      const validVoices = ["Puck", "Charon", "Kore", "Fenrir", "Zephyr"];
+      let selectedVoice = "Kore";
+      if (validVoices.includes(voiceName)) {
+        selectedVoice = voiceName;
+      } else if (voiceName.toLowerCase().includes("fenrir") || voiceName.toLowerCase().includes("hombre") || voiceName.toLowerCase().includes("male") || voiceName.toLowerCase().includes("grave")) {
+        selectedVoice = "Fenrir";
+      } else if (voiceName.toLowerCase().includes("puck") || voiceName.toLowerCase().includes("joven") || voiceName.toLowerCase().includes("dinam")) {
+        selectedVoice = "Puck";
+      } else if (voiceName.toLowerCase().includes("charon")) {
+        selectedVoice = "Charon";
+      } else if (voiceName.toLowerCase().includes("zephyr")) {
+        selectedVoice = "Zephyr";
+      } else {
+        selectedVoice = "Kore";
+      }
+
+      const cleanText = text.trim();
+      const promptText = `Narra el siguiente texto de forma fluida y clara en ${language} con tono ${tone}:\n${cleanText}`;
+
+      let lastErr: any = null;
+      let response: any = null;
+      const totalKeys = Math.max(1, aiClients.length);
+
+      for (let i = 0; i < totalKeys; i++) {
+        const client = aiClients[(currentKeyIndex + i) % aiClients.length];
+        try {
+          response = await client.models.generateContent({
+            model: "gemini-3.1-flash-tts-preview",
+            contents: [{ parts: [{ text: promptText }] }],
+            config: {
+              responseModalities: ["AUDIO"],
+              speechConfig: {
+                voiceConfig: {
+                  prebuiltVoiceConfig: { voiceName: selectedVoice },
+                },
+              },
+            },
+          });
+          if (response) {
+            currentKeyIndex = (currentKeyIndex + i) % aiClients.length;
+            break;
+          }
+        } catch (e: any) {
+          lastErr = e;
+          console.warn(`[TTS] Key attempt #${i + 1} error:`, e?.message || e);
+        }
+      }
+
+      if (!response && lastErr) {
+        throw lastErr;
+      }
+
+      const part = response?.candidates?.[0]?.content?.parts?.[0];
+      const base64Data = part?.inlineData?.data;
+      if (!base64Data) {
+        return res.status(500).json({ error: "No se generó audio desde el servicio de voz de IA" });
+      }
+
+      const rawBuffer = Buffer.from(base64Data, "base64");
+      const wavBuffer = rawBuffer.subarray(0, 4).toString("ascii") === "RIFF"
+        ? rawBuffer
+        : pcmToWav(rawBuffer, 24000, 1);
+
+      const wavBase64 = wavBuffer.toString("base64");
+      const audioUrl = `data:audio/wav;base64,${wavBase64}`;
+      const durationSeconds = rawBuffer.length / (24000 * 2);
+
+      return res.json({
+        success: true,
+        audioUrl,
+        duration: Math.max(1, Math.round(durationSeconds * 10) / 10),
+        voiceName: selectedVoice,
+        mimeType: "audio/wav",
+      });
+    } catch (err: any) {
+      console.error("Error synthesizing voiceover:", err);
+      return res.status(500).json({ error: err.message || "Error al sintetizar la locución con IA" });
+    }
+  });
+
   // Dedicated download route for yt2mp3_server.py
   app.get(["/yt2mp3_server.py", "/api/download-python-script"], (_req, res) => {
     const scriptPath = path.join(process.cwd(), "public", "yt2mp3_server.py");
@@ -1101,6 +1302,107 @@ Devuelve EXCLUSIVAMENTE un JSON con:
         error: "YouTube requiere descarga local (ejecuta yt2mp3_server.py en tu PC) o usar el convertidor web directo.",
         isBotProtected: true,
       });
+    }
+  });
+
+  // Generate Dynamic Synchronized Subtitles with AI
+  app.post("/api/generate-subtitles-ai", async (req, res) => {
+    try {
+      const { text, totalDuration = 15, stylePreset = "hormozi", language = "es" } = req.body;
+      if (!text || typeof text !== "string") {
+        return res.status(400).json({ error: "Texto obligatorio para generar subtítulos" });
+      }
+
+      const prompt = `
+Actúas como un editor de video profesional especializado en subtítulos virales de alto impacto (estilo Alex Hormozi, MrBeast, TikTok Reels).
+Dado el siguiente texto y una duración total de video de ${totalDuration} segundos:
+TEXTO:
+"""
+${text}
+"""
+
+Divide el texto en frases muy cortas y contundentes (máximo 2 a 5 palabras por fragmento) para que aparezcan en pantalla de forma rítmica y dinámica.
+Calcula los tiempos de inicio (startTime) y fin (endTime) en segundos para cada fragmento, distribuidos de manera uniforme y lógica a lo largo de los ${totalDuration} segundos (desde 0.0s hasta ${totalDuration}s sin solapamientos).
+Cada fragmento debe tener el estilo: "${stylePreset}".
+
+Devuelve OBLIGATORIAMENTE un JSON con esta estructura exacta:
+{
+  "subtitles": [
+    {
+      "id": "sub-1",
+      "text": "EL ERROR OCULTO",
+      "startTime": 0.0,
+      "endTime": 1.4,
+      "stylePreset": "${stylePreset}"
+    }
+  ]
+}
+`;
+
+      const response = await executeWithFallback((ai, modelName) =>
+        ai.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+            temperature: 0.3,
+          },
+        })
+      );
+
+      const parsed = JSON.parse(response.text || "{}");
+      res.json({ success: true, subtitles: parsed.subtitles || [] });
+    } catch (err: any) {
+      console.error("Error generating subtitles with AI:", err);
+      res.status(500).json({ error: err.message || "Error al generar subtítulos con IA" });
+    }
+  });
+
+  // Optimize Voiceover Narration Script with AI
+  app.post("/api/optimize-voiceover-script", async (req, res) => {
+    try {
+      const { script, language = "es", tone = "energético, persuasivo y claro" } = req.body;
+      if (!script || typeof script !== "string") {
+        return res.status(400).json({ error: "Guión obligatorio para optimizar" });
+      }
+
+      const prompt = `
+Actúas como un Guionista de Locución y Copywriter Senior para Reels y videos de ventas.
+Reescribe y optimiza el siguiente texto para que sea leído por una voz en off (Texto a Voz / TTS).
+- Tono: ${tone}
+- Idioma: ${language}
+- Debe sonar completamente natural, fluido y rítmico al ser pronunciado en voz alta.
+- Agrega pausas estratégicas con comas y puntos.
+- Elimina redundancias o palabras difíciles de vocalizar.
+- Haz que cada frase atrape la atención de principio a fin.
+
+TEXTO ORIGINAL:
+"""
+${script}
+"""
+
+Devuelve un JSON con:
+{
+  "optimizedScript": "Texto pulido listo para la voz en off..."
+}
+`;
+
+      const response = await executeWithFallback((ai, modelName) =>
+        ai.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+            temperature: 0.7,
+          },
+        })
+      );
+
+      const parsed = JSON.parse(response.text || "{}");
+      res.json({ success: true, optimizedScript: parsed.optimizedScript || script });
+    } catch (err: any) {
+      console.error("Error optimizing voiceover script:", err);
+      res.status(500).json({ error: err.message || "Error al optimizar guión con IA" });
     }
   });
 

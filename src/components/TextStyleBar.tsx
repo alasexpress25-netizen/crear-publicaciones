@@ -38,6 +38,8 @@ import {
   Zap,
   Play,
   Timer,
+  Film,
+  Video,
 } from 'lucide-react';
 import { Slide, BrandInfo, TextStyleItem, SlideLayoutTemplate, ElementAnimationIn, ElementAnimationOut } from '../types';
 import { ANIMATION_IN_PRESETS, ANIMATION_OUT_PRESETS } from '../utils/elementAnimationEngine';
@@ -57,8 +59,9 @@ interface TextStyleBarProps {
   onUpdateStyle: (key: string, style: Partial<TextStyleItem>) => void;
   onResetStyle?: (key: string) => void;
   onDeleteActiveElement?: (key: string) => void;
-  onAddCustomText?: (type?: 'heading' | 'body' | 'badge' | 'accent' | 'box' | 'image', payload?: { imageUrl?: string }) => void;
+  onAddCustomText?: (type?: 'heading' | 'body' | 'badge' | 'accent' | 'box' | 'image' | 'video', payload?: { imageUrl?: string; videoUrl?: string }) => void;
   onAddCustomImage?: (fileOrUrl: string) => void;
+  onAddCustomVideo?: (fileOrUrl: string) => void;
   onSelectElement?: (key: string | null) => void;
   onUpdateBrand?: (field: keyof BrandInfo, value: any) => void;
   onUpdateSlideOverlayType?: (type: 'gradient' | 'solid' | 'card' | 'cinematic') => void;
@@ -87,7 +90,18 @@ const isBrandKey = (key: string) =>
   key === 'brandName' || key === 'brandWeb' || key === 'brandHandle' || key === 'brandLogo';
 
 const isLogoKey = (key: string | null) =>
-  key === 'brandLogo' || key === 'cta-avatar' || Boolean(key && (key.startsWith('custom-img-') || key.startsWith('custom-image-')));
+  key === 'brandLogo' ||
+  key === 'cta-avatar' ||
+  Boolean(
+    key &&
+      (key.startsWith('custom-img-') ||
+        key.startsWith('custom-image-') ||
+        key.startsWith('custom-photo-') ||
+        key.startsWith('v2-') ||
+        key.startsWith('custom-vid-') ||
+        key.startsWith('custom-video-') ||
+        key.startsWith('custom-media-'))
+  );
 
 const isAccentKey = (key: string | null) => {
   if (!key) return false;
@@ -143,6 +157,7 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
   onDeleteActiveElement,
   onAddCustomText,
   onAddCustomImage,
+  onAddCustomVideo,
   onSelectElement,
   onUpdateBrand,
   onUpdateSlideOverlayType,
@@ -161,6 +176,7 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
   const [outlineTab, setOutlineTab] = useState<'text' | 'box'>('text');
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoFileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -173,6 +189,25 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
           onAddCustomImage(result);
         } else if (onAddCustomText) {
           onAddCustomText('image', { imageUrl: result });
+        }
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+    setIsAddMenuOpen(false);
+  };
+
+  const handleVideoFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const result = event.target?.result as string;
+      if (result) {
+        if (onAddCustomVideo) {
+          onAddCustomVideo(result);
+        } else if (onAddCustomText) {
+          onAddCustomText('video', { videoUrl: result });
         }
       }
     };
@@ -282,6 +317,8 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
           list.push({ key: c.id, label: `Recuadro: ${c.text?.slice(0, 16) || 'Caja'}...`, icon: '🔲' });
         } else if (c.type === 'accent' || c.id.startsWith('custom-accent-')) {
           list.push({ key: c.id, label: 'Línea / Acento Decorativo', icon: '✨' });
+        } else if (c.type === 'video' || c.id.startsWith('custom-vid-') || c.id.startsWith('v2-') || Boolean(c.videoUrl)) {
+          list.push({ key: c.id, label: 'Video / Clip Insertado', icon: '🎬' });
         } else if (c.type === 'image' || c.id.startsWith('custom-img-') || c.id.startsWith('custom-image-')) {
           list.push({ key: c.id, label: 'Imagen / Logo Subido', icon: '🖼️' });
         } else {
@@ -444,6 +481,52 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
                       <div className="text-[10px] text-slate-400">Subir PNG, JPG o SVG local</div>
                     </div>
                   </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      videoFileInputRef.current?.click();
+                    }}
+                    className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-xs text-slate-200 hover:bg-slate-800 hover:text-white rounded-xl transition text-left group bg-slate-950/60 border border-slate-800"
+                  >
+                    <div className="p-1 rounded-lg bg-slate-800 group-hover:bg-purple-600/30 text-purple-400">
+                      <Film className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <div className="font-semibold text-purple-300 group-hover:text-purple-200 flex items-center gap-1">
+                        <span>Video o Clip</span>
+                        <span className="text-[9px] bg-purple-950/80 text-purple-400 border border-purple-500/40 px-1 rounded font-bold">Desde PC</span>
+                      </div>
+                      <div className="text-[10px] text-slate-400">Subir MP4, WebM o video local</div>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const url = prompt('Ingresa la URL del video (MP4, WebM, etc.):');
+                      if (url && url.trim()) {
+                        if (onAddCustomVideo) {
+                          onAddCustomVideo(url.trim());
+                        } else if (onAddCustomText) {
+                          onAddCustomText('video', { videoUrl: url.trim() });
+                        }
+                        setIsAddMenuOpen(false);
+                      }
+                    }}
+                    className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-xs text-slate-200 hover:bg-slate-800 hover:text-white rounded-xl transition text-left group bg-slate-950/60 border border-slate-800"
+                  >
+                    <div className="p-1 rounded-lg bg-slate-800 group-hover:bg-indigo-600/30 text-indigo-400">
+                      <Video className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <div className="font-semibold text-indigo-300 group-hover:text-indigo-200 flex items-center gap-1">
+                        <span>Video por URL</span>
+                        <span className="text-[9px] bg-indigo-950/80 text-indigo-400 border border-indigo-500/40 px-1 rounded font-bold">Enlace</span>
+                      </div>
+                      <div className="text-[10px] text-slate-400">Insertar video desde URL web</div>
+                    </div>
+                  </button>
                 </div>
               </div>
             </>
@@ -454,6 +537,13 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
             type="file"
             accept="image/*"
             onChange={handleFileUpload}
+            className="hidden"
+          />
+          <input
+            ref={videoFileInputRef}
+            type="file"
+            accept="video/mp4,video/webm,video/*"
+            onChange={handleVideoFileUpload}
             className="hidden"
           />
         </div>
@@ -632,6 +722,8 @@ export const TextStyleBar: React.FC<TextStyleBarProps> = ({
                     ? '🖼️ Logo Marca'
                     : activeKey === 'cta-avatar'
                     ? '🖼️ Avatar CTA'
+                    : activeKey?.startsWith('custom-vid-') || activeKey?.startsWith('custom-video-') || activeKey?.startsWith('v2-')
+                    ? '🎬 Video Clip'
                     : '🖼️ Imagen / Logo'}
                 </span>
               </div>

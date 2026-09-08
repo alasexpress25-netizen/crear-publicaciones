@@ -1,16 +1,40 @@
-import { VideoAudioTrack, AudioEffectType } from '../types';
-import { generateProceduralAudioBuffer } from './audioLibrary';
+import { VideoAudioTrack, AudioEffectType, VoiceoverTrack } from '../types';
+import { generateProceduralAudioBuffer, generateProceduralSFXBuffer } from './audioLibrary';
+
+interface MultiTrackSyncParams {
+  trackA1: VideoAudioTrack | null;
+  voiceoverTrack?: VoiceoverTrack | null;
+  extraTracks?: VideoAudioTrack[];
+  currentTimeSeconds: number;
+  isPlaying: boolean;
+  totalDuration?: number;
+}
+
+interface ActiveChannel {
+  source: AudioBufferSourceNode | null;
+  gainNode: GainNode | null;
+  filterNodes: AudioNode[];
+  trackUrl: string;
+  playStartTimeAudioCtx: number;
+  playOffsetSeconds: number;
+  isLooping: boolean;
+  speed: number;
+}
 
 class PreviewAudioEngine {
   private ctx: AudioContext | null = null;
-  private currentSource: AudioBufferSourceNode | null = null;
-  private gainNode: GainNode | null = null;
-  private filterNodes: AudioNode[] = [];
   private cachedBuffers: Map<string, AudioBuffer> = new Map();
   private isCurrentlyPlaying: boolean = false;
-  private activeTrack: VideoAudioTrack | null = null;
-  private playStartTimeAudioCtx: number = 0;
-  private playOffsetSeconds: number = 0;
+
+  // Active Channels
+  private channelA1: ActiveChannel | null = null;
+  private channelA2Voice: ActiveChannel | null = null;
+  private channelExtra: Map<string, ActiveChannel> = new Map();
+
+  // Voiceover Web Speech state
+  private isTtsSpeaking: boolean = false;
+  private lastTtsSpokenId: string | null = null;
+  private ttsCurrentUtterance: SpeechSynthesisUtterance | null = null;
 
   public getAudioContext(): AudioContext {
     if (!this.ctx) {
@@ -39,9 +63,9 @@ class PreviewAudioEngine {
   }
 
   /**
-   * Load or retrieve an AudioBuffer for a track
+   * Load or retrieve an AudioBuffer for any track (music, preset, sfx, blob, or url)
    */
-  public async getAudioBuffer(track: VideoAudioTrack): Promise<AudioBuffer | null> {
+  public async getAudioBuffer(track: { url: string }): Promise<AudioBuffer | null> {
     try {
       const ctx = this.getAudioContext();
       const cacheKey = track.url;
@@ -57,6 +81,13 @@ class PreviewAudioEngine {
         return buffer;
       }
 
+      if (track.url.startsWith('sfx:')) {
+        const sfxId = track.url.replace('sfx:', '');
+        const buffer = generateProceduralSFXBuffer(ctx, sfxId);
+        this.cachedBuffers.set(cacheKey, buffer);
+        return buffer;
+      }
+
       // Fetch external or blob audio
       const response = await fetch(track.url);
       const arrayBuffer = await response.arrayBuffer();
@@ -64,7 +95,7 @@ class PreviewAudioEngine {
       this.cachedBuffers.set(cacheKey, decoded);
       return decoded;
     } catch (err) {
-      console.warn('Error loading audio track buffer:', err);
+      console.warn('Error loading audio buffer for:', track.url, err);
       return null;
     }
   }
@@ -86,7 +117,6 @@ class PreviewAudioEngine {
     }
 
     if (effect === 'bass_boost') {
-      // Sub-Bass + Low Shelf Boost +6dB at 90Hz
       const lowShelf = ctx.createBiquadFilter();
       lowShelf.type = 'lowshelf';
       lowShelf.frequency.value = 100;
@@ -103,7 +133,6 @@ class PreviewAudioEngine {
       peak.connect(destination);
       nodes.push(lowShelf, peak);
     } else if (effect === 'lowpass_filter') {
-      // Underwater / Muffled intro filter
       const lpf = ctx.createBiquadFilter();
       lpf.type = 'lowpass';
       lpf.frequency.value = 850;
@@ -113,7 +142,6 @@ class PreviewAudioEngine {
       lpf.connect(destination);
       nodes.push(lpf);
     } else if (effect === 'high_energy') {
-      // Dynamic compressor + treble sizzle
       const comp = ctx.createDynamicsCompressor();
       comp.threshold.value = -18;
       comp.knee.value = 12;
@@ -131,7 +159,6 @@ class PreviewAudioEngine {
       comp.connect(destination);
       nodes.push(highShelf, comp);
     } else if (effect === 'vintage_radio') {
-      // Bandpass / Phone speaker
       const bpf = ctx.createBiquadFilter();
       bpf.type = 'bandpass';
       bpf.frequency.value = 1600;
@@ -141,7 +168,6 @@ class PreviewAudioEngine {
       bpf.connect(destination);
       nodes.push(bpf);
     } else if (effect === 'reverb_hall') {
-      // Simulated Acoustic Reverb
       const convolver = ctx.createConvolver();
       const rate = ctx.sampleRate;
       const length = rate * 1.8;
@@ -175,15 +201,19 @@ class PreviewAudioEngine {
   }
 
   /**
-   * Start or sync audio playback at a given timeline position
+   * Synchronize multiple audio tracks simultaneously (A1 Music + A2 Voiceover + A3 SFX + A4 Ambient)
    */
-  public async syncPlayback(
-    track: VideoAudioTrack | null,
-    currentTimeSeconds: number,
-    isPlaying: boolean,
-    totalVideoDuration: number = 30
-  ) {
-    if (!track || !isPlaying || track.isMuted || (track.volume ?? 1) <= 0) {
+  public async syncMultiTrackPlayback(params: MultiTrackSyncParams) {
+    const {
+      trackA1,
+      voiceoverTrack,
+      extraTracks = [],
+      currentTimeSeconds,
+      isPlaying,
+      totalDuration = 30,
+    } = params;
+
+    if (!isPlaying) {
       this.stop();
       return;
     }
@@ -192,52 +222,122 @@ class PreviewAudioEngine {
     if (ctx.state === 'suspended') {
       await ctx.resume().catch(() => {});
     }
+    this.isCurrentlyPlaying = true;
 
-    const buffer = await this.getAudioBuffer(track);
-    if (!buffer) {
-      this.stop();
+    // 1. Synchronize Channel A2: Voiceover / Locución
+    await this.syncVoiceoverChannel(voiceoverTrack, currentTimeSeconds, isPlaying, totalDuration);
+
+    // 2. Synchronize Channel A1: Background Music (with Auto-Ducking if voice is speaking)
+    await this.syncChannelA1(trackA1, currentTimeSeconds, isPlaying, totalDuration);
+
+    // 3. Synchronize Extra Audio Channels (A3 SFX, A4 Foley/Ambient, etc.)
+    await this.syncExtraChannels(extraTracks, currentTimeSeconds, isPlaying, totalDuration);
+  }
+
+  /**
+   * Channel A1: Background Music playback and sync
+   */
+  private async syncChannelA1(
+    track: VideoAudioTrack | null,
+    currentTimeSeconds: number,
+    isPlaying: boolean,
+    totalDuration: number
+  ) {
+    if (!track || !isPlaying || track.isMuted || (track.volume ?? 1) <= 0) {
+      this.stopChannelA1();
       return;
     }
 
-    // Calculate effective time offset in audio
+    const ctx = this.getAudioContext();
+    const buffer = await this.getAudioBuffer(track);
+    if (!buffer) {
+      this.stopChannelA1();
+      return;
+    }
+
     const startOffset = track.startOffset || 0;
     const speed = track.speed || 1;
     const audioTrimDuration = track.duration || buffer.duration;
-
-    // Relative timeline position
-    const relativeTime = currentTimeSeconds - startOffset;
-
-    if (relativeTime < 0) {
-      // Playhead is before the audio starts
-      this.stop();
-      return;
-    }
-
-    const isLooping = track.loop !== false; // Loop by default for background soundtrack
-    if (relativeTime > audioTrimDuration && !isLooping) {
-      // Audio trimmed out
-      this.stop();
-      return;
-    }
-
     const durationLimit = audioTrimDuration || buffer.duration;
+    const relativeTime = currentTimeSeconds - startOffset;
+    const isLooping = track.loop !== false;
+
+    // If track is scheduled to start in the future relative to currentTimeSeconds
+    if (relativeTime < 0) {
+      const delay = (startOffset - currentTimeSeconds) / speed;
+      const startTimeAudioCtx = ctx.currentTime + delay;
+
+      if (this.channelA1 && this.channelA1.source && this.channelA1.trackUrl === track.url) {
+        const drift = Math.abs(this.channelA1.playStartTimeAudioCtx - startTimeAudioCtx);
+        if (drift < 0.2) {
+          return;
+        }
+      }
+
+      this.stopChannelA1();
+
+      try {
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.playbackRate.value = speed;
+        source.loop = isLooping;
+        if (isLooping) {
+          source.loopStart = 0;
+          source.loopEnd = Math.min(buffer.duration, durationLimit);
+        }
+
+        const gain = ctx.createGain();
+        const filterNodes = this.buildEffectChain(ctx, track.audioEffect, source, gain);
+        gain.connect(ctx.destination);
+
+        const playDuration = Math.max(0.1, durationLimit);
+        source.start(startTimeAudioCtx, 0, isLooping ? undefined : playDuration);
+
+        this.channelA1 = {
+          source,
+          gainNode: gain,
+          filterNodes,
+          trackUrl: track.url,
+          playStartTimeAudioCtx: startTimeAudioCtx,
+          playOffsetSeconds: 0,
+          isLooping,
+          speed,
+        };
+
+        this.updateGainA1(track, startOffset, totalDuration);
+
+        source.onended = () => {
+          if (this.channelA1?.source === source) {
+            this.channelA1 = null;
+          }
+        };
+      } catch (err) {
+        console.warn('Error scheduling future Channel A1:', err);
+      }
+      return;
+    }
+
+    if (relativeTime > audioTrimDuration && !isLooping) {
+      this.stopChannelA1();
+      return;
+    }
+
     const rawOffset = isLooping ? (relativeTime % durationLimit) : relativeTime;
     const offsetInAudio = Math.max(0, Math.min(Math.max(0, buffer.duration - 0.05), rawOffset));
 
-    // If already playing smoothly and difference is tiny (<0.15s), avoid restarting source
-    if (this.isCurrentlyPlaying && this.currentSource && this.activeTrack?.url === track.url) {
-      const elapsedSinceStart = (ctx.currentTime - this.playStartTimeAudioCtx) * speed;
-      const estimatedCurrentAudioTime = this.playOffsetSeconds + elapsedSinceStart;
-      const drift = Math.abs(estimatedCurrentAudioTime - offsetInAudio);
-      if (drift < 0.2) {
-        // Just update volume / gains
-        this.updateGain(track, currentTimeSeconds, totalVideoDuration);
+    // Smooth drift check: if playing and aligned within 0.2s, just update volume
+    if (this.channelA1 && this.channelA1.source && this.channelA1.trackUrl === track.url) {
+      const elapsedSinceStart = (ctx.currentTime - this.channelA1.playStartTimeAudioCtx) * speed;
+      const estimatedAudioTime = this.channelA1.playOffsetSeconds + elapsedSinceStart;
+      const drift = Math.abs(estimatedAudioTime - offsetInAudio);
+      if (drift < 0.25) {
+        this.updateGainA1(track, currentTimeSeconds, totalDuration);
         return;
       }
     }
 
-    // Restart source at exact offset
-    this.stop();
+    // Restart A1 at exact offset
+    this.stopChannelA1();
 
     try {
       const source = ctx.createBufferSource();
@@ -249,79 +349,473 @@ class PreviewAudioEngine {
         source.loopEnd = Math.min(buffer.duration, durationLimit);
       }
 
-      const masterGain = ctx.createGain();
-      this.gainNode = masterGain;
+      const gain = ctx.createGain();
+      const filterNodes = this.buildEffectChain(ctx, track.audioEffect, source, gain);
+      gain.connect(ctx.destination);
 
-      // Connect effect chain -> masterGain -> destination
-      this.filterNodes = this.buildEffectChain(ctx, track.audioEffect, source, masterGain);
-      masterGain.connect(ctx.destination);
-
-      this.updateGain(track, currentTimeSeconds, totalVideoDuration);
-
-      // Start buffer playback
       const playDuration = Math.max(0.1, durationLimit - offsetInAudio);
       source.start(0, offsetInAudio, isLooping ? undefined : playDuration);
 
-      this.currentSource = source;
-      this.isCurrentlyPlaying = true;
-      this.activeTrack = track;
-      this.playStartTimeAudioCtx = ctx.currentTime;
-      this.playOffsetSeconds = offsetInAudio;
+      this.channelA1 = {
+        source,
+        gainNode: gain,
+        filterNodes,
+        trackUrl: track.url,
+        playStartTimeAudioCtx: ctx.currentTime,
+        playOffsetSeconds: offsetInAudio,
+        isLooping,
+        speed,
+      };
+
+      this.updateGainA1(track, currentTimeSeconds, totalDuration);
 
       source.onended = () => {
-        if (this.currentSource === source) {
-          this.isCurrentlyPlaying = false;
+        if (this.channelA1?.source === source) {
+          this.channelA1 = null;
         }
       };
     } catch (err) {
-      console.warn('Error starting audio source:', err);
+      console.warn('Error starting Channel A1:', err);
     }
   }
 
   /**
-   * Update gain envelope with hardware parameter automation (volume, mute, fade-in, fade-out)
+   * Update gain envelope for Channel A1 (with smart Auto-Ducking when Voiceover is speaking)
    */
-  public updateGain(track: VideoAudioTrack, currentTimeSeconds: number, totalVideoDuration: number) {
-    if (!this.gainNode || !this.ctx) return;
+  private updateGainA1(track: VideoAudioTrack, currentTimeSeconds: number, totalDuration: number) {
+    if (!this.channelA1?.gainNode || !this.ctx) return;
 
     const now = this.ctx.currentTime;
-    this.gainNode.gain.cancelScheduledValues(now);
+    const gainParam = this.channelA1.gainNode.gain;
+    gainParam.cancelScheduledValues(now);
 
     if (track.isMuted) {
-      this.gainNode.gain.setValueAtTime(0, now);
+      gainParam.setValueAtTime(0, now);
       return;
     }
 
-    const baseVol = Math.max(0, Math.min(1, track.volume ?? 0.85));
+    let baseVol = Math.max(0, Math.min(1, track.volume ?? 0.85));
+
+    // Smart Auto-Ducking: If Voiceover is speaking, duck music down by 50%
+    if (this.isTtsSpeaking) {
+      baseVol *= 0.45;
+    }
+
     const startOffset = track.startOffset || 0;
     const timeInAudio = Math.max(0, currentTimeSeconds - startOffset);
     const speed = track.speed || 1;
-
     const fadeIn = track.fadeIn || 0;
     const fadeOut = track.fadeOut || 0;
-    const audioLen = track.duration || (totalVideoDuration - startOffset);
+    const audioLen = track.duration || (totalDuration - startOffset);
     const timeLeftInAudio = Math.max(0, audioLen - timeInAudio);
-    const timeLeftInVideo = Math.max(0, totalVideoDuration - currentTimeSeconds);
+    const timeLeftInVideo = Math.max(0, totalDuration - currentTimeSeconds);
     const playRemaining = Math.min(timeLeftInAudio, timeLeftInVideo);
 
     if (fadeIn > 0 && timeInAudio < fadeIn) {
       const currentStart = baseVol * (timeInAudio / fadeIn);
-      this.gainNode.gain.setValueAtTime(Math.max(0.0001, currentStart), now);
+      gainParam.setValueAtTime(Math.max(0.0001, currentStart), now);
       const rampTime = (fadeIn - timeInAudio) / speed;
-      this.gainNode.gain.linearRampToValueAtTime(baseVol, now + rampTime);
+      gainParam.linearRampToValueAtTime(baseVol, now + rampTime);
     } else {
-      this.gainNode.gain.setValueAtTime(baseVol, now);
+      gainParam.setValueAtTime(baseVol, now);
     }
 
     if (fadeOut > 0 && playRemaining > fadeOut) {
       const fadeStartAudioCtx = now + (playRemaining - fadeOut) / speed;
-      this.gainNode.gain.setValueAtTime(baseVol, Math.max(now, fadeStartAudioCtx));
-      this.gainNode.gain.linearRampToValueAtTime(0.0001, now + playRemaining / speed);
+      gainParam.setValueAtTime(baseVol, Math.max(now, fadeStartAudioCtx));
+      gainParam.linearRampToValueAtTime(0.0001, now + playRemaining / speed);
     }
   }
 
   /**
-   * Preview a quick sample of a track even when timeline is stopped
+   * Channel A2: Voiceover / Locución playback and sync (TTS or Audio File)
+   */
+  private async syncVoiceoverChannel(
+    voTrack: VoiceoverTrack | null | undefined,
+    currentTimeSeconds: number,
+    isPlaying: boolean,
+    totalDuration: number
+  ) {
+    if (!voTrack || !isPlaying || voTrack.isMuted || (voTrack.volume ?? 1) <= 0) {
+      this.stopChannelA2();
+      return;
+    }
+
+    const startOffset = voTrack.startOffset || 0;
+    const voDuration = voTrack.duration || (totalDuration - startOffset);
+    const timeInVo = currentTimeSeconds - startOffset;
+
+    // CASE 1: Audio file (uploaded MP3/WAV, blob, or audio URL)
+    const isRealAudioFile =
+      voTrack.audioUrl &&
+      !voTrack.audioUrl.startsWith('voiceover://') &&
+      voTrack.audioUrl.trim().length > 0;
+
+    // If voiceover starts in the future
+    if (timeInVo < 0) {
+      if (isRealAudioFile) {
+        const ctx = this.getAudioContext();
+        const buffer = await this.getAudioBuffer({ url: voTrack.audioUrl! });
+        if (!buffer) {
+          this.stopChannelA2();
+          return;
+        }
+
+        const speed = voTrack.rate || 1;
+        const delay = (startOffset - currentTimeSeconds) / speed;
+        const startTimeAudioCtx = ctx.currentTime + delay;
+
+        if (this.channelA2Voice && this.channelA2Voice.source && this.channelA2Voice.trackUrl === voTrack.audioUrl) {
+          const drift = Math.abs(this.channelA2Voice.playStartTimeAudioCtx - startTimeAudioCtx);
+          if (drift < 0.2) return;
+        }
+
+        this.stopChannelA2();
+
+        try {
+          const source = ctx.createBufferSource();
+          source.buffer = buffer;
+          source.playbackRate.value = speed;
+
+          const gain = ctx.createGain();
+          gain.gain.setValueAtTime(voTrack.volume ?? 1, startTimeAudioCtx);
+          source.connect(gain);
+          gain.connect(ctx.destination);
+
+          source.start(startTimeAudioCtx, 0, buffer.duration);
+
+          this.channelA2Voice = {
+            source,
+            gainNode: gain,
+            filterNodes: [],
+            trackUrl: voTrack.audioUrl!,
+            playStartTimeAudioCtx: startTimeAudioCtx,
+            playOffsetSeconds: 0,
+            isLooping: false,
+            speed,
+          };
+
+          source.onended = () => {
+            if (this.channelA2Voice?.source === source) {
+              this.channelA2Voice = null;
+              this.isTtsSpeaking = false;
+            }
+          };
+        } catch (err) {
+          console.warn('Error scheduling future voiceover channel:', err);
+        }
+        return;
+      }
+
+      this.stopChannelA2();
+      return;
+    }
+
+    // Already ended
+    if (timeInVo > voDuration) {
+      this.stopChannelA2();
+      return;
+    }
+
+    if (isRealAudioFile) {
+      const ctx = this.getAudioContext();
+      const buffer = await this.getAudioBuffer({ url: voTrack.audioUrl! });
+      if (!buffer) {
+        this.stopChannelA2();
+        return;
+      }
+
+      const speed = voTrack.rate || 1;
+      const offsetInAudio = Math.max(0, Math.min(buffer.duration - 0.05, timeInVo));
+
+      if (this.channelA2Voice && this.channelA2Voice.source && this.channelA2Voice.trackUrl === voTrack.audioUrl) {
+        const elapsedSinceStart = (ctx.currentTime - this.channelA2Voice.playStartTimeAudioCtx) * speed;
+        const estimatedVoTime = this.channelA2Voice.playOffsetSeconds + elapsedSinceStart;
+        if (Math.abs(estimatedVoTime - offsetInAudio) < 0.25) {
+          if (this.channelA2Voice.gainNode) {
+            this.channelA2Voice.gainNode.gain.setValueAtTime(voTrack.volume ?? 1, ctx.currentTime);
+          }
+          this.isTtsSpeaking = true;
+          return;
+        }
+      }
+
+      this.stopChannelA2();
+
+      try {
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.playbackRate.value = speed;
+
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(voTrack.volume ?? 1, ctx.currentTime);
+        source.connect(gain);
+        gain.connect(ctx.destination);
+
+        const playDur = Math.max(0.1, buffer.duration - offsetInAudio);
+        source.start(0, offsetInAudio, playDur);
+
+        this.channelA2Voice = {
+          source,
+          gainNode: gain,
+          filterNodes: [],
+          trackUrl: voTrack.audioUrl!,
+          playStartTimeAudioCtx: ctx.currentTime,
+          playOffsetSeconds: offsetInAudio,
+          isLooping: false,
+          speed,
+        };
+
+        this.isTtsSpeaking = true;
+
+        source.onended = () => {
+          if (this.channelA2Voice?.source === source) {
+            this.channelA2Voice = null;
+            this.isTtsSpeaking = false;
+          }
+        };
+      } catch (err) {
+        console.warn('Error playing voiceover audio:', err);
+      }
+      return;
+    }
+
+    // CASE 2: Text-To-Speech (Web Speech Synthesis)
+    const scriptText = voTrack.scriptText || voTrack.text;
+    if (scriptText && scriptText.trim()) {
+      // If playhead was scrubbed back or restarted near beginning, allow re-trigger
+      if (timeInVo < 0.3) {
+        this.lastTtsSpokenId = null;
+      }
+
+      // If within speech range and hasn't spoken for this track run
+      const trackUid = `${voTrack.id || 'vo'}-${scriptText.slice(0, 15)}`;
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        if (!this.isTtsSpeaking && this.lastTtsSpokenId !== trackUid && timeInVo >= 0 && timeInVo <= 1.5) {
+          this.lastTtsSpokenId = trackUid;
+          try {
+            window.speechSynthesis.cancel();
+          } catch {}
+
+          const utterance = new SpeechSynthesisUtterance(scriptText);
+          utterance.lang = voTrack.language || 'es-ES';
+          utterance.rate = voTrack.rate || 1.05;
+          utterance.pitch = voTrack.pitch || 1.0;
+          utterance.volume = voTrack.volume ?? 1.0;
+
+          if (voTrack.voiceName) {
+            const voices = window.speechSynthesis.getVoices();
+            const matching = voices.find((v) => v.name === voTrack.voiceName || v.voiceURI === voTrack.voiceName);
+            if (matching) utterance.voice = matching;
+          }
+
+          utterance.onstart = () => {
+            this.isTtsSpeaking = true;
+          };
+          utterance.onend = () => {
+            this.isTtsSpeaking = false;
+          };
+          utterance.onerror = () => {
+            this.isTtsSpeaking = false;
+          };
+
+          this.ttsCurrentUtterance = utterance;
+          try {
+            window.speechSynthesis.speak(utterance);
+          } catch (speakErr) {
+            console.warn('Error initiating speech synthesis:', speakErr);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Channel A3 & A4: Extra audio tracks (SFX, Ambient, Secondary music)
+   */
+  private async syncExtraChannels(
+    extraTracks: VideoAudioTrack[],
+    currentTimeSeconds: number,
+    isPlaying: boolean,
+    totalDuration: number
+  ) {
+    if (!extraTracks || extraTracks.length === 0 || !isPlaying) {
+      this.stopAllExtraChannels();
+      return;
+    }
+
+    const ctx = this.getAudioContext();
+    if (ctx.state === 'suspended') {
+      await ctx.resume().catch(() => {});
+    }
+
+    const activeTrackKeys = new Set<string>();
+
+    for (const track of extraTracks) {
+      const trackKey = track.id || `${track.url}-${track.startOffset || 0}`;
+      activeTrackKeys.add(trackKey);
+
+      if (track.isMuted || (track.volume ?? 1) <= 0) {
+        this.stopExtraChannel(trackKey);
+        continue;
+      }
+
+      const startOffset = track.startOffset || 0;
+      const speed = track.speed || 1;
+      const buffer = await this.getAudioBuffer(track);
+      if (!buffer) {
+        this.stopExtraChannel(trackKey);
+        continue;
+      }
+
+      const trimDur = track.duration || buffer.duration;
+      const isLoop = !!track.loop;
+
+      // Case 1: Clip is scheduled to start in the future relative to currentTimeSeconds
+      if (currentTimeSeconds < startOffset) {
+        const delaySec = (startOffset - currentTimeSeconds) / speed;
+        const startTimeAudioCtx = ctx.currentTime + delaySec;
+
+        const existing = this.channelExtra.get(trackKey);
+        if (existing && existing.source && existing.trackUrl === track.url) {
+          const expectedDiff = Math.abs(existing.playStartTimeAudioCtx - startTimeAudioCtx);
+          if (expectedDiff < 0.2) {
+            if (existing.gainNode) {
+              existing.gainNode.gain.setValueAtTime(track.volume ?? 0.95, ctx.currentTime);
+            }
+            continue;
+          }
+        }
+
+        this.stopExtraChannel(trackKey);
+
+        try {
+          const source = ctx.createBufferSource();
+          source.buffer = buffer;
+          source.playbackRate.value = speed;
+          source.loop = isLoop;
+
+          const gain = ctx.createGain();
+          gain.gain.setValueAtTime(track.volume ?? 0.95, startTimeAudioCtx);
+          source.connect(gain);
+          gain.connect(ctx.destination);
+
+          source.start(startTimeAudioCtx, 0, isLoop ? undefined : trimDur);
+
+          this.channelExtra.set(trackKey, {
+            source,
+            gainNode: gain,
+            filterNodes: [],
+            trackUrl: track.url,
+            playStartTimeAudioCtx: startTimeAudioCtx,
+            playOffsetSeconds: 0,
+            isLooping: isLoop,
+            speed,
+          });
+
+          source.onended = () => {
+            if (this.channelExtra.get(trackKey)?.source === source) {
+              this.channelExtra.delete(trackKey);
+            }
+          };
+        } catch (err) {
+          console.warn(`Error scheduling future extra channel ${trackKey}:`, err);
+        }
+        continue;
+      }
+
+      // Case 2: Clip has already finished in the past
+      const relTime = currentTimeSeconds - startOffset;
+      if (relTime >= trimDur && !isLoop) {
+        this.stopExtraChannel(trackKey);
+        continue;
+      }
+
+      // Case 3: Clip should be playing right now (active)
+      const durationLimit = trimDur || buffer.duration;
+      const rawOffset = isLoop ? (relTime % durationLimit) : relTime;
+      const offsetInAudio = Math.max(0, Math.min(buffer.duration - 0.05, rawOffset));
+
+      const existing = this.channelExtra.get(trackKey);
+      if (existing && existing.source && existing.trackUrl === track.url) {
+        const elapsed = (ctx.currentTime - existing.playStartTimeAudioCtx) * speed;
+        const estTime = existing.playOffsetSeconds + elapsed;
+        if (Math.abs(estTime - offsetInAudio) < 0.25) {
+          if (existing.gainNode) {
+            existing.gainNode.gain.setValueAtTime(track.volume ?? 0.95, ctx.currentTime);
+          }
+          continue;
+        }
+      }
+
+      this.stopExtraChannel(trackKey);
+
+      try {
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.playbackRate.value = speed;
+        source.loop = isLoop;
+
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(track.volume ?? 0.95, ctx.currentTime);
+        source.connect(gain);
+        gain.connect(ctx.destination);
+
+        const playDur = Math.max(0.05, trimDur - offsetInAudio);
+        source.start(0, offsetInAudio, isLoop ? undefined : playDur);
+
+        this.channelExtra.set(trackKey, {
+          source,
+          gainNode: gain,
+          filterNodes: [],
+          trackUrl: track.url,
+          playStartTimeAudioCtx: ctx.currentTime,
+          playOffsetSeconds: offsetInAudio,
+          isLooping: isLoop,
+          speed,
+        });
+
+        source.onended = () => {
+          if (this.channelExtra.get(trackKey)?.source === source) {
+            this.channelExtra.delete(trackKey);
+          }
+        };
+      } catch (err) {
+        console.warn(`Error playing current extra channel ${trackKey}:`, err);
+      }
+    }
+
+    // Stop any stale channels that are no longer in extraTracks
+    for (const [key] of this.channelExtra.entries()) {
+      if (!activeTrackKeys.has(key)) {
+        this.stopExtraChannel(key);
+      }
+    }
+  }
+
+  /**
+   * Wrapper for syncPlayback supporting music + voiceover + extra tracks
+   */
+  public async syncPlayback(
+    track: VideoAudioTrack | null,
+    currentTimeSeconds: number,
+    isPlaying: boolean,
+    totalVideoDuration: number = 30,
+    voiceoverTrack?: VoiceoverTrack | null,
+    extraTracks: VideoAudioTrack[] = []
+  ) {
+    return this.syncMultiTrackPlayback({
+      trackA1: track,
+      voiceoverTrack,
+      extraTracks,
+      currentTimeSeconds,
+      isPlaying,
+      totalDuration: totalVideoDuration,
+    });
+  }
+
+  /**
+   * Audition / Preview a sample of any audio track or SFX
    */
   public async previewSample(track: VideoAudioTrack, durationSeconds: number = 3.5) {
     const ctx = await this.resumeContext();
@@ -329,21 +823,37 @@ class PreviewAudioEngine {
     const buffer = await this.getAudioBuffer(track);
     if (!buffer) return;
 
+    const actualDur = Math.min(buffer.duration, Math.max(0.1, durationSeconds));
+
     try {
       const source = ctx.createBufferSource();
       source.buffer = buffer;
       const gain = ctx.createGain();
-      const vol = Math.max(0.1, track.volume ?? 0.85);
+      const vol = Math.max(0.2, track.volume ?? 0.95);
       gain.gain.setValueAtTime(vol, ctx.currentTime);
-      gain.gain.linearRampToValueAtTime(0.0001, ctx.currentTime + durationSeconds);
+      const fadeStart = Math.max(0, actualDur - 0.04);
+      gain.gain.setValueAtTime(vol, ctx.currentTime + fadeStart);
+      gain.gain.linearRampToValueAtTime(0.0001, ctx.currentTime + actualDur);
+
       source.connect(gain);
       gain.connect(ctx.destination);
-      source.start(0, 0, durationSeconds);
-      this.currentSource = source;
-      this.gainNode = gain;
+      source.start(0, 0, actualDur);
+
+      this.channelA1 = {
+        source,
+        gainNode: gain,
+        filterNodes: [],
+        trackUrl: track.url,
+        playStartTimeAudioCtx: ctx.currentTime,
+        playOffsetSeconds: 0,
+        isLooping: false,
+        speed: 1,
+      };
       this.isCurrentlyPlaying = true;
+
       source.onended = () => {
-        if (this.currentSource === source) {
+        if (this.channelA1?.source === source) {
+          this.channelA1 = null;
           this.isCurrentlyPlaying = false;
         }
       };
@@ -353,34 +863,83 @@ class PreviewAudioEngine {
   }
 
   /**
-   * Stop audio playback
+   * Stop all playback across all channels (A1, A2, A3, A4, TTS)
    */
   public stop() {
-    if (this.currentSource) {
-      try {
-        this.currentSource.stop();
-        this.currentSource.disconnect();
-      } catch {}
-      this.currentSource = null;
-    }
-    if (this.gainNode) {
-      try {
-        this.gainNode.disconnect();
-      } catch {}
-      this.gainNode = null;
-    }
-    this.filterNodes.forEach((n) => {
-      try { n.disconnect(); } catch {}
-    });
-    this.filterNodes = [];
+    this.stopChannelA1();
+    this.stopChannelA2();
+    this.stopAllExtraChannels();
     this.isCurrentlyPlaying = false;
+    this.lastTtsSpokenId = null;
+
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch {}
+    }
   }
 
-  /**
-   * Pause audio playback (alias for stop in Web Audio API context)
-   */
   public pause() {
     this.stop();
+  }
+
+  private stopChannelA1() {
+    if (this.channelA1?.source) {
+      try {
+        this.channelA1.source.stop();
+        this.channelA1.source.disconnect();
+      } catch {}
+    }
+    if (this.channelA1?.gainNode) {
+      try {
+        this.channelA1.gainNode.disconnect();
+      } catch {}
+    }
+    this.channelA1 = null;
+  }
+
+  private stopChannelA2() {
+    if (this.channelA2Voice?.source) {
+      try {
+        this.channelA2Voice.source.stop();
+        this.channelA2Voice.source.disconnect();
+      } catch {}
+    }
+    if (this.channelA2Voice?.gainNode) {
+      try {
+        this.channelA2Voice.gainNode.disconnect();
+      } catch {}
+    }
+    this.channelA2Voice = null;
+    this.isTtsSpeaking = false;
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch {}
+    }
+  }
+
+  private stopExtraChannel(key: string) {
+    const ch = this.channelExtra.get(key);
+    if (ch) {
+      try {
+        ch.source?.stop();
+        ch.source?.disconnect();
+        ch.gainNode?.disconnect();
+      } catch {}
+      this.channelExtra.delete(key);
+    }
+  }
+
+  private stopAllExtraChannels() {
+    this.channelExtra.forEach((ch) => {
+      try {
+        ch.source?.stop();
+        ch.source?.disconnect();
+        ch.gainNode?.disconnect();
+      } catch {}
+    });
+    this.channelExtra.clear();
   }
 }
 

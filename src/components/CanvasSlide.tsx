@@ -9,10 +9,12 @@ import {
   CtaFinalData,
   SlideLayoutTemplate,
   CustomTextLayer,
-  TextStyleItem
+  TextStyleItem,
+  SubtitleItem
 } from '../types';
 import { getTemplateLocalization, resolveChecklistBullets } from '../data/templateLocalizations';
 import { computeElementAnimation } from '../utils/elementAnimationEngine';
+import { getActiveV2ClipsForSlide, isV2MediaLayer } from '../utils/v2OverlayHelper';
 import {
   Quote,
   CheckCircle2,
@@ -29,7 +31,10 @@ import {
   Move,
   Maximize2,
   GripVertical,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Video,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 
 interface CanvasSlideProps {
@@ -57,8 +62,11 @@ interface CanvasSlideProps {
   onUpdateTextStyle?: (key: string, style: Partial<TextStyleItem>) => void;
   isExportMode?: boolean;
   currentTimeInSlide?: number;
+  currentSubtitle?: SubtitleItem | null;
   previewAnimationElementKey?: string | null;
   previewAnimationTime?: number;
+  allSlides?: Slide[];
+  slideIndex?: number;
 }
 
 export const CanvasSlide: React.FC<CanvasSlideProps> = ({
@@ -86,8 +94,11 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
   onUpdateTextStyle,
   isExportMode = false,
   currentTimeInSlide,
+  currentSubtitle = null,
   previewAnimationElementKey = null,
   previewAnimationTime,
+  allSlides,
+  slideIndex = 0,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoBgRef = useRef<HTMLVideoElement>(null);
@@ -103,22 +114,47 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
     return false;
   };
 
+  const findOriginSlide = (key: string): Slide => {
+    if (allSlides && allSlides.length > 0) {
+      const found = allSlides.find((s) => s.customTexts?.some((c) => c.id === key));
+      if (found) return found;
+    }
+    return slide;
+  };
+
   const getNumericHeight = (key: string): number => {
-    const custom = (slide.textStyle && slide.textStyle[key]) || (brand.textStyle && brand.textStyle[key]) || {};
+    const originSlide = findOriginSlide(key);
+    const custom = (slide.textStyle && slide.textStyle[key]) || (originSlide.textStyle && originSlide.textStyle[key]) || (brand.textStyle && brand.textStyle[key]) || {};
     if (custom.height !== undefined && custom.height !== null) {
       const parsed = typeof custom.height === 'number' ? custom.height : parseInt(String(custom.height), 10);
       if (!isNaN(parsed) && parsed > 0) return parsed;
     }
+    const customTextLayer = originSlide.customTexts?.find((c) => c.id === key) || slide.customTexts?.find((c) => c.id === key);
+    if (customTextLayer?.boxHeight !== undefined && customTextLayer?.boxHeight !== null) {
+      const parsed = typeof customTextLayer.boxHeight === 'number' ? customTextLayer.boxHeight : parseInt(String(customTextLayer.boxHeight), 10);
+      if (!isNaN(parsed) && parsed > 0) {
+        return parsed <= 100 ? Math.round((parsed / 100) * 440) : parsed;
+      }
+    }
     if (key === 'brandLogo') {
       return brand.logoSize || 28;
+    }
+    if (key.startsWith('v2-') || customTextLayer?.type === 'video') {
+      return 140;
     }
     return 90;
   };
 
   const getNumericBorderRadius = (key: string, defaultRadius: number = 12): number => {
-    const custom = (slide.textStyle && slide.textStyle[key]) || (brand.textStyle && brand.textStyle[key]) || {};
+    const originSlide = findOriginSlide(key);
+    const custom = (slide.textStyle && slide.textStyle[key]) || (originSlide.textStyle && originSlide.textStyle[key]) || (brand.textStyle && brand.textStyle[key]) || {};
     if (custom.borderRadius !== undefined && custom.borderRadius !== null) {
       const parsed = typeof custom.borderRadius === 'number' ? custom.borderRadius : parseInt(String(custom.borderRadius), 10);
+      if (!isNaN(parsed) && parsed >= 0) return parsed;
+    }
+    const customTextLayer = originSlide.customTexts?.find((c) => c.id === key) || slide.customTexts?.find((c) => c.id === key);
+    if (customTextLayer?.borderRadius !== undefined && customTextLayer?.borderRadius !== null) {
+      const parsed = typeof customTextLayer.borderRadius === 'number' ? customTextLayer.borderRadius : parseInt(String(customTextLayer.borderRadius), 10);
       if (!isNaN(parsed) && parsed >= 0) return parsed;
     }
     return defaultRadius;
@@ -615,8 +651,9 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
   };
 
   const getStyleFor = (key: string, baseStyle?: React.CSSProperties) => {
-    const customTextLayer = slide.customTexts?.find((c) => c.id === key);
-    const custom = (slide.textStyle && slide.textStyle[key]) || (brand.textStyle && brand.textStyle[key]) || {};
+    const originSlide = findOriginSlide(key);
+    const customTextLayer = originSlide.customTexts?.find((c) => c.id === key) || slide.customTexts?.find((c) => c.id === key);
+    const custom = (slide.textStyle && slide.textStyle[key]) || (originSlide.textStyle && originSlide.textStyle[key]) || (brand.textStyle && brand.textStyle[key]) || {};
     // Inner child elements (like individual bullets, stat subtext, quote text) belong to their container layout and must not receive individual position: absolute
     const targetKey = getDragTargetKey(key);
     
@@ -628,7 +665,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
 
     const pos = (isInnerChildElement(key) || hasChildPosition)
       ? undefined
-      : (slide.textPos?.[key] || (key === targetKey ? slide.textPos?.[targetKey] : undefined));
+      : (slide.textPos?.[key] || originSlide.textPos?.[key] || (key === targetKey ? (slide.textPos?.[targetKey] || originSlide.textPos?.[targetKey]) : undefined));
     const def = getDefaultsForElement(key, primaryColor);
 
     const isImageElement =
@@ -637,8 +674,14 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
       key.startsWith('custom-img-') ||
       key.startsWith('custom-image-') ||
       key.startsWith('custom-photo-') ||
+      key.startsWith('custom-vid-') ||
+      key.startsWith('custom-video-') ||
+      key.startsWith('custom-media-') ||
+      key.startsWith('v2-') ||
       customTextLayer?.type === 'image' ||
-      Boolean(customTextLayer?.imageUrl);
+      customTextLayer?.type === 'video' ||
+      Boolean(customTextLayer?.imageUrl) ||
+      Boolean(customTextLayer?.videoUrl);
 
     const isContainer =
       key.includes('-card') ||
@@ -685,6 +728,8 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
     }
     if (custom.opacity !== undefined && custom.opacity !== null) {
       styleObj.opacity = custom.opacity;
+    } else if (customTextLayer?.opacity !== undefined && customTextLayer?.opacity !== null) {
+      styleObj.opacity = customTextLayer.opacity;
     }
     if (custom.letterSpacing) styleObj.letterSpacing = custom.letterSpacing;
     if (custom.textTransform) styleObj.textTransform = custom.textTransform;
@@ -825,7 +870,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
         } else if (['brandName', 'brandHandle', 'brandWeb', 'badge', 'subtag', 'cta', 'cta-pill', 'comp-leftTag', 'comp-rightTag', 'quote-author', 'quote-role'].includes(key)) {
           styleObj.width = 'fit-content';
           styleObj.maxWidth = '92%';
-        } else if (['cta-avatar', 'brandLogo'].includes(key) || key.startsWith('custom-img-') || key.startsWith('custom-image-') || key.startsWith('custom-accent-')) {
+        } else if (['cta-avatar', 'brandLogo'].includes(key) || key.startsWith('custom-img-') || key.startsWith('custom-image-') || key.startsWith('custom-photo-') || key.startsWith('custom-vid-') || key.startsWith('custom-video-') || key.startsWith('v2-') || key.startsWith('custom-accent-') || isImageElement) {
           styleObj.width = 'auto';
           styleObj.maxWidth = '100%';
         } else {
@@ -2243,18 +2288,29 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
           </div>
         )}
 
-        {/* Dynamic Custom Elements Added by User (Textos, Acentos, Recuadros e Imágenes) */}
-        {slide.customTexts && slide.customTexts.length > 0 && (
-          <div className="space-y-2 pointer-events-auto overflow-visible">
-            {slide.customTexts.map((custom) => {
-              const isBox = custom.type === 'box' || custom.id.startsWith('custom-box-');
-              const isAccent = custom.type === 'accent' || custom.id.startsWith('custom-accent-');
-              const isImage = custom.type === 'image' || custom.id.startsWith('custom-img-') || custom.id.startsWith('custom-image-');
+        {/* Dynamic Custom Elements Added by User (Textos, Acentos, Recuadros, e Imágenes/Videos V2 Globales) */}
+        {(() => {
+          const activeV2List = getActiveV2ClipsForSlide(
+            allSlides || [slide],
+            slideIndex,
+            currentTimeInSlide
+          );
+          const nonMediaCustomTexts = (slide.customTexts || []).filter((ct) => !isV2MediaLayer(ct));
 
-              if (isImage) {
+          if (activeV2List.length === 0 && nonMediaCustomTexts.length === 0) return null;
+
+          return (
+            <div className="space-y-2 pointer-events-auto overflow-visible">
+              {/* 1. Cross-slide & Local V2 Media Overlays (Videos & Images) */}
+              {activeV2List.map((item) => {
+                const custom = item.clip;
+                const isVideo = custom.type === 'video' || custom.id.startsWith('custom-vid-') || custom.id.startsWith('custom-video-') || Boolean(custom.videoUrl);
+                const isImage = custom.type === 'image' || custom.id.startsWith('custom-img-') || custom.id.startsWith('custom-image-') || Boolean(custom.imageUrl);
                 const itemStyle = getStyleFor(custom.id);
                 const heightVal = getNumericHeight(custom.id);
                 const isActive = activeElementKey === custom.id;
+                const mediaOpacity = itemStyle.opacity !== undefined ? itemStyle.opacity : (custom.opacity ?? 1);
+
                 return (
                   <div
                     key={custom.id}
@@ -2270,7 +2326,6 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                     }}
                     onDoubleClick={(e) => {
                       e.stopPropagation();
-                      // Double click quick toggle
                     }}
                     onPointerDown={(e) => {
                       onSelectElement(custom.id);
@@ -2280,9 +2335,13 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                       ...itemStyle,
                       borderRadius: `${getNumericBorderRadius(custom.id, 12)}px`,
                     }}
-                    title="Haz clic o arrastra para mover la imagen a cualquier lugar"
+                    title={
+                      isVideo
+                        ? `Clip de Video V2 (Arrastra para mover o usa las esquinas para tamaño)${item.isCrossSlide ? ' • Superposición General' : ''}`
+                        : `Imagen V2 (Arrastra para mover o usa las esquinas)${item.isCrossSlide ? ' • Superposición General' : ''}`
+                    }
                   >
-                    {renderActiveControls(custom.id, 'Imagen')}
+                    {renderActiveControls(custom.id, isVideo ? 'Video V2' : 'Imagen')}
                     {/* 4 Interactive Corner Resize Handles when active */}
                     {isActive && !isExportMode && (
                       <>
@@ -2308,7 +2367,35 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                         />
                       </>
                     )}
-                    {custom.imageUrl ? (
+                    {isVideo && (custom.videoUrl || custom.imageUrl) ? (
+                      <video
+                        ref={(el) => {
+                          if (el && currentTimeInSlide !== undefined && item.timeInClip !== undefined) {
+                            const dur = el.duration || 10;
+                            const target = item.timeInClip % dur;
+                            if (Math.abs(el.currentTime - target) > 0.35) {
+                              try {
+                                el.currentTime = target;
+                              } catch {}
+                            }
+                          }
+                        }}
+                        src={custom.videoUrl || custom.imageUrl}
+                        autoPlay
+                        loop
+                        playsInline
+                        muted={custom.isMuted ?? true}
+                        className="object-contain pointer-events-none"
+                        style={{
+                          height: `${heightVal}px`,
+                          width: 'auto',
+                          maxWidth: 'none',
+                          maxHeight: 'none',
+                          borderRadius: `${getNumericBorderRadius(custom.id, 12)}px`,
+                          opacity: mediaOpacity,
+                        }}
+                      />
+                    ) : custom.imageUrl ? (
                       <img
                         src={custom.imageUrl}
                         alt="Capa personalizada"
@@ -2320,7 +2407,7 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                           maxWidth: 'none',
                           maxHeight: 'none',
                           borderRadius: `${getNumericBorderRadius(custom.id, 12)}px`,
-                          opacity: itemStyle.opacity !== undefined ? itemStyle.opacity : 1,
+                          opacity: mediaOpacity,
                         }}
                       />
                     ) : (
@@ -2335,43 +2422,125 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                           onDeleteCustomText(custom.id);
                         }}
                         className="no-export absolute -top-2 -right-2 bg-rose-600 hover:bg-rose-500 text-white rounded-full p-1 shadow-md opacity-0 group-hover:opacity-100 transition"
-                        title="Eliminar imagen o logo"
+                        title="Eliminar elemento de medio"
                       >
                         <X className="w-3 h-3" />
                       </button>
                     )}
                   </div>
                 );
-              }
+              })}
 
-              if (isBox) {
+              {/* 2. Non-media Custom Elements (Recuadros, Acentos, Textos) */}
+              {nonMediaCustomTexts.map((custom) => {
+                const isBox = custom.type === 'box' || custom.id.startsWith('custom-box-');
+                const isAccent = custom.type === 'accent' || custom.id.startsWith('custom-accent-');
+
+                if (isBox) {
+                  return (
+                    <div
+                      key={custom.id}
+                      data-drag-key={custom.id}
+                      className={`group relative cursor-pointer transition rounded-2xl p-4 shadow-lg ${
+                        activeElementKey === custom.id
+                          ? 'ring-2 ring-rose-500 bg-slate-900/90'
+                          : 'bg-slate-900/70 hover:border-slate-700'
+                      }`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectElement(custom.id);
+                      }}
+                      style={{
+                        border: '1px solid rgba(51, 65, 85, 0.8)',
+                        minHeight: '60px',
+                        ...getStyleFor(custom.id),
+                      }}
+                    >
+                      {renderActiveControls(custom.id, 'Mover Recuadro')}
+                      <div
+                        contentEditable
+                        suppressContentEditableWarning
+                        onBlur={(e) => onUpdateCustomText?.(custom.id, e.currentTarget.innerText)}
+                        className="outline-none leading-relaxed text-sm text-slate-300"
+                      >
+                        {custom.text || 'Recuadro contenedor editable (puedes moverlo, cambiar su fondo, borde, o enviarlo atrás).'}
+                      </div>
+                      {onDeleteCustomText && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteCustomText(custom.id);
+                          }}
+                          className="no-export absolute -top-2 -right-2 bg-rose-600 hover:bg-rose-500 text-white rounded-full p-1 shadow-md opacity-0 group-hover:opacity-100 transition"
+                          title="Eliminar recuadro"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                }
+
+                if (isAccent) {
+                  return (
+                    <div
+                      key={custom.id}
+                      data-drag-key={custom.id}
+                      className={`group relative cursor-pointer transition rounded-full my-1.5 ${
+                        activeElementKey === custom.id
+                          ? 'ring-2 ring-rose-500'
+                          : 'hover:opacity-90'
+                      }`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectElement(custom.id);
+                      }}
+                      style={{
+                        height: '4px',
+                        width: '45%',
+                        backgroundColor: custom.color || primaryColor,
+                        boxShadow: `0 0 14px ${(custom.color || primaryColor)}90`,
+                        ...getStyleFor(custom.id),
+                      }}
+                    >
+                      {renderActiveControls(custom.id, 'Mover Acento')}
+                      {onDeleteCustomText && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteCustomText(custom.id);
+                          }}
+                          className="no-export absolute -top-2.5 -right-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-full p-0.5 shadow-md opacity-0 group-hover:opacity-100 transition"
+                          title="Eliminar acento"
+                        >
+                          <X className="w-2.5 h-2.5" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                }
+
                 return (
                   <div
                     key={custom.id}
                     data-drag-key={custom.id}
-                    className={`group relative cursor-pointer transition rounded-2xl p-4 shadow-lg ${
-                      activeElementKey === custom.id
-                        ? 'ring-2 ring-rose-500 bg-slate-900/90'
-                        : 'bg-slate-900/70 hover:border-slate-700'
+                    className={`group relative cursor-pointer transition rounded-xl p-2 bg-slate-900/60 border border-slate-800/80 shadow-sm ${
+                      activeElementKey === custom.id ? 'ring-2 ring-rose-500 bg-slate-900/90' : 'hover:bg-slate-900/80'
                     }`}
                     onClick={(e) => {
                       e.stopPropagation();
                       onSelectElement(custom.id);
                     }}
-                    style={{
-                      border: '1px solid rgba(51, 65, 85, 0.8)',
-                      minHeight: '60px',
-                      ...getStyleFor(custom.id),
-                    }}
+                    style={getStyleFor(custom.id)}
                   >
-                    {renderActiveControls(custom.id, 'Mover Recuadro')}
+                    {renderActiveControls(custom.id)}
                     <div
                       contentEditable
                       suppressContentEditableWarning
                       onBlur={(e) => onUpdateCustomText?.(custom.id, e.currentTarget.innerText)}
-                      className="outline-none leading-relaxed text-sm text-slate-300"
+                      className="outline-none leading-relaxed"
                     >
-                      {custom.text || 'Recuadro contenedor editable (puedes moverlo, cambiar su fondo, borde, o enviarlo atrás).'}
+                      {custom.text}
                     </div>
                     {onDeleteCustomText && (
                       <button
@@ -2380,93 +2549,17 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
                           onDeleteCustomText(custom.id);
                         }}
                         className="no-export absolute -top-2 -right-2 bg-rose-600 hover:bg-rose-500 text-white rounded-full p-1 shadow-md opacity-0 group-hover:opacity-100 transition"
-                        title="Eliminar recuadro"
+                        title="Eliminar capa de texto"
                       >
                         <X className="w-3 h-3" />
                       </button>
                     )}
                   </div>
                 );
-              }
-
-              if (isAccent) {
-                return (
-                  <div
-                    key={custom.id}
-                    data-drag-key={custom.id}
-                    className={`group relative cursor-pointer transition rounded-full my-1.5 ${
-                      activeElementKey === custom.id
-                        ? 'ring-2 ring-rose-500'
-                        : 'hover:opacity-90'
-                    }`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onSelectElement(custom.id);
-                    }}
-                    style={{
-                      height: '4px',
-                      width: '45%',
-                      backgroundColor: custom.color || primaryColor,
-                      boxShadow: `0 0 14px ${(custom.color || primaryColor)}90`,
-                      ...getStyleFor(custom.id),
-                    }}
-                  >
-                    {renderActiveControls(custom.id, 'Mover Acento')}
-                    {onDeleteCustomText && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDeleteCustomText(custom.id);
-                        }}
-                        className="no-export absolute -top-2.5 -right-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-full p-0.5 shadow-md opacity-0 group-hover:opacity-100 transition"
-                        title="Eliminar acento"
-                      >
-                        <X className="w-2.5 h-2.5" />
-                      </button>
-                    )}
-                  </div>
-                );
-              }
-
-              return (
-                <div
-                  key={custom.id}
-                  data-drag-key={custom.id}
-                  className={`group relative cursor-pointer transition rounded-xl p-2 bg-slate-900/60 border border-slate-800/80 shadow-sm ${
-                    activeElementKey === custom.id ? 'ring-2 ring-rose-500 bg-slate-900/90' : 'hover:bg-slate-900/80'
-                  }`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onSelectElement(custom.id);
-                  }}
-                  style={getStyleFor(custom.id)}
-                >
-                  {renderActiveControls(custom.id)}
-                  <div
-                    contentEditable
-                    suppressContentEditableWarning
-                    onBlur={(e) => onUpdateCustomText?.(custom.id, e.currentTarget.innerText)}
-                    className="outline-none leading-relaxed"
-                  >
-                    {custom.text}
-                  </div>
-                  {onDeleteCustomText && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDeleteCustomText(custom.id);
-                      }}
-                      className="no-export absolute -top-2 -right-2 bg-rose-600 hover:bg-rose-500 text-white rounded-full p-1 shadow-md opacity-0 group-hover:opacity-100 transition"
-                      title="Eliminar capa de texto"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
+              })}
+            </div>
+          );
+        })()}
 
       </div>
 
@@ -2520,6 +2613,42 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
             </div>
           )}
         </div>
+
+        {/* Dynamic Subtitle / Caption Overlay */}
+        {currentSubtitle && currentSubtitle.text && (
+          <div className="absolute inset-x-4 bottom-14 z-50 flex justify-center pointer-events-none select-none">
+            {currentSubtitle.stylePreset === 'hormozi' ? (
+              <div
+                className="px-4 py-2 text-center text-xl md:text-2xl font-black uppercase tracking-wider text-yellow-300 drop-shadow-[0_4px_12px_rgba(0,0,0,0.9)]"
+                style={{
+                  WebkitTextStroke: '2px black',
+                  paintOrder: 'stroke fill',
+                  textShadow: '3px 3px 0 #000, -3px -3px 0 #000, 3px -3px 0 #000, -3px 3px 0 #000',
+                }}
+              >
+                {currentSubtitle.text}
+              </div>
+            ) : currentSubtitle.stylePreset === 'neon' ? (
+              <div
+                className="px-4 py-1.5 rounded-2xl bg-black/60 border border-cyan-400 text-center text-lg md:text-xl font-black uppercase tracking-wide text-cyan-300"
+                style={{
+                  boxShadow: '0 0 15px rgba(6,182,212,0.6)',
+                  textShadow: '0 0 8px rgba(6,182,212,0.9)',
+                }}
+              >
+                {currentSubtitle.text}
+              </div>
+            ) : currentSubtitle.stylePreset === 'box' ? (
+              <div className="px-3.5 py-1.5 rounded-xl bg-white text-black text-center text-base md:text-lg font-black uppercase tracking-tight shadow-2xl">
+                {currentSubtitle.text}
+              </div>
+            ) : (
+              <div className="px-4 py-1.5 rounded-2xl bg-black/75 backdrop-blur-md border border-white/20 text-center text-base md:text-lg font-bold text-white shadow-xl max-w-[85%]">
+                {currentSubtitle.text}
+              </div>
+            )}
+          </div>
+        )}
 
       </div>
 

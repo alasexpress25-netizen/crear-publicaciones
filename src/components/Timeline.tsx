@@ -26,17 +26,46 @@ import {
   Film,
   X,
   Check,
-  Split
+  Split,
+  Type,
+  Mic,
+  ArrowUpDown,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
-import { Slide, AspectRatio, TransitionType, SceneMotionEffect, VideoAudioTrack } from '../types';
+import { Slide, AspectRatio, TransitionType, SceneMotionEffect, VideoAudioTrack, SubtitleItem, VoiceoverTrack, CustomTextLayer, AudioChannelLane } from '../types';
 import { AUDIO_PRESETS } from '../utils/audioLibrary';
 import { previewAudio } from '../utils/previewAudioEngine';
+import { AddMediaV2Modal } from './timeline/AddMediaV2Modal';
+import { V2ClipInspector } from './timeline/V2ClipInspector';
+import { SubtitleInspector } from './timeline/SubtitleInspector';
+import { TtsVoiceoverModal } from './timeline/TtsVoiceoverModal';
+import { SpeechToTextModal } from './timeline/SpeechToTextModal';
+import {
+  speakSubtitleText,
+  stopSubtitleSpeech,
+  convertSubtitlesToVoiceoverTrack,
+} from '../utils/subtitleSpeechReader';
+import { V2OverlayTrack } from './timeline/V2OverlayTrack';
+import { SubtitlesTrackRow } from './timeline/SubtitlesTrackRow';
+import { VoiceoverTrackRow } from './timeline/VoiceoverTrackRow';
+import { SfxTrackRow } from './timeline/SfxTrackRow';
+import { SfxPickerModal } from './timeline/SfxPickerModal';
+import { DynamicAudioTracks } from './timeline/DynamicAudioTracks';
 
 interface TimelineProps {
   slides: Slide[];
   currentIndex: number;
   aspectRatio: AspectRatio;
   audioTrack: VideoAudioTrack | null;
+  subtitles?: SubtitleItem[];
+  onUpdateSubtitles?: (subtitles: SubtitleItem[]) => void;
+  voiceoverTrack?: VoiceoverTrack | null;
+  onUpdateVoiceoverTrack?: (track: VoiceoverTrack | null) => void;
+  sfxClips?: VideoAudioTrack[];
+  onUpdateSfxClips?: (clips: VideoAudioTrack[]) => void;
+  audioChannels?: AudioChannelLane[];
+  onUpdateAudioChannels?: (channels: AudioChannelLane[]) => void;
   onSelectSlide: (index: number) => void;
   onUpdateSlide: (index: number, partial: Partial<Slide>) => void;
   onAddSlide: () => void;
@@ -91,6 +120,14 @@ export const Timeline: React.FC<TimelineProps> = ({
   currentIndex,
   aspectRatio,
   audioTrack,
+  subtitles = [],
+  onUpdateSubtitles,
+  voiceoverTrack = null,
+  onUpdateVoiceoverTrack,
+  sfxClips,
+  onUpdateSfxClips,
+  audioChannels,
+  onUpdateAudioChannels,
   onSelectSlide,
   onUpdateSlide,
   onAddSlide,
@@ -112,6 +149,178 @@ export const Timeline: React.FC<TimelineProps> = ({
   const [isExpanded, setIsExpanded] = useState(false);
   const [isPlayingAudition, setIsPlayingAudition] = useState(false);
 
+  // Height & Visibility Mode:
+  // 'auto': autoajuste dinámico de altura para ver todas las pistas (video + subs + audio) sin cortes
+  // 'scroll': altura contenida con barra vertical de desplazamiento desplegable
+  const [timelineHeightMode, setTimelineHeightMode] = useState<'auto' | 'scroll'>('auto');
+  const [scrollContainerHeight, setScrollContainerHeight] = useState<number>(420);
+  const [isAudioSectionCollapsed, setIsAudioSectionCollapsed] = useState<boolean>(false);
+  const audioSectionRef = useRef<HTMLDivElement>(null);
+
+  const handleScrollToAudio = () => {
+    if (isAudioSectionCollapsed) {
+      setIsAudioSectionCollapsed(false);
+    }
+    setTimeout(() => {
+      if (timelineHeightMode === 'auto') {
+        audioSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else if (trackContainerRef.current && audioSectionRef.current) {
+        const containerTop = trackContainerRef.current.getBoundingClientRect().top;
+        const audioTop = audioSectionRef.current.getBoundingClientRect().top;
+        const currentScrollTop = trackContainerRef.current.scrollTop;
+        const targetScrollTop = currentScrollTop + (audioTop - containerTop) - 36;
+        trackContainerRef.current.scrollTo({
+          top: Math.max(0, targetScrollTop),
+          behavior: 'smooth',
+        });
+      }
+    }, 60);
+  };
+
+  // Multi-track state (V2 B-Roll, Subtitles, AI Voiceover)
+  const [selectedV2Clip, setSelectedV2Clip] = useState<{ slideIndex: number; clipId: string } | null>(null);
+  const [selectedSubtitleId, setSelectedSubtitleId] = useState<string | null>(null);
+  const [isAddMediaV2ModalOpen, setIsAddMediaV2ModalOpen] = useState<boolean>(false);
+  const [isTtsModalOpen, setIsTtsModalOpen] = useState<boolean>(false);
+  const [isSttModalOpen, setIsSttModalOpen] = useState<boolean>(false);
+  const [isAutoReadSubtitles, setIsAutoReadSubtitles] = useState<boolean>(false);
+  const lastSpokenSubIdRef = useRef<string | null>(null);
+
+  // Multi-channel Audio State: Canal A3 (SFX) & Canales Libres (A4, A5...)
+  const [internalSfxClips, setInternalSfxClips] = useState<VideoAudioTrack[]>(() => sfxClips || []);
+  const [internalAudioChannels, setInternalAudioChannels] = useState<AudioChannelLane[]>(() => audioChannels || []);
+  const [isSfxModalOpen, setIsSfxModalOpen] = useState<boolean>(false);
+  const [sfxTargetTime, setSfxTargetTime] = useState<number | null>(null);
+  const [selectedSfxId, setSelectedSfxId] = useState<string | null>(null);
+
+  const activeSfxClips = sfxClips !== undefined ? sfxClips : internalSfxClips;
+  const updateSfxClips = (newClips: VideoAudioTrack[]) => {
+    setInternalSfxClips(newClips);
+    if (onUpdateSfxClips) onUpdateSfxClips(newClips);
+  };
+
+  const activeAudioChannels = audioChannels !== undefined ? audioChannels : internalAudioChannels;
+  const updateAudioChannels = (newChannels: AudioChannelLane[]) => {
+    setInternalAudioChannels(newChannels);
+    if (onUpdateAudioChannels) onUpdateAudioChannels(newChannels);
+  };
+
+  // SFX Handlers (Multi-effect support)
+  const handleAddSfxClip = (clip: VideoAudioTrack) => {
+    updateSfxClips([...activeSfxClips, clip]);
+    setSelectedSfxId(clip.id);
+  };
+  const handleUpdateSfxClip = (id: string, partial: Partial<VideoAudioTrack>) => {
+    updateSfxClips(
+      activeSfxClips.map((c) => ((c.id === id || c.url === id) ? { ...c, ...partial } : c))
+    );
+  };
+  const handleDeleteSfxClip = (id: string) => {
+    updateSfxClips(activeSfxClips.filter((c) => c.id !== id && c.url !== id));
+    if (selectedSfxId === id) setSelectedSfxId(null);
+  };
+  const handleDuplicateSfxClip = (id: string) => {
+    const target = activeSfxClips.find((c) => c.id === id || c.url === id);
+    if (!target) return;
+    const clipDur = target.duration || 1.0;
+    const newOffset = Math.min(totalDuration - clipDur, (target.startOffset || 0) + clipDur + 0.5);
+    const newClip: VideoAudioTrack = {
+      ...target,
+      id: `sfx-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      startOffset: Math.round(newOffset * 10) / 10,
+    };
+    updateSfxClips([...activeSfxClips, newClip]);
+    setSelectedSfxId(newClip.id);
+  };
+
+  // Dynamic Audio Channels Handlers
+  const handleAddChannel = () => {
+    const nextNum = activeAudioChannels.length + 4;
+    const newChan: AudioChannelLane = {
+      id: `lane-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      name: `Canal Libre ${nextNum}`,
+      channelNumber: nextNum,
+      volume: 0.85,
+      isMuted: false,
+      clips: [],
+    };
+    updateAudioChannels([...activeAudioChannels, newChan]);
+  };
+  const handleRemoveChannel = (channelId: string) => {
+    updateAudioChannels(activeAudioChannels.filter((c) => c.id !== channelId));
+  };
+  const handleUpdateChannel = (channelId: string, partial: Partial<AudioChannelLane>) => {
+    updateAudioChannels(
+      activeAudioChannels.map((c) => (c.id === channelId ? { ...c, ...partial } : c))
+    );
+  };
+  const handleAddClipToChannel = (channelId: string, clip: VideoAudioTrack) => {
+    updateAudioChannels(
+      activeAudioChannels.map((c) =>
+        c.id === channelId ? { ...c, clips: [...c.clips, clip] } : c
+      )
+    );
+  };
+  const handleUpdateClipInChannel = (
+    channelId: string,
+    clipId: string,
+    partial: Partial<VideoAudioTrack>
+  ) => {
+    updateAudioChannels(
+      activeAudioChannels.map((c) =>
+        c.id === channelId
+          ? {
+              ...c,
+              clips: c.clips.map((cl) =>
+                cl.id === clipId || cl.url === clipId ? { ...cl, ...partial } : cl
+              ),
+            }
+          : c
+      )
+    );
+  };
+  const handleDeleteClipFromChannel = (channelId: string, clipId: string) => {
+    updateAudioChannels(
+      activeAudioChannels.map((c) =>
+        c.id === channelId
+          ? {
+              ...c,
+              clips: c.clips.filter((cl) => cl.id !== clipId && cl.url !== clipId),
+            }
+          : c
+      )
+    );
+  };
+
+  // Auto-read subtitles synchronized with video playback
+  useEffect(() => {
+    if (!isAutoReadSubtitles || !isPlaying) {
+      if (!isPlaying) {
+        lastSpokenSubIdRef.current = null;
+        stopSubtitleSpeech();
+      }
+      return;
+    }
+
+    if (!subtitles || subtitles.length === 0) return;
+
+    // Find subtitle currently active at currentTime
+    const activeSub = subtitles.find(
+      (s) => currentTime >= s.startTime && currentTime <= s.endTime
+    );
+
+    if (activeSub) {
+      if (lastSpokenSubIdRef.current !== activeSub.id) {
+        lastSpokenSubIdRef.current = activeSub.id;
+        speakSubtitleText(activeSub.text);
+      }
+    } else {
+      if (lastSpokenSubIdRef.current !== null) {
+        lastSpokenSubIdRef.current = null;
+      }
+    }
+  }, [currentTime, isPlaying, isAutoReadSubtitles, subtitles]);
+
   const handleAudition = async (trackToTest: VideoAudioTrack) => {
     setIsPlayingAudition(true);
     await previewAudio.previewSample(trackToTest, 3.5);
@@ -122,6 +331,8 @@ export const Timeline: React.FC<TimelineProps> = ({
 
   // Helper to open inspector panel while closing others to prevent layout stacking
   const openInspector = (type: 'audio' | 'slide' | 'transition' | 'picker', index?: number) => {
+    setSelectedV2Clip(null);
+    setSelectedSubtitleId(null);
     if (type === 'audio') {
       setIsAudioEditorOpen((prev) => !prev);
       setEditingSlideIdx(null);
@@ -147,6 +358,134 @@ export const Timeline: React.FC<TimelineProps> = ({
     }
   };
 
+  // Handlers for V2 Overlay Media Layer
+  const handleAddV2Layer = (slideIndex: number, layer: CustomTextLayer, pos?: { left: number; top: number }) => {
+    const slide = slides[slideIndex];
+    if (!slide) return;
+    const existing = slide.customTexts || [];
+    const defaultLeft = pos?.left !== undefined ? pos.left : 25;
+    const defaultTop = pos?.top !== undefined ? pos.top : 25;
+    const initialHeight = layer.boxHeight ? Math.round((layer.boxHeight / 100) * 440) : 140;
+
+    onUpdateSlide(slideIndex, {
+      customTexts: [...existing, layer],
+      textPos: {
+        ...(slide.textPos || {}),
+        [layer.id]: { left: defaultLeft, top: defaultTop },
+      },
+      textStyle: {
+        ...(slide.textStyle || {}),
+        [layer.id]: {
+          height: initialHeight,
+          borderRadius: layer.borderRadius ?? 12,
+          zIndex: 35,
+          shadow: true,
+          shadowType: 'soft',
+          shadowColor: '#000000',
+        },
+      },
+    });
+    setSelectedV2Clip({ slideIndex, clipId: layer.id });
+    setSelectedSubtitleId(null);
+    setEditingSlideIdx(null);
+    setSelectedTransitionIdx(null);
+    setIsAudioEditorOpen(false);
+  };
+
+  const handleUpdateV2Layer = (slideIndex: number, layerId: string, updates: Partial<CustomTextLayer>) => {
+    const slide = slides[slideIndex];
+    if (!slide || !slide.customTexts) return;
+    const updated = slide.customTexts.map((l) => (l.id === layerId ? { ...l, ...updates } : l));
+    const currentStyle = slide.textStyle?.[layerId] || {};
+    const updatedTextStyle = {
+      ...(slide.textStyle || {}),
+      [layerId]: {
+        ...currentStyle,
+        ...(updates.borderRadius !== undefined ? { borderRadius: updates.borderRadius } : {}),
+        ...(updates.opacity !== undefined ? { opacity: updates.opacity } : {}),
+        ...(updates.boxHeight !== undefined ? { height: Math.round((updates.boxHeight / 100) * 440) } : {}),
+      },
+    };
+    onUpdateSlide(slideIndex, { customTexts: updated, textStyle: updatedTextStyle });
+  };
+
+  const handleDeleteV2Layer = (slideIndex: number, layerId: string) => {
+    const slide = slides[slideIndex];
+    if (!slide || !slide.customTexts) return;
+    const updated = slide.customTexts.filter((l) => l.id !== layerId);
+    onUpdateSlide(slideIndex, { customTexts: updated });
+    if (selectedV2Clip?.clipId === layerId) setSelectedV2Clip(null);
+  };
+
+  // Handlers for Subtitles
+  const handleAddSubtitle = () => {
+    const newSub: SubtitleItem = {
+      id: `sub-${Date.now()}`,
+      startTime: currentTime,
+      endTime: Math.min(totalDuration, currentTime + 2.5),
+      text: 'Nuevo Subtítulo',
+      stylePreset: 'hormozi',
+    };
+    const updated = [...(subtitles || []), newSub].sort((a, b) => a.startTime - b.startTime);
+    if (onUpdateSubtitles) onUpdateSubtitles(updated);
+    setSelectedSubtitleId(newSub.id);
+    setSelectedV2Clip(null);
+    setEditingSlideIdx(null);
+    setSelectedTransitionIdx(null);
+    setIsAudioEditorOpen(false);
+  };
+
+  const handleAutoGenerateSubtitles = () => {
+    const newSubs: SubtitleItem[] = [];
+    slides.forEach((s, idx) => {
+      const timing = slideTimings[idx];
+      if (!timing) return;
+      const titleText = s.title ? s.title.trim() : `Escena ${idx + 1}`;
+      const bodyText = s.body ? s.body.slice(0, 45).trim() : '';
+      const fullText = bodyText ? `${titleText} • ${bodyText}` : titleText;
+
+      newSubs.push({
+        id: `sub-${Date.now()}-${idx}`,
+        startTime: timing.startTime,
+        endTime: timing.endTime,
+        text: fullText,
+        stylePreset: 'hormozi',
+      });
+    });
+    if (onUpdateSubtitles) onUpdateSubtitles(newSubs);
+    if (newSubs.length > 0) {
+      setSelectedSubtitleId(newSubs[0].id);
+      setSelectedV2Clip(null);
+      setEditingSlideIdx(null);
+    }
+  };
+
+  const handleUpdateSubtitle = (id: string, updates: Partial<SubtitleItem>) => {
+    if (!onUpdateSubtitles || !subtitles) return;
+    onUpdateSubtitles(subtitles.map((s) => (s.id === id ? { ...s, ...updates } : s)));
+  };
+
+  const handleDeleteSubtitle = (id: string) => {
+    if (!onUpdateSubtitles || !subtitles) return;
+    onUpdateSubtitles(subtitles.filter((s) => s.id !== id));
+    if (selectedSubtitleId === id) setSelectedSubtitleId(null);
+  };
+
+  const handleDuplicateSubtitle = (id: string) => {
+    if (!onUpdateSubtitles || !subtitles) return;
+    const item = subtitles.find((s) => s.id === id);
+    if (!item) return;
+    const duplicated: SubtitleItem = {
+      ...item,
+      id: `sub-${Date.now()}`,
+      startTime: item.endTime + 0.1,
+      endTime: Math.min(totalDuration, item.endTime + Math.max(1, item.endTime - item.startTime)),
+    };
+    const updated = [...subtitles, duplicated].sort((a, b) => a.startTime - b.startTime);
+    onUpdateSubtitles(updated);
+    setSelectedSubtitleId(duplicated.id);
+  };
+
   // Pixels per second calculation
   const pxPerSec = 55 * zoomLevel;
 
@@ -170,6 +509,14 @@ export const Timeline: React.FC<TimelineProps> = ({
   const slidesDuration = Math.max(1, accumulatedTime);
   const audioEnd = audioTrack ? (audioTrack.startOffset || 0) + (audioTrack.duration || slidesDuration) : 0;
   const totalDuration = Math.max(1, slidesDuration, audioEnd);
+
+  const handleConvertSubtitlesToVoiceover = () => {
+    if (!subtitles || subtitles.length === 0) return;
+    const vo = convertSubtitlesToVoiceoverTrack(subtitles, totalDuration);
+    if (onUpdateVoiceoverTrack) {
+      onUpdateVoiceoverTrack(vo);
+    }
+  };
 
   // Format seconds to mm:ss.d
   const formatTime = (seconds: number) => {
@@ -317,6 +664,36 @@ export const Timeline: React.FC<TimelineProps> = ({
             <Plus className="w-3.5 h-3.5 text-rose-400" />
             <span className="hidden sm:inline text-[11px] font-bold">Añadir Escena</span>
           </button>
+
+          {/* Add V2 Media Layer */}
+          <button
+            onClick={() => setIsAddMediaV2ModalOpen(true)}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-950/70 hover:bg-rose-900/80 text-rose-300 border border-rose-700/50 text-[11px] font-bold transition cursor-pointer"
+            title="Añadir video secundario o imagen a la pista V2 (B-Roll)"
+          >
+            <Video className="w-3.5 h-3.5 text-rose-400" />
+            <span className="hidden sm:inline">+ Medio V2</span>
+          </button>
+
+          {/* Add Subtitle */}
+          <button
+            onClick={handleAddSubtitle}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-950/70 hover:bg-amber-900/80 text-amber-300 border border-amber-700/50 text-[11px] font-bold transition cursor-pointer"
+            title="Añadir subtítulo dinámico estilo viral (Reels/TikTok)"
+          >
+            <Type className="w-3.5 h-3.5 text-amber-400" />
+            <span className="hidden sm:inline">+ Subtítulo</span>
+          </button>
+
+          {/* AI Voiceover */}
+          <button
+            onClick={() => setIsTtsModalOpen(true)}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-purple-950/70 hover:bg-purple-900/80 text-purple-300 border border-purple-700/50 text-[11px] font-bold transition cursor-pointer"
+            title="Texto a Voz con IA (TTS) / Locución para pista A2"
+          >
+            <Mic className="w-3.5 h-3.5 text-purple-400" />
+            <span className="hidden sm:inline">🎙️ Voz IA</span>
+          </button>
         </div>
 
         {/* Right: Aspect Ratio Info, Audio, Zoom & Render Button */}
@@ -375,11 +752,18 @@ export const Timeline: React.FC<TimelineProps> = ({
 
           {/* Expand/Collapse Timeline Height */}
           <button
-            onClick={() => setIsExpanded((prev) => !prev)}
+            onClick={() => {
+              if (timelineHeightMode === 'auto') {
+                setTimelineHeightMode('scroll');
+                setScrollContainerHeight(360);
+              } else {
+                setScrollContainerHeight((h) => (h >= 540 ? 360 : h + 140));
+              }
+            }}
             className="p-1.5 rounded-xl bg-slate-800/70 hover:bg-slate-700 text-slate-400 hover:text-white transition"
-            title={isExpanded ? 'Reducir altura' : 'Expandir altura de línea de tiempo'}
+            title={timelineHeightMode === 'auto' ? 'Cambiar a modo barra vertical con scroll' : `Aumentar altura actual (${scrollContainerHeight}px)`}
           >
-            {isExpanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+            {timelineHeightMode === 'auto' ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
           </button>
 
           {/* PRIMARY: Export Video MP4 Button */}
@@ -961,31 +1345,70 @@ export const Timeline: React.FC<TimelineProps> = ({
         </div>
       )}
 
+      {/* 2.4 Inspector Panel for V2 Overlay Clip */}
+      {selectedV2Clip !== null && (() => {
+        const targetSlide = slides[selectedV2Clip.slideIndex];
+        const targetLayer = targetSlide?.customTexts?.find((l) => l.id === selectedV2Clip.clipId);
+        if (!targetSlide || !targetLayer) return null;
+        return (
+          <V2ClipInspector
+            clip={targetLayer}
+            slideIndex={selectedV2Clip.slideIndex}
+            onUpdateClip={(sIdx, updated) => handleUpdateV2Layer(sIdx, updated.id, updated)}
+            onDeleteClip={handleDeleteV2Layer}
+            onClose={() => setSelectedV2Clip(null)}
+          />
+        );
+      })()}
+
+      {/* 2.5 Inspector Panel for Subtitle */}
+      {selectedSubtitleId !== null && (() => {
+        const targetSub = subtitles?.find((s) => s.id === selectedSubtitleId);
+        if (!targetSub) return null;
+        return (
+          <SubtitleInspector
+            subtitle={targetSub}
+            totalDuration={totalDuration}
+            onUpdateSubtitle={(updated) => handleUpdateSubtitle(updated.id, updated)}
+            onDeleteSubtitle={handleDeleteSubtitle}
+            onClose={() => setSelectedSubtitleId(null)}
+          />
+        );
+      })()}
+
       {/* 3. Main Multi-Track Scrollable Timeline */}
       <div
         ref={trackContainerRef}
         onPointerDown={handleTrackPointerDown}
-        className="w-full overflow-x-auto overflow-y-hidden custom-scrollbar relative select-none cursor-pointer bg-slate-950 border-t border-slate-800/80"
-        style={{ minHeight: isExpanded ? '300px' : '220px', height: isExpanded ? '310px' : '230px' }}
+        className="w-full overflow-x-auto overflow-y-auto timeline-scrollbar relative select-none cursor-pointer bg-slate-950 border-t border-slate-800/80 transition-all duration-200"
+        style={{
+          height: timelineHeightMode === 'auto' ? 'auto' : `${scrollContainerHeight}px`,
+          minHeight: timelineHeightMode === 'auto' ? '480px' : '340px',
+          maxHeight: timelineHeightMode === 'auto' ? 'none' : `${scrollContainerHeight}px`,
+        }}
       >
-        {/* Playhead Red Cursor Line (Syncs smoothly with currentTime) */}
         <div
-          className="absolute top-0 bottom-0 z-30 pointer-events-none flex flex-col items-center"
-          style={{
-            left: `${currentTime * pxPerSec}px`,
-            transition: isPlaying ? 'none' : 'left 0.05s ease-out',
-          }}
-        >
-          {/* Scrubber Pin / Head */}
-          <div className="w-3.5 h-3.5 bg-rose-500 rotate-45 -mt-1.5 shadow-md shadow-rose-950 ring-2 ring-white" />
-          <div className="w-[2px] h-full bg-rose-500 shadow-sm shadow-rose-950" />
-        </div>
-
-        {/* Dynamic Time Ruler Header */}
-        <div
-          className="sticky top-0 z-20 h-7 border-b border-slate-800 bg-slate-900/90 backdrop-blur-sm flex items-end"
+          className="relative min-w-fit min-h-full"
           style={{ width: `${totalDuration * pxPerSec + 200}px` }}
         >
+          {/* Playhead Red Cursor Line (Spans full height of all tracks, scrubber sticky at top) */}
+          <div
+            className="absolute top-0 bottom-0 z-30 pointer-events-none flex flex-col items-center"
+            style={{
+              left: `${currentTime * pxPerSec}px`,
+              transition: isPlaying ? 'none' : 'left 0.05s ease-out',
+            }}
+          >
+            {/* Scrubber Pin / Head */}
+            <div className="sticky top-0 w-3.5 h-3.5 bg-rose-500 rotate-45 -mt-1.5 shadow-md shadow-rose-950 ring-2 ring-white z-40" />
+            <div className="w-[2px] flex-1 bg-rose-500 shadow-sm shadow-rose-950" />
+          </div>
+
+          {/* Dynamic Time Ruler Header */}
+          <div
+            className="sticky top-0 z-20 h-7 border-b border-slate-800 bg-slate-900/95 backdrop-blur-sm flex items-end"
+            style={{ width: `${totalDuration * pxPerSec + 200}px` }}
+          >
           {Array.from({ length: Math.ceil(totalDuration) + 2 }).map((_, sec) => {
             const leftPos = sec * pxPerSec;
             return (
@@ -1002,11 +1425,35 @@ export const Timeline: React.FC<TimelineProps> = ({
 
         {/* Tracks Workspace */}
         <div
-          className="p-3 space-y-2 relative"
+          className="p-3 space-y-4 relative"
           style={{ width: `${totalDuration * pxPerSec + 200}px` }}
         >
-          {/* TRACK 1: Video / Scenes Clips */}
-          <div className="flex items-center">
+          {/* TRACK V2: Video 2 & Medios Superpuestos (B-Roll) */}
+          <V2OverlayTrack
+            slides={slides}
+            pxPerSec={pxPerSec}
+            totalDuration={totalDuration}
+            selectedV2Clip={selectedV2Clip}
+            onSelectV2Clip={(sIdx, cId) => {
+              setSelectedV2Clip({ slideIndex: sIdx, clipId: cId });
+              setSelectedSubtitleId(null);
+              setEditingSlideIdx(null);
+              setSelectedTransitionIdx(null);
+              setIsAudioEditorOpen(false);
+              setIsAudioPickerOpen(false);
+            }}
+            onOpenAddV2Modal={() => setIsAddMediaV2ModalOpen(true)}
+          />
+
+          {/* TRACK V1: Escenas Principales / Diapositivas */}
+          <div className="flex items-center relative py-1 border-b border-slate-800/60">
+            {/* Track Label Badge */}
+            <div className="absolute -left-1 sm:left-0 -top-2.5 z-10 flex items-center gap-1.5 pointer-events-none">
+              <span className="text-[9px] font-black uppercase tracking-wider bg-slate-900/95 text-slate-300 border border-slate-700/80 px-2 py-0.5 rounded-md shadow flex items-center gap-1">
+                <Video className="w-2.5 h-2.5 text-rose-400" />
+                <span>V1 • Escenas Principales</span>
+              </span>
+            </div>
             {slides.map((slide, idx) => {
               const timing = slideTimings[idx];
               const isSelected = currentIndex === idx;
@@ -1161,8 +1608,85 @@ export const Timeline: React.FC<TimelineProps> = ({
             )}
           </div>
 
-          {/* TRACK 2: Audio Track Representation */}
-          <div className="flex items-center relative py-1">
+          {/* TRACK SUB: Subtítulos Dinámicos */}
+          <SubtitlesTrackRow
+            subtitles={subtitles || []}
+            pxPerSec={pxPerSec}
+            totalDuration={totalDuration}
+            selectedSubtitleId={selectedSubtitleId}
+            onSelectSubtitle={(subId) => {
+              setSelectedSubtitleId(subId);
+              setSelectedV2Clip(null);
+              setEditingSlideIdx(null);
+              setSelectedTransitionIdx(null);
+              setIsAudioEditorOpen(false);
+              setIsAudioPickerOpen(false);
+            }}
+            onAddSubtitle={handleAddSubtitle}
+            onAutoGenerateSubtitles={handleAutoGenerateSubtitles}
+            onOpenSpeechToText={() => setIsSttModalOpen(true)}
+            isAutoReadSubtitles={isAutoReadSubtitles}
+            onToggleAutoReadSubtitles={() => setIsAutoReadSubtitles((prev) => !prev)}
+            onConvertToVoiceover={handleConvertSubtitlesToVoiceover}
+          />
+
+          {/* MASTER AUDIO TRACKS SECTION (Barra Desplegable de Pistas de Audio) */}
+          <div
+            ref={audioSectionRef}
+            className="pt-2 pb-1"
+          >
+            <div className="flex items-center justify-between p-2 rounded-xl bg-gradient-to-r from-indigo-950/90 via-slate-900/90 to-indigo-950/90 border border-indigo-700/50 shadow-md">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black uppercase tracking-wider text-indigo-300 bg-indigo-900/90 border border-indigo-600/60 px-2.5 py-0.5 rounded-md flex items-center gap-1.5 shadow">
+                  <Music className="w-3 h-3 text-indigo-400" />
+                  <span>Pistas de Audio ({3 + activeAudioChannels.length} Canales Activos)</span>
+                </span>
+                <span className="text-[10px] text-slate-400 hidden sm:inline">
+                  A1 Música • A2 Voz/TTS • A3 SFX {activeAudioChannels.length > 0 ? `• ${activeAudioChannels.length} Libres` : ''}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setTimelineHeightMode((prev) => (prev === 'auto' ? 'scroll' : 'auto'))}
+                  className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700/80 transition flex items-center gap-1"
+                  title="Conmutar entre Autoajuste de altura y barra vertical con scroll"
+                >
+                  <ArrowUpDown className="w-2.5 h-2.5 text-indigo-400" />
+                  <span>{timelineHeightMode === 'auto' ? 'Modo Barra' : 'Autoajuste'}</span>
+                </button>
+                <button
+                  onClick={() => setIsAudioSectionCollapsed((prev) => !prev)}
+                  className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-indigo-950 hover:bg-indigo-900 text-indigo-200 border border-indigo-700/60 transition flex items-center gap-1"
+                  title={isAudioSectionCollapsed ? 'Desplegar todas las pistas de audio' : 'Plegar pistas de audio'}
+                >
+                  {isAudioSectionCollapsed ? (
+                    <>
+                      <ChevronDown className="w-3 h-3 text-indigo-400" />
+                      <span>Desplegar ({3 + activeAudioChannels.length})</span>
+                    </>
+                  ) : (
+                    <>
+                      <ChevronUp className="w-3 h-3 text-indigo-400" />
+                      <span>Plegar</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {!isAudioSectionCollapsed && (
+            <>
+          {/* TRACK A1: Audio Track Representation */}
+          <div className="flex items-center relative py-1 border-b border-slate-800/60">
+            {/* Track Label Badge */}
+            <div className="absolute -left-1 sm:left-0 -top-2.5 z-10 flex items-center gap-1.5 pointer-events-none">
+              <span className="text-[9px] font-black uppercase tracking-wider bg-slate-900/95 text-indigo-300 border border-slate-700/80 px-2 py-0.5 rounded-md shadow flex items-center gap-1">
+                <Music className="w-2.5 h-2.5 text-indigo-400" />
+                <span>A1 • Música de Fondo</span>
+              </span>
+            </div>
             {audioTrack ? (
               <div
                 className="relative group transition-all"
@@ -1263,8 +1787,176 @@ export const Timeline: React.FC<TimelineProps> = ({
               </div>
             )}
           </div>
+
+          {/* TRACK A2: Voz en Off (TTS / Locución IA) */}
+          <VoiceoverTrackRow
+            voiceoverTrack={voiceoverTrack || null}
+            pxPerSec={pxPerSec}
+            totalDuration={totalDuration}
+            onOpenVoiceoverModal={() => setIsTtsModalOpen(true)}
+            onUpdateVoiceoverTrack={(tr) => {
+              if (onUpdateVoiceoverTrack) onUpdateVoiceoverTrack(tr);
+            }}
+          />
+
+          {/* TRACK A3: Efectos de Sonido (SFX) Dedicado */}
+          <SfxTrackRow
+            sfxClips={activeSfxClips}
+            pxPerSec={pxPerSec}
+            totalDuration={totalDuration}
+            selectedSfxId={selectedSfxId}
+            onSelectSfx={setSelectedSfxId}
+            onOpenAddSfxModal={(targetTime) => {
+              setSfxTargetTime(targetTime !== undefined ? targetTime : null);
+              setIsSfxModalOpen(true);
+            }}
+            onUpdateSfxClip={handleUpdateSfxClip}
+            onDeleteSfxClip={handleDeleteSfxClip}
+            onDuplicateSfxClip={handleDuplicateSfxClip}
+          />
+
+          {/* TRACKS DINÁMICOS A4, A5... Canales de Audio Libres */}
+          <DynamicAudioTracks
+            channels={activeAudioChannels}
+            pxPerSec={pxPerSec}
+            totalDuration={totalDuration}
+            currentTime={currentTime}
+            slides={slides}
+            onAddChannel={handleAddChannel}
+            onRemoveChannel={handleRemoveChannel}
+            onUpdateChannel={handleUpdateChannel}
+            onAddClipToChannel={handleAddClipToChannel}
+            onUpdateClipInChannel={handleUpdateClipInChannel}
+            onDeleteClipFromChannel={handleDeleteClipFromChannel}
+          />
+            </>
+          )}
         </div>
       </div>
+    </div>
+
+    {/* Bottom Height & Mode Control Toolbar */}
+    <div className="bg-slate-900/95 border-t border-slate-800 px-3 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+      <div className="flex items-center gap-2">
+        <span className="flex items-center gap-1.5 font-bold text-slate-200">
+          <Layers className="w-3.5 h-3.5 text-rose-500" />
+          <span>Multitrack: V1, V2, Subs + {3 + activeAudioChannels.length} Audio</span>
+        </span>
+        <span className="text-slate-600 hidden sm:inline">•</span>
+        <span className="text-[11px] text-slate-400 hidden sm:inline">
+          {timelineHeightMode === 'auto'
+            ? '✨ Autoajuste activo: todas las pistas de audio se muestran automáticamente sin recortes'
+            : '📜 Barra vertical activa: usa la rueda del ratón o la barra derecha para desplazarte'}
+        </span>
+      </div>
+
+      <div className="flex items-center gap-2">
+        {timelineHeightMode === 'scroll' && (
+          <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-xl p-0.5">
+            <span className="text-[10px] text-slate-400 pl-1.5 pr-0.5 font-bold">Altura:</span>
+            {[340, 460, 600].map((h) => (
+              <button
+                key={h}
+                onClick={() => setScrollContainerHeight(h)}
+                className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition ${
+                  scrollContainerHeight === h
+                    ? 'bg-rose-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                }`}
+              >
+                {h}px
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Quick jump to audio */}
+        <button
+          onClick={handleScrollToAudio}
+          className="px-2.5 py-1 rounded-xl bg-indigo-950/70 hover:bg-indigo-900/90 text-indigo-300 border border-indigo-700/50 font-bold transition flex items-center gap-1 text-[11px]"
+          title="Saltar a las pistas de audio"
+        >
+          <Music className="w-3 h-3 text-indigo-400" />
+          <span>Ver Audio</span>
+        </button>
+
+        {/* Toggle Autoajuste vs Barra Vertical */}
+        <button
+          onClick={() => setTimelineHeightMode((prev) => (prev === 'auto' ? 'scroll' : 'auto'))}
+          className={`px-3 py-1 rounded-xl font-bold border transition flex items-center gap-1.5 text-[11px] ${
+            timelineHeightMode === 'auto'
+              ? 'bg-emerald-950/90 border-emerald-600/60 text-emerald-300 shadow-sm hover:bg-emerald-900'
+              : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200'
+          }`}
+          title="Alternar entre Autoajuste completo y Barra de desplazamiento vertical"
+        >
+          <ArrowUpDown className="w-3 h-3 text-emerald-400" />
+          <span>{timelineHeightMode === 'auto' ? 'Autoajuste Activo' : 'Autoajustar Altura'}</span>
+        </button>
+      </div>
+    </div>
+
+      {/* Multi-track Modals */}
+      <SfxPickerModal
+        isOpen={isSfxModalOpen}
+        onClose={() => {
+          setIsSfxModalOpen(false);
+          setSfxTargetTime(null);
+        }}
+        currentTime={currentTime}
+        initialTime={sfxTargetTime}
+        totalDuration={totalDuration}
+        slides={slides}
+        existingClips={activeSfxClips}
+        onAddSfxClip={handleAddSfxClip}
+        onDeleteSfxClip={handleDeleteSfxClip}
+        onDuplicateSfxClip={handleDuplicateSfxClip}
+      />
+      <AddMediaV2Modal
+        isOpen={isAddMediaV2ModalOpen}
+        onClose={() => setIsAddMediaV2ModalOpen(false)}
+        slides={slides}
+        currentSlideIndex={currentIndex}
+        onAddV2Layer={handleAddV2Layer}
+      />
+
+      <TtsVoiceoverModal
+        isOpen={isTtsModalOpen}
+        onClose={() => setIsTtsModalOpen(false)}
+        slides={slides}
+        totalDuration={totalDuration}
+        currentVoiceoverTrack={voiceoverTrack || null}
+        currentSlideIndex={currentIndex}
+        subtitles={subtitles || []}
+        onSaveVoiceoverTrack={(tr) => {
+          if (onUpdateVoiceoverTrack) onUpdateVoiceoverTrack(tr);
+        }}
+        onSaveSubtitles={(subs) => {
+          if (onUpdateSubtitles) onUpdateSubtitles(subs);
+          if (subs.length > 0) setSelectedSubtitleId(subs[0].id);
+        }}
+      />
+
+      <SpeechToTextModal
+        isOpen={isSttModalOpen}
+        onClose={() => setIsSttModalOpen(false)}
+        slides={slides}
+        totalDuration={totalDuration}
+        currentSlideIndex={currentIndex}
+        audioTrack={audioTrack || null}
+        voiceoverTrack={voiceoverTrack || null}
+        onUpdateVoiceoverTrack={(tr) => {
+          if (onUpdateVoiceoverTrack) onUpdateVoiceoverTrack(tr);
+        }}
+        onSaveSubtitles={(newSubs) => {
+          if (onUpdateSubtitles) {
+            onUpdateSubtitles(newSubs);
+          }
+          if (newSubs.length > 0) {
+            setSelectedSubtitleId(newSubs[0].id);
+          }
+        }}
+      />
     </div>
   );
 };

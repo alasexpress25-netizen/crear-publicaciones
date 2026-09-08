@@ -15,7 +15,10 @@ import {
   QuoteData,
   CtaFinalData,
   SavedCarouselProject,
-  VideoAudioTrack
+  VideoAudioTrack,
+  SubtitleItem,
+  VoiceoverTrack,
+  AudioChannelLane
 } from './types';
 import {
   INITIAL_DEFAULT_SLIDES,
@@ -62,6 +65,8 @@ const LOCAL_STORAGE_BRAND_KEY = 'lavisualmk_carousel_brand_v3';
 const LOCAL_STORAGE_DOCS_KEY = 'lavisualmk_carousel_docs_v3';
 const LOCAL_STORAGE_POST_KEY = 'lavisualmk_carousel_post_v3';
 const LOCAL_STORAGE_CLIENT_KEY = 'lavisualmk_carousel_client_v3';
+const LOCAL_STORAGE_SUBTITLES_KEY = 'lavisualmk_carousel_subtitles_v1';
+const LOCAL_STORAGE_VOICEOVER_KEY = 'lavisualmk_carousel_voiceover_v1';
 const SESSION_ACTIVE_KEY = 'lavisualmk_session_active_v1';
 
 export default function App() {
@@ -220,6 +225,51 @@ export default function App() {
   const [isTimelinePlaying, setIsTimelinePlaying] = useState(false);
   const [timelineCurrentTime, setTimelineCurrentTime] = useState(0);
 
+  // Multi-Track Subtitles State
+  const [subtitles, setSubtitles] = useState<SubtitleItem[]>(() => {
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_SUBTITLES_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {}
+    return [];
+  });
+
+  // Multi-Track Voiceover / TTS State
+  const [voiceoverTrack, setVoiceoverTrack] = useState<VoiceoverTrack | null>(() => {
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_VOICEOVER_KEY);
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch {}
+    return null;
+  });
+
+  // Persist subtitles to localStorage
+  useEffect(() => {
+    try {
+      if (subtitles && subtitles.length > 0) {
+        localStorage.setItem(LOCAL_STORAGE_SUBTITLES_KEY, JSON.stringify(subtitles));
+      } else {
+        localStorage.removeItem(LOCAL_STORAGE_SUBTITLES_KEY);
+      }
+    } catch {}
+  }, [subtitles]);
+
+  // Persist voiceover track to localStorage
+  useEffect(() => {
+    try {
+      if (voiceoverTrack) {
+        localStorage.setItem(LOCAL_STORAGE_VOICEOVER_KEY, JSON.stringify(voiceoverTrack));
+      } else {
+        localStorage.removeItem(LOCAL_STORAGE_VOICEOVER_KEY);
+      }
+    } catch {}
+  }, [voiceoverTrack]);
+
   // Persist audio track to localStorage
   useEffect(() => {
     try {
@@ -230,6 +280,77 @@ export default function App() {
       }
     } catch {}
   }, [audioTrack]);
+
+  // Canal A3 Dedicated SFX Clips State
+  const [sfxClips, setSfxClips] = useState<VideoAudioTrack[]>(() => {
+    try {
+      const saved = localStorage.getItem('lavisualmk_carousel_sfx_clips_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {}
+    return [];
+  });
+
+  // Dynamic Free Audio Channels State (Canales A4, A5...)
+  const [audioChannels, setAudioChannels] = useState<AudioChannelLane[]>(() => {
+    try {
+      const saved = localStorage.getItem('lavisualmk_carousel_audio_channels_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {}
+    return [];
+  });
+
+  // Persist sfxClips to localStorage
+  useEffect(() => {
+    try {
+      if (sfxClips && sfxClips.length > 0) {
+        localStorage.setItem('lavisualmk_carousel_sfx_clips_v1', JSON.stringify(sfxClips));
+      } else {
+        localStorage.removeItem('lavisualmk_carousel_sfx_clips_v1');
+      }
+    } catch {}
+  }, [sfxClips]);
+
+  // Persist audioChannels to localStorage
+  useEffect(() => {
+    try {
+      if (audioChannels && audioChannels.length > 0) {
+        localStorage.setItem('lavisualmk_carousel_audio_channels_v1', JSON.stringify(audioChannels));
+      } else {
+        localStorage.removeItem('lavisualmk_carousel_audio_channels_v1');
+      }
+    } catch {}
+  }, [audioChannels]);
+
+  // Flattened active audio tracks from SFX and all dynamic lanes for playback and export
+  const allExtraAudioTracks = useMemo(() => {
+    const list: VideoAudioTrack[] = [];
+    if (sfxClips && sfxClips.length > 0) {
+      sfxClips.forEach((s) => {
+        if (!s.isMuted) list.push(s);
+      });
+    }
+    if (audioChannels && audioChannels.length > 0) {
+      audioChannels.forEach((chan) => {
+        if (!chan.isMuted && chan.clips && chan.clips.length > 0) {
+          chan.clips.forEach((clip) => {
+            if (!clip.isMuted) {
+              list.push({
+                ...clip,
+                volume: (clip.volume ?? 0.85) * (chan.volume ?? 1),
+              });
+            }
+          });
+        }
+      });
+    }
+    return list;
+  }, [sfxClips, audioChannels]);
 
   // Mark session as active in sessionStorage so F5 / reloads keep current work
   useEffect(() => {
@@ -473,6 +594,8 @@ export default function App() {
     if (proj.postMeta) setPostMeta(proj.postMeta);
     if (proj.aspectRatio) setAspectRatio(proj.aspectRatio);
     if (proj.audioTrack) setAudioTrack(proj.audioTrack);
+    if (proj.sfxClips) setSfxClips(proj.sfxClips);
+    if (proj.extraAudioChannels) setAudioChannels(proj.extraAudioChannels);
     setCurrentProjectId(proj.id);
     setCurrentProjectTitle(proj.title);
     setEscenasPorDiapositiva({});
@@ -503,6 +626,8 @@ export default function App() {
       volume: 0.8,
       isMuted: false,
     });
+    setSfxClips([]);
+    setAudioChannels([]);
     setCurrentProjectId(null);
     setCurrentProjectTitle(null);
     setEscenasPorDiapositiva({});
@@ -572,6 +697,8 @@ export default function App() {
           postMeta,
           aspectRatio,
           audioTrack: audioTrack || undefined,
+          sfxClips: sfxClips.length > 0 ? sfxClips : undefined,
+          extraAudioChannels: audioChannels.length > 0 ? audioChannels : undefined,
         };
 
         await saveProjectDB(projToSave);
@@ -592,7 +719,7 @@ export default function App() {
     }, 2000);
 
     return () => clearTimeout(timer);
-  }, [slides, brand, brief, targetAudience, postMeta, aspectRatio, audioTrack, currentProjectId, currentProjectTitle]);
+  }, [slides, brand, brief, targetAudience, postMeta, aspectRatio, audioTrack, sfxClips, audioChannels, currentProjectId, currentProjectTitle]);
 
   // Listeners for window blur, tab visibility change, and before page unload/refresh
   useEffect(() => {
@@ -852,22 +979,27 @@ export default function App() {
     } else {
       setSlides((prev) => {
         const copy = [...prev];
-        if (!copy[currentIndex]) return prev;
-        const currentStyles = copy[currentIndex].textStyle || {};
-        const updatedCustomTexts = copy[currentIndex].customTexts?.map((ct) =>
-          ct.id === key ? { ...ct, ...stylePartial } : ct
-        );
-        copy[currentIndex] = {
-          ...copy[currentIndex],
-          customTexts: updatedCustomTexts || copy[currentIndex].customTexts,
-          textStyle: {
-            ...currentStyles,
-            [key]: {
-              ...(currentStyles[key] || {}),
-              ...stylePartial,
+        const originIdx = copy.findIndex((s) => s.customTexts?.some((ct) => ct.id === key));
+        const targetIndices = originIdx !== -1 && originIdx !== currentIndex ? [originIdx, currentIndex] : [currentIndex];
+        
+        targetIndices.forEach((idx) => {
+          if (!copy[idx]) return;
+          const currentStyles = copy[idx].textStyle || {};
+          const updatedCustomTexts = copy[idx].customTexts?.map((ct) =>
+            ct.id === key ? { ...ct, ...stylePartial } : ct
+          );
+          copy[idx] = {
+            ...copy[idx],
+            customTexts: updatedCustomTexts || copy[idx].customTexts,
+            textStyle: {
+              ...currentStyles,
+              [key]: {
+                ...(currentStyles[key] || {}),
+                ...stylePartial,
+              },
             },
-          },
-        };
+          };
+        });
         return copy;
       });
     }
@@ -1057,8 +1189,8 @@ export default function App() {
   };
 
   const handleAddCustomText = (
-    type: 'heading' | 'body' | 'badge' | 'accent' | 'box' | 'image' = 'body',
-    payload?: { imageUrl?: string }
+    type: 'heading' | 'body' | 'badge' | 'accent' | 'box' | 'image' | 'video' = 'body',
+    payload?: { imageUrl?: string; videoUrl?: string }
   ) => {
     const newId = type === 'box'
       ? `custom-box-${Date.now()}`
@@ -1066,12 +1198,34 @@ export default function App() {
       ? `custom-accent-${Date.now()}`
       : type === 'image'
       ? `custom-img-${Date.now()}`
+      : type === 'video'
+      ? `custom-vid-${Date.now()}`
       : `custom-${Date.now()}`;
     
     const accentCol = currentSlide.accentColor || brand.primaryColor || '#e11d48';
     let newLayer: CustomTextLayer;
 
-    if (type === 'image') {
+    if (type === 'video') {
+      newLayer = {
+        id: newId,
+        type: 'video',
+        videoUrl: payload?.videoUrl || '',
+        boxWidth: 40,
+        boxHeight: 35,
+        borderRadius: 12,
+        isMuted: true,
+      };
+      const initPos = { left: 30, top: 30 };
+      handleUpdateTextPos(newId, initPos);
+      handleUpdateTextStyle(newId, {
+        height: 140,
+        borderRadius: 12,
+        zIndex: 35,
+        shadow: true,
+        shadowType: 'soft',
+        shadowColor: '#000000',
+      });
+    } else if (type === 'image') {
       newLayer = {
         id: newId,
         type: 'image',
@@ -1157,6 +1311,10 @@ export default function App() {
     handleAddCustomText('image', { imageUrl });
   };
 
+  const handleAddCustomVideo = (videoUrl: string) => {
+    handleAddCustomText('video', { videoUrl });
+  };
+
   const handleUpdateCustomText = (id: string, text: string) => {
     setSlides((prev) => {
       const copy = [...prev];
@@ -1171,12 +1329,13 @@ export default function App() {
 
   const handleDeleteCustomText = (id: string) => {
     setSlides((prev) => {
-      const copy = [...prev];
-      if (!copy[currentIndex]) return prev;
-      const customTexts = (copy[currentIndex].customTexts || []).filter((ct) => ct.id !== id);
-      copy[currentIndex] = { ...copy[currentIndex], customTexts };
-      return copy;
+      return prev.map((s) => ({
+        ...s,
+        customTexts: (s.customTexts || []).filter((ct) => ct.id !== id),
+      }));
     });
+    handleUpdateTextPos(id, null);
+    handleResetTextStyle(id);
     if (activeElementKey === id) setActiveElementKey(null);
   };
 
@@ -1249,37 +1408,45 @@ export default function App() {
     setSlides((prev) => {
       const copy = [...prev];
       if (!copy[currentIndex]) return prev;
-      const currentPos = { ...(copy[currentIndex].textPos || {}) };
-      if (typeof key === 'object' && key !== null) {
-        Object.entries(key).forEach(([k, p]) => {
-          if (p === null) {
-            delete currentPos[k];
+
+      const originIdx = typeof key === 'string' ? copy.findIndex((s) => s.customTexts?.some((ct) => ct.id === key)) : -1;
+      const targetIndices = originIdx !== -1 && originIdx !== currentIndex ? [originIdx, currentIndex] : [currentIndex];
+
+      targetIndices.forEach((idx) => {
+        if (!copy[idx]) return;
+        const currentPos = { ...(copy[idx].textPos || {}) };
+        if (typeof key === 'object' && key !== null) {
+          Object.entries(key).forEach(([k, p]) => {
+            if (p === null) {
+              delete currentPos[k];
+            } else {
+              currentPos[k] = p;
+            }
+          });
+        } else if (typeof key === 'string') {
+          if (pos === null || pos === undefined) {
+            delete currentPos[key];
           } else {
-            currentPos[k] = p;
-          }
-        });
-      } else if (typeof key === 'string') {
-        if (pos === null || pos === undefined) {
-          delete currentPos[key];
-        } else {
-          currentPos[key] = pos;
-          // Auto-sanitize: remove parent wrapper containers if moving an individual card/element
-          // This guarantees older saved projects won't suffer from nested-positioning bounds/limits
-          if (key === 'cta-subheadline-card' || key === 'cta-headline' || key === 'cta-avatar') {
-            delete currentPos['cta-container'];
-          } else if (key === 'comp-left-card' || key === 'comp-right-card') {
-            delete currentPos['comp-grid'];
-          } else if (key === 'stat-subtext-box' || key === 'stat-number' || key === 'stat-label') {
-            delete currentPos['stat-container'];
-          } else if (key === 'quote-text' || key === 'quote-author' || key === 'quote-role') {
-            delete currentPos['quote-container'];
+            currentPos[key] = pos;
+            // Auto-sanitize: remove parent wrapper containers if moving an individual card/element
+            // This guarantees older saved projects won't suffer from nested-positioning bounds/limits
+            if (key === 'cta-subheadline-card' || key === 'cta-headline' || key === 'cta-avatar') {
+              delete currentPos['cta-container'];
+            } else if (key === 'comp-left-card' || key === 'comp-right-card') {
+              delete currentPos['comp-grid'];
+            } else if (key === 'stat-subtext-box' || key === 'stat-number' || key === 'stat-label') {
+              delete currentPos['stat-container'];
+            } else if (key === 'quote-text' || key === 'quote-author' || key === 'quote-role') {
+              delete currentPos['quote-container'];
+            }
           }
         }
-      }
-      copy[currentIndex] = {
-        ...copy[currentIndex],
-        textPos: currentPos,
-      };
+        copy[idx] = {
+          ...copy[idx],
+          textPos: currentPos,
+        };
+      });
+
       return copy;
     });
   };
@@ -1397,19 +1564,32 @@ export default function App() {
       slidesTotal += Math.max(1, raw / sp);
     }
     const audioEnd = audioTrack ? (audioTrack.startOffset || 0) + (audioTrack.duration || slidesTotal) : 0;
-    return Math.max(1, slidesTotal, audioEnd);
-  }, [slides, audioTrack]);
+    let maxExtraEnd = 0;
+    for (const tr of allExtraAudioTracks) {
+      const trEnd = (tr.startOffset || 0) + (tr.duration || 1);
+      if (trEnd > maxExtraEnd) maxExtraEnd = trEnd;
+    }
+    return Math.max(1, slidesTotal, audioEnd, maxExtraEnd);
+  }, [slides, audioTrack, allExtraAudioTracks]);
 
   // Synchronize Web Audio preview engine with timeline state
   useEffect(() => {
-    if (isTimelinePlaying && audioTrack) {
+    const hasAnyAudio = Boolean(audioTrack || voiceoverTrack || allExtraAudioTracks.length > 0);
+    if (isTimelinePlaying && hasAnyAudio) {
       previewAudio.resumeContext().then(() => {
-        previewAudio.syncPlayback(audioTrack, timelineCurrentTime, true, totalProjectDuration);
+        previewAudio.syncMultiTrackPlayback({
+          trackA1: audioTrack,
+          voiceoverTrack,
+          extraTracks: allExtraAudioTracks,
+          currentTimeSeconds: timelineCurrentTime,
+          isPlaying: true,
+          totalDuration: totalProjectDuration,
+        });
       }).catch(() => {});
     } else {
       previewAudio.stop();
     }
-  }, [isTimelinePlaying, audioTrack, totalProjectDuration]);
+  }, [isTimelinePlaying, audioTrack, voiceoverTrack, allExtraAudioTracks, totalProjectDuration]);
 
   // Clean up audio on unmount
   useEffect(() => {
@@ -1425,8 +1605,18 @@ export default function App() {
       const next = !prev;
       if (!next) {
         previewAudio.stop();
-      } else if (audioTrack) {
-        previewAudio.syncPlayback(audioTrack, timelineCurrentTime, true, totalProjectDuration);
+      } else {
+        const hasAnyAudio = Boolean(audioTrack || voiceoverTrack || allExtraAudioTracks.length > 0);
+        if (hasAnyAudio) {
+          previewAudio.syncMultiTrackPlayback({
+            trackA1: audioTrack,
+            voiceoverTrack,
+            extraTracks: allExtraAudioTracks,
+            currentTimeSeconds: timelineCurrentTime,
+            isPlaying: true,
+            totalDuration: totalProjectDuration,
+          });
+        }
       }
       return next;
     });
@@ -1436,9 +1626,17 @@ export default function App() {
   const handleSeekTimeline = (timeSec: number) => {
     const clampedTime = Math.max(0, Math.min(totalProjectDuration, timeSec));
     setTimelineCurrentTime(clampedTime);
-    if (isTimelinePlaying && audioTrack) {
+    const hasAnyAudio = Boolean(audioTrack || voiceoverTrack || allExtraAudioTracks.length > 0);
+    if (isTimelinePlaying && hasAnyAudio) {
       previewAudio.resumeContext().then(() => {
-        previewAudio.syncPlayback(audioTrack, clampedTime, true, totalProjectDuration);
+        previewAudio.syncMultiTrackPlayback({
+          trackA1: audioTrack,
+          voiceoverTrack,
+          extraTracks: allExtraAudioTracks,
+          currentTimeSeconds: clampedTime,
+          isPlaying: true,
+          totalDuration: totalProjectDuration,
+        });
       }).catch(() => {});
     }
 
@@ -1655,6 +1853,14 @@ export default function App() {
             brand={brand}
             aspectRatio={aspectRatio}
             audioTrack={audioTrack}
+            subtitles={subtitles}
+            onUpdateSubtitles={setSubtitles}
+            voiceoverTrack={voiceoverTrack}
+            onUpdateVoiceoverTrack={setVoiceoverTrack}
+            sfxClips={sfxClips}
+            onUpdateSfxClips={setSfxClips}
+            audioChannels={audioChannels}
+            onUpdateAudioChannels={setAudioChannels}
             isPlaying={isTimelinePlaying}
             currentTime={timelineCurrentTime}
             onTogglePlay={handleTogglePlay}
@@ -1784,6 +1990,7 @@ export default function App() {
                 onDeleteActiveElement={handleDeleteActiveElement}
                 onAddCustomText={handleAddCustomText}
                 onAddCustomImage={handleAddCustomImage}
+                onAddCustomVideo={handleAddCustomVideo}
                 onSelectElement={setActiveElementKey}
                 onUpdateBrand={handleUpdateBrand}
                 onUpdateSlideOverlayType={handleUpdateSlideOverlayType}
@@ -1810,10 +2017,7 @@ export default function App() {
                         <div className="flex items-center gap-2">
                           {isTimelinePlaying ? (
                             <button
-                              onClick={() => {
-                                setIsTimelinePlaying(false);
-                                previewAudio.pause();
-                              }}
+                              onClick={handleTogglePlay}
                               className="flex items-center gap-1.5 bg-rose-600/90 hover:bg-rose-500 text-white px-3 py-1 rounded-full font-black text-[11px] shadow-md shadow-rose-950/60 animate-pulse transition cursor-pointer"
                               title="Pausar vista previa (Espacio)"
                             >
@@ -1825,14 +2029,7 @@ export default function App() {
                             </button>
                           ) : (
                             <button
-                              onClick={() => {
-                                setIsTimelinePlaying(true);
-                                if (audioTrack) {
-                                  previewAudio.resumeContext().then(() => {
-                                    previewAudio.syncPlayback(audioTrack, timelineCurrentTime, true, totalProjectDuration);
-                                  }).catch(() => {});
-                                }
-                              }}
+                              onClick={handleTogglePlay}
                               className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white px-3 py-1 rounded-full font-bold text-[11px] border border-slate-700 transition cursor-pointer"
                               title="Reproducir efectos de movimiento, transiciones y audio sincronizado"
                             >
@@ -1891,6 +2088,7 @@ export default function App() {
                             brand={brand}
                             aspectRatio={aspectRatio}
                             currentTime={timelineCurrentTime}
+                            subtitles={subtitles}
                           />
                         </div>
                       ) : (
@@ -1921,6 +2119,8 @@ export default function App() {
                             currentTimeInSlide={activeSlideTimeInSlide}
                             previewAnimationElementKey={animPreview?.elementKey}
                             previewAnimationTime={animPreview?.time}
+                            allSlides={slides}
+                            slideIndex={currentIndex}
                           />
                         </div>
                       )}
@@ -2105,6 +2305,9 @@ export default function App() {
         brand={brand}
         currentAspectRatio={aspectRatio}
         audioTrack={audioTrack}
+        subtitles={subtitles}
+        voiceoverTrack={voiceoverTrack}
+        extraAudioTracks={allExtraAudioTracks}
       />
 
     </div>
