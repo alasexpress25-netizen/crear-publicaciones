@@ -1,0 +1,1127 @@
+import express from "express";
+import path from "path";
+import { createServer as createViteServer } from "vite";
+import { GoogleGenAI, Type } from "@google/genai";
+import dotenv from "dotenv";
+import ytdl from "@distube/ytdl-core";
+
+dotenv.config();
+
+let aiClients: GoogleGenAI[] = [];
+let currentKeyIndex = 0;
+
+function getAI(): GoogleGenAI {
+  if (aiClients.length === 0) {
+    // Read single key or comma-separated list of keys, or GEMINI_API_KEY_2, etc.
+    const rawKeys = [
+      process.env.GEMINI_API_KEY,
+      process.env.GEMINI_API_KEY_2,
+      process.env.GEMINI_API_KEY_3,
+      process.env.GEMINI_API_KEY_BACKUP,
+    ].filter(Boolean) as string[];
+
+    // Also support comma-separated keys inside GEMINI_API_KEY
+    const allKeys: string[] = [];
+    rawKeys.forEach(k => {
+      k.split(",").forEach(item => {
+        const trimmed = item.trim();
+        if (trimmed && !allKeys.includes(trimmed)) {
+          allKeys.push(trimmed);
+        }
+      });
+    });
+
+    if (allKeys.length === 0) {
+      console.warn("No GEMINI_API_KEY found in environment.");
+      allKeys.push("");
+    }
+
+    aiClients = allKeys.map(key => new GoogleGenAI({
+      apiKey: key,
+      httpOptions: {
+        headers: {
+          "User-Agent": "aistudio-build",
+        },
+      },
+    }));
+  }
+
+  return aiClients[currentKeyIndex % aiClients.length];
+}
+
+// Official supported Gemini models for current SDK
+const SUPPORTED_MODELS = [
+  "gemini-2.5-flash",
+  "gemini-3.1-flash-lite",
+  "gemini-flash-latest",
+  "gemini-3.7-flash"
+];
+
+const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+// Executes an AI call with automatic failover to backup keys AND alternative models if rate limited or high demand
+async function executeWithFallback<T>(fn: (ai: GoogleGenAI, modelName: string) => Promise<T>): Promise<T> {
+  const totalKeys = Math.max(1, aiClients.length);
+  let lastError: any = null;
+
+  for (let modelIdx = 0; modelIdx < SUPPORTED_MODELS.length; modelIdx++) {
+    const currentModel = SUPPORTED_MODELS[modelIdx];
+
+    for (let attempt = 0; attempt < totalKeys; attempt++) {
+      const ai = getAI();
+      try {
+        return await fn(ai, currentModel);
+      } catch (err: any) {
+        lastError = err;
+        const errStr = JSON.stringify(err?.message || err || "");
+        const isRateOrAuthError = 
+          err?.status === 429 || 
+          errStr.includes("429") || 
+          errStr.includes("quota") || 
+          errStr.includes("RESOURCE_EXHAUSTED") ||
+          err?.status === 403 ||
+          errStr.includes("API_KEY_INVALID");
+
+        const isHighDemandOrNotFound =
+          err?.status === 503 ||
+          err?.status === 404 ||
+          errStr.includes("503") ||
+          errStr.includes("404") ||
+          errStr.includes("high demand") ||
+          errStr.includes("UNAVAILABLE") ||
+          errStr.includes("not found") ||
+          errStr.includes("overloaded");
+
+        if (isRateOrAuthError && aiClients.length > 1) {
+          console.warn(`[Gemini Fallback] Key #${currentKeyIndex + 1} rate limited. Switching to backup key...`);
+          currentKeyIndex = (currentKeyIndex + 1) % aiClients.length;
+          await wait(500);
+          continue;
+        }
+
+        if (isHighDemandOrNotFound) {
+          console.warn(`[Gemini Model Fallover] Model ${currentModel} returned ${err?.status || 'error'}. Trying fallback model...`);
+          await wait(600);
+          break; // Break key loop to try next supported model
+        }
+
+        if (attempt < totalKeys - 1) {
+          currentKeyIndex = (currentKeyIndex + 1) % aiClients.length;
+          await wait(500);
+          continue;
+        }
+      }
+    }
+  }
+
+  throw lastError;
+}
+
+// Built-in marketing expert knowledge base injected into system prompts
+const MARKETING_PSYCHOLOGY_FRAMEWORK = `
+ERES UNA DIRECTORA EJECUTIVA DE MARKETING Y COPYWRITER SENIOR DE RESPUESTA DIRECTA CON ABSOLUTA LIBERTAD CREATIVA, IMAGINACIÓN ESTRATÉGICA Y MEMORIA ACTIVA.
+Tu especialidad es conectar los problemas reales del cliente con las emociones profundas de su audiencia, concibiendo carruseles para redes sociales (Instagram, LinkedIn) que DETIENEN EL SCROLL, generan autoridad genuina y provocan acción.
+
+PRINCIPIOS FUNDAMENTALES DE TU TRABAJO COMO DIRECTORA:
+1. LIBERTAD CREATIVA E IMAGINACIÓN ILIMITADA:
+   - No estás atada a plantillas genéricas ni fórmulas trilladas.
+   - Analizas qué necesita escuchar el cliente ideal hoy: ¿un ángulo provocador, una historia real, una analogía inesperada, un error costoso o una guía paso a paso?
+   - Tienes total soltura para variar el tono, el ritmo y la narrativa para que cada proyecto sea una obra única y memorable.
+
+2. INTELIGENCIA DE CONTEXTO (MÉTRICAS & DATOS DE SUPABASE):
+   - Conoces a fondo qué hace el cliente, qué servicios vende, qué problemas resuelve y el lenguaje técnico de su sector.
+   - Hablas como una verdadera especialista del nicho, usando términos reales y situaciones verosímiles, jamás como un redactor genérico de IA.
+
+3. CONSULTA OBLIGATORIA DE MEMORIA ANTI-REPETICIÓN:
+   - Siempre revisas tu historial de ganchos, temas, dolores y escenas visuales ya usadas para este cliente.
+   - Si una idea o dolor ya fue expresado en proyectos previos, tu mente creadora lo DESCARTA y explora un dolor secundario, una objeción oculta, un caso de estudio o una perspectiva fresca.
+
+4. ARQUITECTURA DE ATENCIÓN PARA CELULARES (ARCO NARRATIVO PARA ## DIAPOSITIVAS):
+   - Diapositiva 1: Gancho irresistible de 4 a 8 palabras en MAYÚSCULAS que frene el pulgar al instante.
+   - Diapositivas de desarrollo: Tensión progresiva, claridad meridiana, frases cortas y revelaciones de valor.
+   - Diapositiva final: Llamado a la acción (CTA) natural, claro y orientado al objetivo comercial del proyecto.
+`;
+
+async function startServer() {
+  const app = express();
+  const PORT = 3000;
+
+  app.use(express.json({ limit: "25mb" }));
+
+  // Health check
+  app.get("/api/health", (_req, res) => {
+    res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
+  // 1. Analyze Marketing Source (URL or Document text)
+  app.post("/api/analyze-marketing-source", async (req, res) => {
+    try {
+      const { url, rawText, documentName } = req.body;
+
+      let contextToAnalyze = rawText || "";
+      if (url && !rawText) {
+        try {
+          const fetchRes = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+          if (fetchRes.ok) {
+            const html = await fetchRes.text();
+            // Basic extraction of readable text from html
+            contextToAnalyze = html
+              .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+              .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
+              .replace(/<[^>]+>/g, " ")
+              .replace(/\s+/g, " ")
+              .slice(0, 15000);
+          }
+        } catch (fetchErr) {
+          console.warn("Could not fetch URL directly, will analyze URL string itself:", fetchErr);
+          contextToAnalyze = `URL del negocio: ${url}`;
+        }
+      }
+
+      const prompt = `
+Analiza la siguiente información de marketing / negocio proveniente de "${documentName || url || 'Documento de estrategia'}":
+"""
+${contextToAnalyze.slice(0, 8000)}
+"""
+
+Extrae y sintetiza un perfil estratégico de marketing de alto valor para entrenar a la IA en la creación de carruseles.
+Identifica especialmente el vocabulario técnico, métricas, acrónimos o jerga profesional propios de esta industria.
+Devuelve un JSON con:
+{
+  "businessSummary": "Resumen claro del negocio y propuesta de valor (2-3 líneas)",
+  "targetAudience": "A quién se dirige y qué nivel de consciencia tienen",
+  "painPoints": ["Dolor o frustración 1", "Dolor 2", "Dolor 3", "Dolor 4"],
+  "commonMistakes": ["Error común que comete el cliente ideal 1", "Error 2", "Error 3"],
+  "uniqueAngles": ["Ángulo diferenciador o propuesta única 1", "Ángulo 2", "Ángulo 3"],
+  "technicalTerms": ["Término técnico/jerga 1", "Término 2", "Término 3", "Término 4", "Término 5", "Término 6"],
+  "recommendedHooks": [
+    "Pregunta provocadora de scroll-stopper 1",
+    "Pregunta o gancho de error 2",
+    "Gancho de creencia errónea 3"
+  ],
+  "brandTone": "Tono de comunicación recomendado (ej: Directo, empático, autoritario, disruptivo)"
+}
+`;
+
+      const response = await executeWithFallback((ai, modelName) =>
+        ai.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+            systemInstruction: MARKETING_PSYCHOLOGY_FRAMEWORK,
+            temperature: 0.5,
+          },
+        })
+      );
+
+      const parsed = JSON.parse(response.text || "{}");
+      res.json({ success: true, data: parsed });
+    } catch (err: any) {
+      console.error("Error analyzing marketing source:", err);
+      res.status(500).json({ error: err.message || "Error al analizar fuente de marketing" });
+    }
+  });
+
+  // 2. Generate Carousel with Advanced Strategy
+  app.post("/api/generate-carousel", async (req, res) => {
+    try {
+      const {
+        brief,
+        slideCount = 5,
+        objective = "ventas",
+        hookType = "pregunta_reflexiva",
+        targetAudience = "",
+        knowledgeBase = "",
+        technicalTerms = [],
+        brand = { name: "LA VISUAL MK", web: "lavisualmk.com" },
+        language = "es",
+        clientInfo,
+        clientMemory,
+      } = req.body;
+
+      const languageName = language === "pt" ? "Portugués (Brasil - pt-BR)" : language === "en" ? "English (US - en-US)" : "Español (es)";
+      
+      const clientName = clientInfo?.name || brand?.name || "Cliente";
+      const clientIndustry = clientInfo?.industry || clientInfo?.business_type || "";
+      const clientOffers = Array.isArray(clientInfo?.offers) ? clientInfo.offers.join(", ") : (clientInfo?.offers || "");
+      const clientPains = Array.isArray(clientInfo?.pain_points) ? clientInfo.pain_points.join(", ") : (clientInfo?.pain_points || "");
+      const clientTopics = Array.isArray(clientInfo?.topics) ? clientInfo.topics.join("; ") : (clientInfo?.topics || "");
+      const clientKB = clientInfo?.knowledge_base || "";
+      const clientAudience = clientInfo?.target_audience || targetAudience || "Clientes potenciales que buscan solucionar un problema real";
+
+      // Memoria acumulada del cliente para garantizar contenido 100% fresco y no repetitivo
+      const usedHooks = Array.isArray(clientMemory?.usedHooks) ? clientMemory.usedHooks.slice(0, 15) : [];
+      const usedTopics = Array.isArray(clientMemory?.usedTopics) ? clientMemory.usedTopics.slice(0, 15) : [];
+      const usedHeadlines = Array.isArray(clientMemory?.usedHeadlines) ? clientMemory.usedHeadlines.slice(0, 20) : [];
+      const usedScenes = Array.isArray(clientMemory?.usedVisualScenes) ? clientMemory.usedVisualScenes.slice(0, 15) : [];
+
+      const memorySection = (usedHooks.length > 0 || usedTopics.length > 0 || usedHeadlines.length > 0 || usedScenes.length > 0) ? `
+======================================================
+🧠 MEMORIA DE PROYECTOS PREVIOS DE ${clientName.toUpperCase()} (¡ESTRICTAMENTE PROHIBIDO REPETIR!):
+======================================================
+Los siguientes ganchos, temas y escenas YA FUERON UTILIZADOS en carruseles anteriores para este cliente.
+Tu nuevo carrusel DEBE ser 100% original, atacando un dolor diferente, un ángulo nuevo o un servicio distinto:
+
+${usedHooks.length > 0 ? `• GANCHOS / TITULARES YA USADOS ANTERIORMENTE (NO REPETIR):\n${usedHooks.map(h => `  - "${h}"`).join('\n')}` : ''}
+${usedTopics.length > 0 ? `• TEMAS O ENFOQUES YA TOCADOS (NO REPETIR):\n${usedTopics.map(t => `  - ${t}`).join('\n')}` : ''}
+${usedScenes.length > 0 ? `• ESCENAS VISUALES YA CREADAS (NO REPETIR SUJETOS/ACCIONES):\n${usedScenes.map(s => `  - "${s}"`).join('\n')}` : ''}
+` : '';
+
+      const technicalTermsList = Array.isArray(technicalTerms) && technicalTerms.length > 0
+        ? technicalTerms.join(", ")
+        : (clientInfo?.technical_terms && clientInfo.technical_terms.length > 0
+            ? clientInfo.technical_terms.join(", ")
+            : (brand.technicalTerms && brand.technicalTerms.length > 0 ? brand.technicalTerms.join(", ") : ""));
+
+      const prompt = `
+ACTÚAS COMO DIRECTORA EJECUTIVA DE MARKETING Y COPYWRITER SENIOR DE RESPUESTA DIRECTA.
+Tu misión es conceptualizar y redactar un carrusel de exactamente ${slideCount} diapositivas para redes sociales con total libertad de creación, imaginación estratégica, criterio profesional y memoria inteligente.
+
+==============================================
+FICHA DEL CLIENTE (MÉTRICAS & DATOS DE SUPABASE):
+==============================================
+- NOMBRE DEL CLIENTE / MARCA: ${clientName}
+- RUBRO / QUÉ HACE EXACTAMENTE: ${clientIndustry || "Empresa de servicios especializados"}
+- PÚBLICO OBJETIVO: ${clientAudience}
+${clientOffers ? `- QUÉ OFRECE / PRODUCTOS O SERVICIOS: ${clientOffers}` : ''}
+${clientPains ? `- DOLORES O PROBLEMAS QUE RESUELVE: ${clientPains}` : ''}
+${clientTopics ? `- TEMAS / PILARES DE CONTENIDO REGISTRADOS: ${clientTopics}` : ''}
+${clientKB ? `- BASE DE CONOCIMIENTO EXTENDIDA DEL CLIENTE:\n${clientKB}` : ''}
+${memorySection}
+OBJETIVO DEL PROYECTO: ${objective}
+TEMA / BRIEF ESPECÍFICO DE ESTE CARRUSEL: ${brief}
+${knowledgeBase ? `DOCUMENTOS ADICIONALES DE REFERENCIA:\n${knowledgeBase}` : ''}
+${technicalTermsList ? `VOCABULARIO TÉCNICO DEL SECTOR A INTEGRAR NATURALMENTE: ${technicalTermsList}` : ''}
+ENFOQUE INICIAL DE GANCHO (GUÍA SUGERIDA): ${hookType}
+IDIOMA DE REDACCIÓN OBLIGATORIO: ${languageName}
+
+TU PROCESO MENTAL COMO DIRECTORA DE MARKETING:
+1. IMAGINA CON LIBERTAD TOTAL:
+   - Conecta con la realidad viva de la audiencia de ${clientName} y lo que hace en su día a día.
+   - Diseña un arco dramático y educativo perfecto para estas ${slideCount} diapositivas: ¿Qué conflicto real, mito costoso, caso práctico o revelación técnica los detendrá en seco?
+   - Trabaja con soltura, autenticidad y elegancia. Cero clichés corporativos ni frases huecas.
+
+2. VERIFICA TU MEMORIA (FILTRO ANTI-REPETICIÓN):
+   - Examina minuciosamente la lista de ganchos, temas, dolores y escenas previas registradas para este cliente.
+   - Si la idea, el gancho o el dolor que concebiste ya fue expresado en proyectos anteriores, DESCÁRTALO DE INMEDIATO y crea un ángulo completamente fresco, una objeción oculta o un dolor secundario diferente.
+
+3. ARQUITECTURA VISUAL Y TEXTUAL PARA CELULARES (EXACTAMENTE ${slideCount} SLIDES):
+   - Diapositiva 1 (Gancho): Título contundente de 4 a 8 palabras en MAYÚSCULAS con alto magnetismo.
+   - Diapositivas 2 a ${slideCount - 1} (Desarrollo): Frases directas, revelaciones, datos del sector y ritmo ágil.
+   - Diapositiva ${slideCount} (Cierre & CTA): Llamado a la acción natural y persuasivo alineado al objetivo (${objective}).
+   - Dirección visual ("imageSuggestion"): Describe una escena cinematográfica única y fotorrealista para cada diapositiva, terminando con "sin texto en la imagen, sin marcas de agua, fotorrealismo premium".
+
+Devuelve EXCLUSIVAMENTE un JSON con esta estructura:
+{
+  "strategySummary": "Explicación de 1 frase del ángulo psicológico y creativo utilizado",
+  "hookRationale": "Por qué este gancho de la Diapositiva 1 detiene el scroll y resulta 100% fresco",
+  "slides": [
+    {
+      "id": 1,
+      "badge": "ETIQUETA CORTA O VACÍO",
+      "subtag": "Subtítulo de tensión",
+      "title": "TÍTULO GANCHO EN MAYÚSCULAS",
+      "body": "Cuerpo conciso o vacío si el título es autosuficiente",
+      "cta": "Desliza para descubrirlo 👉",
+      "bullets": [],
+      "imageSuggestion": "Descripción visual cinematográfica única para esta diapositiva, sin texto en la imagen, sin marcas de agua, fotorrealismo premium",
+      "mediaSearchKeywords": ["keyword1", "keyword2", "keyword3"]
+    }
+  ],
+  "post": {
+    "caption": "Texto completo del post para Instagram/LinkedIn con gancho, desarrollo y CTA...",
+    "hashtags": ["hashtag1", "hashtag2", "hashtag3"]
+  }
+}
+`;
+
+      const response = await executeWithFallback((ai, modelName) =>
+        ai.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+            systemInstruction: MARKETING_PSYCHOLOGY_FRAMEWORK,
+            temperature: 0.85,
+          },
+        })
+      );
+
+      const parsed = JSON.parse(response.text || "{}");
+
+      // Validate & guarantee 100% distinct prompts for every slide
+      if (parsed && Array.isArray(parsed.slides)) {
+        const seenPrompts = new Set<string>();
+        parsed.slides = parsed.slides.map((s: any, idx: number) => {
+          const slideNum = idx + 1;
+          const total = parsed.slides.length;
+          let promptText = (s.imageSuggestion || "").trim();
+
+          const headline = s.title || s.subtag || s.badge || `Diapositiva #${slideNum}`;
+          const isHook = slideNum === 1;
+          const isFinal = slideNum === total;
+
+          if (!promptText || seenPrompts.has(promptText.toLowerCase()) || promptText.length < 25) {
+            const industryDescriptor = clientIndustry || brief || "tecnología y negocios";
+            if (isHook) {
+              promptText = `Fotografía cinematográfica con iluminación de claroscuro para ${clientName} en el sector de ${industryDescriptor}. Composición dramática enfocada en un detalle conceptual o momento de alta concentración profesional sin clichés de stock, espacio negativo limpio, sin texto en la imagen, sin marcas de agua, fotorrealismo 8k.`;
+            } else if (isFinal) {
+              promptText = `Fotografía publicitaria de alta gama para ${clientName}. Entorno moderno, luminoso y sofisticado con luz natural de ventana, atmósfera de claridad, innovación y resultado completado, sin texto en la imagen, sin marcas de agua, estilo editorial premium.`;
+            } else {
+              promptText = `Fotografía documental técnica capturando la acción de "${headline.slice(0, 60)}" en el rubro de ${clientName} (${industryDescriptor}). Enfoque nítido en el proceso, herramientas especializadas y detalles auténticos, iluminación cinematográfica suave, sin texto en la imagen, sin tipografías.`;
+            }
+          }
+          seenPrompts.add(promptText.toLowerCase());
+
+          let keywords = Array.isArray(s.mediaSearchKeywords) && s.mediaSearchKeywords.length > 0 ? s.mediaSearchKeywords : [];
+          if (keywords.length === 0) {
+            const baseWords = headline
+              .toLowerCase()
+              .replace(/[^\w\s]/g, '')
+              .split(' ')
+              .filter((w: string) => w.length > 3)
+              .slice(0, 3);
+            keywords = baseWords.length > 0 ? baseWords : (isHook ? ['technology concept', 'minimalist focus', 'dark aesthetic'] : isFinal ? ['modern architecture', 'clarity', 'workspace'] : ['software coding', 'hardware detail', 'technical engineering']);
+          }
+
+          return {
+            ...s,
+            id: slideNum,
+            imageSuggestion: promptText,
+            mediaSearchKeywords: keywords,
+          };
+        });
+      }
+
+      res.json({ success: true, data: parsed });
+    } catch (err: any) {
+      console.error("Error generating carousel:", err);
+      res.status(500).json({ error: err.message || "Error al generar carrusel" });
+    }
+  });
+
+  // 2.5 Generate Niche Knowledge & Technical Glossary with 1 Click
+  app.post("/api/generate-niche-knowledge", async (req, res) => {
+    try {
+      const { niche, language = "es" } = req.body;
+      if (!niche || typeof niche !== "string" || !niche.trim()) {
+        return res.status(400).json({ error: "Por favor especifica el nicho o industria" });
+      }
+
+      const langName = language === "pt" ? "Portugués (Brasil - pt-BR)" : language === "en" ? "English (US - en-US)" : "Español (es)";
+
+      const prompt = `
+Actúa como Consultor Senior de Estrategia de Contenidos y Experto en la Industria: "${niche}".
+Genera un Dossier de Conocimiento de Marketing y Glosario Técnico Completo para capacitar a la IA y crear carruseles de alta conversión para clientes de este sector.
+
+IDIOMA: ${langName}
+
+Devuelve EXCLUSIVAMENTE un JSON con:
+{
+  "title": "Guía Estratégica & Glosario: ${niche}",
+  "businessSummary": "Resumen de cómo opera esta industria, propuesta de valor y modelo de monetización (2-3 párrafos)",
+  "targetAudience": "Perfil detallado del cliente ideal (dolores, nivel de consciencia, qué busca)",
+  "technicalTerms": [
+    "Término 1 (ej: KPI, sigla o concepto clave)",
+    "Término 2",
+    "Término 3",
+    "Término 4",
+    "Término 5",
+    "Término 6",
+    "Término 7",
+    "Término 8",
+    "Término 9",
+    "Término 10"
+  ],
+  "painPoints": [
+    "Frustración real o dolor que vive el cliente en este nicho 1",
+    "Dolor 2",
+    "Dolor 3",
+    "Dolor 4"
+  ],
+  "commonMistakes": [
+    "Error común de los clientes que contratan este servicio 1",
+    "Error 2",
+    "Error 3"
+  ],
+  "uniqueAngles": [
+    "Ángulo de venta diferenciador 1",
+    "Ángulo 2",
+    "Ángulo 3"
+  ],
+  "recommendedHooks": [
+    "Pregunta de shock para Slide 1",
+    "Gancho de error costoso para Slide 1",
+    "Gancho de quiebre de mito/creencia para Slide 1"
+  ],
+  "brandTone": "Tono recomendado (ej: Corporativo y analítico / Cercano y empático / Directo y retador)"
+}
+`;
+
+      const response = await executeWithFallback((ai, modelName) =>
+        ai.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+            systemInstruction: MARKETING_PSYCHOLOGY_FRAMEWORK,
+            temperature: 0.6,
+          },
+        })
+      );
+
+      const parsed = JSON.parse(response.text || "{}");
+      res.json({ success: true, data: parsed });
+    } catch (err: any) {
+      console.error("Error generating niche knowledge:", err);
+      res.status(500).json({ error: err.message || "Error al generar conocimiento del nicho" });
+    }
+  });
+
+  // 3.5 Rewrite Individual Slide with AI (Shorter, more provocative, add data/jargon, etc.)
+  app.post("/api/rewrite-slide", async (req, res) => {
+    try {
+      const {
+        slide,
+        instruction = "make_shorter",
+        customPrompt = "",
+        brief = "",
+        targetAudience = "",
+        technicalTerms = [],
+        language = "es"
+      } = req.body;
+
+      if (!slide) {
+        return res.status(400).json({ error: "Slide no proporcionado" });
+      }
+
+      const langName = language === "pt" ? "Portugués (Brasil - pt-BR)" : language === "en" ? "English (US - en-US)" : "Español (es)";
+      const termsList = Array.isArray(technicalTerms) ? technicalTerms.join(", ") : "";
+
+      let instructionDirective = "";
+      switch (instruction) {
+        case "make_shorter":
+          instructionDirective = "Haz el texto más conciso, directo al grano y de lectura ultra-rápida (menos palabras, máxima claridad).";
+          break;
+        case "more_provocative":
+          instructionDirective = "Haz el gancho y el texto mucho más provocador, disruptivo, de quiebre de creencias y de alto impacto emocional.";
+          break;
+        case "add_technical_data":
+          instructionDirective = `Añade datos concretos, estadísticas o vocabulario técnico especializado del sector (${termsList || 'métricas del nicho'}) para proyectar autoridad senior.`;
+          break;
+        case "reflexive_question":
+          instructionDirective = "Reformula el título y el enfoque como una pregunta reflexiva que haga que el lector se sienta inmediatamente aludido.";
+          break;
+        case "storytelling":
+          instructionDirective = "Aplica una estructura de micro-storytelling (situación real, conflicto o revelación) con empatía y cercanía.";
+          break;
+        case "actionable_steps":
+          instructionDirective = "Estructura el contenido en viñetas o pasos ultra-accionables (1, 2, 3) que el lector pueda aplicar de inmediato.";
+          break;
+        case "custom":
+          instructionDirective = `Aplica exactamente esta instrucción del usuario: "${customPrompt}"`;
+          break;
+        default:
+          instructionDirective = "Mejora la redacción para que sea más persuasiva y de alto impacto.";
+      }
+
+      const prompt = `
+Actúa como Director Creativo y Copywriter de Élite para Redes Sociales.
+Re-escribe y optimiza esta DIAPOSITIVA ESPECÍFICA siguiendo el objetivo solicitado.
+
+IDIOMA: ${langName}
+INSTRUCCIÓN ESPECÍFICA:
+${instructionDirective}
+
+CONTEXTO GENERAL DEL CARRUSEL:
+${brief || "Carrusel de marketing de alta conversión"}
+
+PÚBLICO OBJETIVO:
+${targetAudience || "Público profesional o clientes ideales"}
+
+${termsList ? `VOCABULARIO TÉCNICO DISPONIBLE:
+${termsList}` : ""}
+
+DIAPOSITIVA ORIGINAL:
+${JSON.stringify(slide, null, 2)}
+
+REGLAS:
+1. Conserva la misma estructura básica (badge, subtag, title, body, cta, bullets si aplica, comparison si aplica, stat si aplica, quote si aplica, ctaFinal si aplica) pero con textos totalmente renovados, más potentes y magnéticos.
+2. Mantén los títulos concisos y con impacto visual.
+3. Genera un prompt fotográfico ("imageSuggestion") fotorrealista ÚNICO y adaptado al nuevo texto de esta diapositiva, terminando con "sin texto en la imagen, sin marcas de agua, fotorrealismo premium".
+4. Genera 3-4 palabras clave en inglés ("mediaSearchKeywords") para Pixabay acordes a esta escena.
+5. Devuelve EXCLUSIVAMENTE un JSON con la estructura actualizada de la diapositiva:
+{
+  "badge": "...",
+  "subtag": "...",
+  "title": "...",
+  "body": "...",
+  "cta": "...",
+  "bullets": [...],
+  "imageSuggestion": "...",
+  "mediaSearchKeywords": ["keyword1", "keyword2", "keyword3"],
+  "comparison": { ... }, // si la diapositiva original lo tenía
+  "stat": { ... }, // si la diapositiva original lo tenía
+  "quote": { ... }, // si la diapositiva original lo tenía
+  "ctaFinal": { ... } // si la diapositiva original lo tenía
+}
+`;
+
+      const response = await executeWithFallback((ai, modelName) =>
+        ai.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+            systemInstruction: MARKETING_PSYCHOLOGY_FRAMEWORK,
+            temperature: 0.7,
+          },
+        })
+      );
+
+      const parsed = JSON.parse(response.text || "{}");
+      res.json({ success: true, data: parsed });
+    } catch (err: any) {
+      console.error("Error rewriting slide:", err);
+      res.status(500).json({ error: err.message || "Error al re-escribir la diapositiva" });
+    }
+  });
+
+  // 3. Generate 5-6 Scroll-Stopping Hook Variations for Slide 1
+  app.post("/api/generate-hooks", async (req, res) => {
+    try {
+      const { brief, targetAudience, knowledgeBase, language = "es", clientInfo, clientMemory } = req.body;
+      const targetLang = language === "pt" ? "Portugués (Brasil - pt-BR)" : language === "en" ? "English (US - en-US)" : "Español (es)";
+      const clientName = clientInfo?.name || "Cliente";
+      const clientIndustry = clientInfo?.industry || clientInfo?.business_type || "";
+
+      const usedHooks = Array.isArray(clientMemory?.usedHooks) ? clientMemory.usedHooks.slice(0, 15) : [];
+      const memoryHooksSection = usedHooks.length > 0
+        ? `\nMEMORIA PREVIA DE GANCHOS YA USADOS (DESCÁRTALOS Y CREA COSAS NUEVAS):\n${usedHooks.map(h => `- "${h}"`).join("\n")}\n`
+        : "";
+
+      const prompt = `
+Actúas como Directora Estratégica de Marketing y Copywriter Senior.
+Genera 6 ganchos psicológicos alternativos de alto impacto para la DIAPOSITIVA 1 de un carrusel de redes sociales.
+Todos deben frenar el scroll instantáneamente, conectando con las dudas o dolores reales de la audiencia de ${clientName} (${clientIndustry}).
+
+BRIEF / TEMA:
+${brief}
+
+AUDIENCIA / CONTEXTO:
+${targetAudience || clientInfo?.target_audience || ""}
+${knowledgeBase || ""}
+${memoryHooksSection}
+IDIOMA OBLIGATORIO: ${targetLang}
+
+Genera exactamente 6 tipos de ganchos con su estructura correspondiente:
+1. "pregunta_reflexiva": Pregunta que pone el dedo en la llaga o toca una frustración común.
+2. "error_costoso": Alerta sobre un error común o invisible que el cliente está cometiendo.
+3. "quiebre_creencia": Revela una verdad contraria a lo que la mayoría cree.
+4. "contraste_antes_despues": Opone dos realidades (los que pierden vs los que ganan).
+5. "analogia_impacto": Compara la situación con algo visual y memorable.
+6. "curiosidad_numero": Promete revelar N cosas que cambiarán sus resultados.
+
+Devuelve un JSON con:
+{
+  "hooks": [
+    {
+      "type": "pregunta_reflexiva",
+      "categoryName": "Pregunta Reflexiva / Dedo en la Llaga",
+      "badge": "REFLEXIÓN",
+      "subtag": "Lo que nadie te dice...",
+      "title": "TEXTO DEL TÍTULO EN MAYÚSCULAS",
+      "body": "Frase complementaria opcional",
+      "whyItWorks": "Por qué este gancho psicológico detiene el scroll"
+    }
+  ]
+}
+`;
+
+      const response = await executeWithFallback((ai, modelName) =>
+        ai.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+            systemInstruction: MARKETING_PSYCHOLOGY_FRAMEWORK,
+            temperature: 0.8,
+          },
+        })
+      );
+
+      const parsed = JSON.parse(response.text || "{}");
+      res.json({ success: true, data: parsed });
+    } catch (err: any) {
+      console.error("Error generating hooks:", err);
+      res.status(500).json({ error: err.message || "Error al generar ganchos" });
+    }
+  });
+
+  // 4. Translate Entire Carousel to Spanish, Portuguese or English
+  app.post("/api/translate-carousel", async (req, res) => {
+    try {
+      const { slides, postMeta, targetLanguage = "es" } = req.body;
+      const langName = targetLanguage === "pt" ? "Portugués (Brasil - pt-BR)" : targetLanguage === "en" ? "English (US - en-US)" : "Español (es)";
+
+      const prompt = `
+Actúa como Traductor Publicitario Experto y Copywriter de Redes Sociales de Alto Impacto.
+Traduce y adapta estratégicamente este carrusel completo de diapositivas y el copy del post al idioma: ${langName}.
+
+REGLAS CRÍTICAS DE TRADUCCIÓN:
+1. Mantén el gancho emocional, la fuerza persuasiva, el ritmo y el tono publicitario de cada diapositiva.
+2. Traduce rigurosamente TODOS los campos de texto estándar y plantillas especializadas:
+   - Campos estándar: badge, subtag, title, body, cta, bullets
+   - Plantilla Cita / Quote: quote.quoteText, quote.authorRole (mantén quote.authorName o el nombre del cliente intacto)
+   - Plantilla Comparativa / Comparison: comparison.title, comparison.leftTag, comparison.leftTitle, comparison.leftText, comparison.rightTag, comparison.rightTitle, comparison.rightText
+   - Plantilla Gran Cifra / Stat: stat.badge, stat.statLabel, stat.statSubtext
+   - Plantilla Checklist: bullets, title, badge
+   - Plantilla CTA Final: ctaFinal.badge, ctaFinal.headline, ctaFinal.subheadline, ctaFinal.actionPill
+   - Capas personalizadas: customTexts (traducir el campo text de cada capa)
+   - Post: caption y hashtags (hashtags relevantes y en el idioma de destino)
+3. Conserva intactos los IDs (_uid, id), URLs de imágenes, colores, posiciones numéricas (posX, posY, zoom, textPos) y configuraciones de diseño.
+
+CARRUSEL ORIGINAL A TRADUCIR:
+${JSON.stringify({ slides, postMeta }, null, 2)}
+
+Devuelve EXCLUSIVAMENTE un JSON válido con la estructura exacta:
+{
+  "slides": [
+    ... // array de slides con TODOS sus campos y plantillas traducidos al ${langName}
+  ],
+  "post": {
+    "caption": "...", // post caption adaptado al ${langName}
+    "hashtags": [...] // hashtags en minúsculas en el idioma ${langName}
+  }
+}
+`;
+
+      const response = await executeWithFallback((ai, modelName) =>
+        ai.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+            systemInstruction: MARKETING_PSYCHOLOGY_FRAMEWORK,
+            temperature: 0.3,
+          },
+        })
+      );
+
+      const parsed = JSON.parse(response.text || "{}");
+      res.json({ success: true, data: parsed });
+    } catch (err: any) {
+      console.error("Error translating carousel:", err);
+      res.status(500).json({ error: err.message || "Error al traducir carrusel" });
+    }
+  });
+
+  // 4. PASO B — Director de Arte: Convierte una idea abstracta en UNA ESCENA CONCRETA (máx 25 palabras)
+  // anclada 100% al nicho, industria y operaciones del cliente activo con memoria para no repetir escenas.
+  app.post("/api/build-concrete-scene", async (req, res) => {
+    try {
+      const {
+        imageSuggestion = "",
+        brief = "",
+        escenasYaUsadas = [],
+        clientInfo,
+        brand,
+        targetAudience,
+        slide,
+        clientMemory,
+      } = req.body;
+
+      const clientName = clientInfo?.name || brand?.name || "Cliente";
+      const clientIndustry = clientInfo?.industry || clientInfo?.business_type || brief || "Servicios Profesionales";
+      const clientAudience = clientInfo?.target_audience || targetAudience || "Clientes potenciales o empresas";
+      const clientOffers = Array.isArray(clientInfo?.offers) ? clientInfo.offers.join(", ") : clientInfo?.offers || "";
+      const clientPains = Array.isArray(clientInfo?.pain_points) ? clientInfo.pain_points.join(", ") : clientInfo?.pain_points || "";
+      const clientTone = clientInfo?.tone || clientInfo?.brand_voice || "Profesional y de alto impacto";
+      const clientKB = clientInfo?.knowledge_base || "";
+
+      // Combinar escenas de este carrusel con la memoria histórica de escenas previas del cliente
+      const memoryScenes = Array.isArray(clientMemory?.usedVisualScenes) ? clientMemory.usedVisualScenes.slice(0, 15) : [];
+      const currentScenes = Array.isArray(escenasYaUsadas) ? escenasYaUsadas : [];
+      const allForbiddenScenes = Array.from(new Set([...currentScenes, ...memoryScenes]));
+
+      const escenasList = allForbiddenScenes.length > 0
+        ? `Estas son las escenas YA usadas en este u otros carruseles anteriores de este cliente (MEMORIA HISTÓRICA) — tu escena nueva NO puede repetir el mismo sujeto, la misma acción ni el mismo entorno que ninguna de estas:\n${allForbiddenScenes.map((e: string, idx: number) => `${idx + 1}. ${e}`).join("\n")}`
+        : "No hay escenas previas registradas aún para este cliente.";
+
+      const slideContext = slide ? `
+CONTENIDO DE ESTA DIAPOSITIVA:
+- Título: ${slide.title || ""}
+- Subtítulo/Gancho: ${slide.subtag || ""}
+- Badge: ${slide.badge || ""}
+- Cuerpo: ${slide.body || ""}
+` : "";
+
+      const prompt = `Actúas como Director de Arte y Creador Visual con profunda imaginación y criterio estético.
+Tu misión es inventar libremente UNA ESCENA VISUAL ÚNICA, CONCRETA Y CINEMATOGRÁFICA (máximo 25 palabras en español) que evoque el mensaje de esta diapositiva.
+
+DATOS DEL CLIENTE:
+- Marca / Empresa: ${clientName}
+- Rubro / Qué hace: ${clientIndustry}
+- Qué ofrece: ${clientOffers || clientIndustry}
+- Dolores que resuelve: ${clientPains || "Optimización, escala y resultados"}
+${clientKB ? `- Conocimiento de Negocio: ${clientKB.slice(0, 500)}` : ''}
+${slideContext}
+
+PROCESO MENTAL OBLIGATORIO:
+1. IMAGINA: Conecta la idea central de la diapositiva y el negocio del cliente con una imagen visual potente. Tienes total libertad para imaginar cualquier situación, metáfora tangible, entorno, objeto, fenómeno de luz o momento humano auténtico.
+2. VERIFICA TU MEMORIA: Revisa las escenas que ya creaste antes para este cliente:
+${escenasList}
+Si lo que imaginaste se parece a algo de esa lista, o cae en el cliché aburrido de "persona sentada en un escritorio tecleando o mirando una pantalla", DESCÁRTALO DE INMEDIATO e inventa un concepto visual completamente nuevo.
+3. CONCRETA: Formula la escena final en una sola frase concisa con: sujeto/objeto principal, acción o atmósfera, entorno e iluminación limpia sin texto.
+
+IDEA O MENSAJE A ILUSTRAR:
+"${imageSuggestion || slide?.title || clientIndustry}"
+
+Responde ÚNICAMENTE con la frase de la escena imaginada (sin comillas, sin explicaciones, sin prefijo "Escena:").`;
+
+      const response = await executeWithFallback((ai, modelName) =>
+        ai.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: {
+            temperature: 0.85,
+          },
+        })
+      );
+
+      let escena = (response.text || "").trim();
+      escena = escena.replace(/^["'«“]|["'»”]$/g, '').replace(/^(Escena:\s*|Scene:\s*)/i, '').trim();
+
+      res.json({ success: true, data: { escenaConcreta: escena } });
+    } catch (err: any) {
+      console.error("Error building concrete scene:", err);
+      res.status(500).json({ error: err.message || "Error al construir escena concreta" });
+    }
+  });
+
+  // 5. PASO C — Redactor de Prompt Técnico para Gemini / Imagen 3 / Veo / Nano Banana
+  // Toma la escena YA concreta resuelta por el Director de Arte y le agrega encuadre, cámara, luz, estilo y aspect ratio.
+  app.post("/api/enhance-image-prompt", async (req, res) => {
+    try {
+      const {
+        slide,
+        escenaConcreta,
+        slideText: rawSlideText,
+        slideIndex = 1,
+        totalSlides = 5,
+        clientInfo,
+        brand,
+        brief,
+        targetAudience,
+        visualStyle = "Fotografía profesional con iluminación cinematográfica, paleta de colores moderna y coherente",
+        artDirectionMode = "photorealistic",
+        isVideo = false,
+        aspect = "4:5",
+        clientMemory,
+      } = req.body;
+
+      // Extract rich text representation of the slide if slide object was passed
+      let compiledSlideContent = rawSlideText || "";
+      if (slide) {
+        const parts: string[] = [];
+        if (slide.badge) parts.push(`[Etiqueta / Badge]: ${slide.badge}`);
+        if (slide.subtag) parts.push(`[Subtítulo / Gancho]: ${slide.subtag}`);
+        if (slide.title) parts.push(`[Título Principal]: ${slide.title}`);
+        if (slide.body) parts.push(`[Cuerpo]: ${slide.body}`);
+        if (slide.bullets && slide.bullets.length > 0) parts.push(`[Puntos Clave / Bullets]: ${slide.bullets.join('; ')}`);
+        
+        // Handle specialized templates
+        if (slide.comparison) {
+          parts.push(`[Comparativa]: Lado A (${slide.comparison.leftTag || 'Antes'}): ${slide.comparison.leftTitle || ''} - ${slide.comparison.leftText || ''} VS Lado B (${slide.comparison.rightTag || 'Después'}): ${slide.comparison.rightTitle || ''} - ${slide.comparison.rightText || ''}`);
+        }
+        if (slide.stat) {
+          parts.push(`[Estadística / Cifra]: ${slide.stat.statNumber || ''} - ${slide.stat.statLabel || ''} (${slide.stat.statSubtext || ''})`);
+        }
+        if (slide.quote) {
+          parts.push(`[Cita / Testimonio]: "${slide.quote.quoteText || ''}" por ${slide.quote.authorName || ''} (${slide.quote.authorRole || ''})`);
+        }
+        if (slide.ctaFinal) {
+          parts.push(`[Cierre / CTA Final]: ${slide.ctaFinal.headline || ''} - ${slide.ctaFinal.subheadline || ''} | Acción: ${slide.ctaFinal.actionPill || ''}`);
+        }
+        if (slide.customTexts && slide.customTexts.length > 0) {
+          parts.push(`[Capas de texto adicionales]: ${slide.customTexts.map((c: any) => c.text).join(' | ')}`);
+        }
+        if (slide.cta) parts.push(`[Llamado]: ${slide.cta}`);
+        
+        compiledSlideContent = parts.join("\n");
+      }
+
+      const escenaMandatoria = escenaConcreta || rawSlideText || compiledSlideContent;
+
+      const previousClientPrompts = Array.isArray(clientMemory?.usedPrompts) ? clientMemory.usedPrompts.slice(0, 10) : [];
+      const memoryPromptGuide = previousClientPrompts.length > 0 ? `
+HISTORIAL DE PROMPTS YA USADOS ANTERIORMENTE PARA ESTE CLIENTE (MEMORIA):
+${previousClientPrompts.map((p, i) => `${i + 1}. ${p.slice(0, 120)}...`).join("\n")}
+-> Variación obligatoria: Utiliza una iluminación, distancia focal, ángulo de cámara o paleta de color DIFERENTE a las composiciones anteriores.
+` : '';
+
+      // Compile Client Dossier
+      const clientDetails = clientInfo ? `
+DATOS DEL CLIENTE / MARCA:
+- Nombre: ${clientInfo.name || brand?.name || 'Cliente'}
+- Rubro / Industria: ${clientInfo.industry || clientInfo.business_type || 'Servicios Profesionales'}
+- Público Objetivo: ${clientInfo.target_audience || targetAudience || 'Clientes potenciales'}
+- Propuesta / Oferta: ${Array.isArray(clientInfo.offers) ? clientInfo.offers.join(', ') : clientInfo.offers || 'Servicios especializados'}
+- Dolores que resuelve: ${Array.isArray(clientInfo.pain_points) ? clientInfo.pain_points.join(', ') : clientInfo.pain_points || ''}
+- Tono de Marca: ${clientInfo.tone || clientInfo.brand_voice || 'Profesional de alto valor'}
+` : `
+DATOS DE LA MARCA:
+- Nombre: ${brand?.name || 'Marca'} | Web: ${brand?.web || ''}
+- Público Objetivo: ${targetAudience || 'Profesionales y clientes ideales'}
+`;
+
+      const prompt = `
+ACTÚA COMO UN REDACTOR TÉCNICO DE PROMPTS Y DIRECTOR DE FOTOGRAFÍA PUBLICITARIA SENIOR (para Gemini, Imagen 3, Veo, Midjourney).
+Tu objetivo es tomar la esencia de la DIAPOSITIVA #${slideIndex} (de un total de ${totalSlides}) y convertirla en un PROMPT FOTOGRÁFICO/CINEMATOGRÁFICO DE ALTA GAMA.
+
+Base sugerida: ${escenaMandatoria}.
+
+${clientDetails}
+${memoryPromptGuide}
+TEMA / BRIEF GENERAL DEL CARRUSEL:
+${brief || "Carrusel de marketing estratégico"}
+
+CONTENIDO DE ESTA DIAPOSITIVA #${slideIndex}:
+"""
+${compiledSlideContent || "Diapositiva del carrusel"}
+"""
+
+ROL DE ESTA DIAPOSITIVA EN LA NARRATIVA:
+${
+  slideIndex === 1
+    ? "-> DIAPOSITIVA 1 (GANCHO / DETENER EL SCROLL): Momento de alta tensión, curiosidad, emoción fuerte o duda que frena el scroll."
+    : slideIndex === totalSlides
+    ? "-> DIAPOSITIVA FINAL (CIERRE / CTA / VICTORIA): Momento de claridad, solución, éxito, confianza, avance y llamado a la acción."
+    : "-> DIAPOSITIVA INTERMEDIA (VALOR / CONFLICTO / ANÁLISIS / PROCESO): Ejecución real, contraste, métrica, error o técnica del oficio."
+}
+
+ESTILO VISUAL / ATMÓSFERA SOLICITADA:
+${visualStyle}
+Modo de Dirección de Arte: ${artDirectionMode}
+FORMATO: ${aspect} (${isVideo ? "Video en bucle cinematográfico de 4-6 segundos" : "Fotografía realista publicitaria de ultra alta definición"})
+
+DIRECTIVAS CREATIVAS Y TÉCNICAS:
+1. IMAGINA LIBREMENTE: Deja que tu cerebro desarrolle una escena visualmente rica, cinematográfica y evocadora que transmita la emoción y el mensaje de esta diapositiva y el negocio del cliente.
+2. VERIFICA TU MEMORIA: Si la escena base o tu idea cae en el cliché aburrido de "alguien sentado en una mesa/laptop", o repite sujetos de tu memoria previa, REINVENTA el concepto hacia una composición fresca, poética o de oficio auténtico.
+3. CONSTRUCCIÓN CINEMATOGRÁFICA: Describe con precisión tipo de lente (ej: 35mm / 50mm / 85mm f/1.4), ángulo de cámara, iluminación volumétrica (luz de claroscuro, hora dorada, neblina matutina difusa, reflejos), paleta de colores y texturas.
+4. CIERRE MANDATORIO: Termina el prompt SIEMPRE con: "sin texto en la imagen, sin tipografías, sin marcas de agua, sin logos superpuestos, estilo fotorrealista premium, iluminación cinematográfica".
+5. Provee 3 a 4 palabras clave en INGLÉS (mediaSearchKeywords) precisas y descriptivas para buscar imágenes reales de stock en Pixabay.
+6. Provee 2 conceptos visuales alternativos breves (uno metafórico/conceptual y uno de entorno/acción real).
+
+Devuelve EXCLUSIVAMENTE un JSON con:
+{
+  "enhancedPrompt": "Prompt maestro completo en español para Gemini / Imagen 3 / Veo...",
+  "mediaSearchKeywords": ["specific english keyword 1", "keyword 2", "keyword 3", "keyword 4"],
+  "artDirectionNotes": "Explicación de 1-2 frases de cómo la escena representa fielmente el mensaje",
+  "alternativeConcepts": [
+    {
+      "title": "Metáfora Visual / Simbólico",
+      "prompt": "Descripción del concepto alternativo 1..."
+    },
+    {
+      "title": "Escena Humana / Acción Real",
+      "prompt": "Descripción del concepto alternativo 2..."
+    }
+  ]
+}
+`;
+
+      const response = await executeWithFallback((ai, modelName) =>
+        ai.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+            temperature: 0.8,
+          },
+        })
+      );
+
+      const parsed = JSON.parse(response.text || "{}");
+      res.json({ success: true, data: parsed });
+    } catch (err: any) {
+      console.error("Error enhancing image prompt:", err);
+      res.status(500).json({ error: err.message || "Error al mejorar prompt" });
+    }
+  });
+
+  // 5. Enhance All Image Prompts for the Entire Carousel in One Go (Zero Repetition Guarantee)
+  app.post("/api/enhance-all-image-prompts", async (req, res) => {
+    try {
+      const {
+        slides = [],
+        clientInfo,
+        brand,
+        brief,
+        targetAudience,
+        visualStyle = "Fotografía profesional con iluminación cinematográfica, paleta de colores moderna y coherente",
+        artDirectionMode = "photorealistic",
+        isVideo = false,
+        aspect = "4:5",
+        clientMemory,
+      } = req.body;
+
+      if (!Array.isArray(slides) || slides.length === 0) {
+        return res.status(400).json({ error: "No se proporcionaron diapositivas" });
+      }
+
+      const memoryVisualScenes = Array.isArray(clientMemory?.usedVisualScenes) ? clientMemory.usedVisualScenes.slice(0, 15) : [];
+      const memoryPrompts = Array.isArray(clientMemory?.usedPrompts) ? clientMemory.usedPrompts.slice(0, 10) : [];
+
+      const memorySection = (memoryVisualScenes.length > 0 || memoryPrompts.length > 0) ? `
+======================================================
+🧠 MEMORIA VISUAL HISTÓRICA DEL CLIENTE (PROHIBIDO REPETIR ESTAS ESCENAS):
+======================================================
+${memoryVisualScenes.length > 0 ? `• Escenas anteriores ya creadas para este cliente:\n${memoryVisualScenes.map(s => `  - "${s}"`).join('\n')}` : ''}
+` : '';
+
+      const slidesSummary = slides.map((s, i) => {
+        const parts: string[] = [];
+        if (s.badge) parts.push(`Badge: ${s.badge}`);
+        if (s.subtag) parts.push(`Subtag: ${s.subtag}`);
+        if (s.title) parts.push(`Título: ${s.title}`);
+        if (s.body) parts.push(`Cuerpo: ${s.body}`);
+        if (s.bullets && s.bullets.length > 0) parts.push(`Bullets: ${s.bullets.join(', ')}`);
+        return `[DIAPOSITIVA #${i + 1} (${i === 0 ? 'Gancho inicial' : i === slides.length - 1 ? 'Cierre/CTA' : 'Desarrollo/Valor'})]:\n${parts.join(' | ')}`;
+      }).join("\n\n");
+
+      const clientDetails = clientInfo ? `
+CLIENTE / MARCA: ${clientInfo.name || brand?.name || 'Marca'}
+RUBRO / INDUSTRIA: ${clientInfo.industry || clientInfo.business_type || 'Servicios Profesionales'}
+PÚBLICO: ${clientInfo.target_audience || targetAudience || 'Clientes'}
+OFERTA: ${Array.isArray(clientInfo.offers) ? clientInfo.offers.join(', ') : clientInfo.offers || ''}
+DOLORES QUE RESUELVE: ${Array.isArray(clientInfo.pain_points) ? clientInfo.pain_points.join(', ') : clientInfo.pain_points || ''}
+${clientInfo.knowledge_base ? `BASE DE CONOCIMIENTO: ${clientInfo.knowledge_base.slice(0, 500)}` : ''}
+      ` : `MARCA: ${brand?.name || 'Marca'} | AUDIENCIA: ${targetAudience || 'Profesionales'}`;
+
+      const prompt = `
+ACTÚA COMO DIRECTOR DE ARTE FOTOGRÁFICO PUBLICITARIO SENIOR DE ALTA GAMA.
+Diseña la dirección de arte visual completa para este carrusel de ${slides.length} diapositivas.
+
+¡REGLA FUNDAMENTAL DE ORO Y DIVERSIDAD VISUAL!:
+¡Tu cerebro creativo tiene libertad artística para inventar mundos, atmósferas y conceptos visuales únicos para cada diapositiva!
+1. IMAGINA: Para cada diapositiva de la lista, concibe una escena visual, cinematográfica o metafórica que conecte con su mensaje de forma profunda e impactante.
+2. VERIFICA TU MEMORIA: Revisa la memoria histórica del cliente y las demás diapositivas del carrusel. Si una idea cae en el cliché de "alguien sentado en una mesa/oficina con laptop" o repite un sujeto anterior, descártala e imagina una perspectiva completamente nueva y fresca.
+3. CONSTRUYE EL PROMPT: Redacta cada prompt con detalles cinematográficos (luz volumétrica, lente, texturas, paleta y atmósfera), terminando siempre con "sin texto en la imagen, sin tipografías, sin marcas de agua, fotorrealismo premium".
+
+${clientDetails}
+${memorySection}
+TEMA GENERAL: ${brief || "Carrusel de marketing"}
+ESTILO VISUAL: ${visualStyle}
+MODO DE DIRECCIÓN: ${artDirectionMode}
+FORMATO: ${aspect} (${isVideo ? "Video bucle cinematográfico" : "Fotografía publicitaria de ultra alta definición"})
+
+CONTENIDO DE CADA DIAPOSITIVA:
+${slidesSummary}
+
+Devuelve EXCLUSIVAMENTE un JSON con:
+{
+  "slides": [
+    {
+      "slideIndex": 1,
+      "enhancedPrompt": "Prompt fotográfico cinematográfico completo en español de 2 a 3 frases para Diapositiva 1... sin texto en la imagen, sin marcas de agua, fotorrealismo premium",
+      "mediaSearchKeywords": ["english keyword 1", "keyword 2", "keyword 3"],
+      "artDirectionNotes": "Por qué esta composición visual representa exactamente el mensaje de la Diapositiva 1"
+    }
+  ]
+}
+`;
+
+      const response = await executeWithFallback((ai, modelName) =>
+        ai.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+            temperature: 0.8,
+          },
+        })
+      );
+
+      const parsed = JSON.parse(response.text || "{}");
+      res.json({ success: true, data: parsed });
+    } catch (err: any) {
+      console.error("Error enhancing all prompts:", err);
+      res.status(500).json({ error: err.message || "Error al mejorar prompts del carrusel" });
+    }
+  });
+
+  // Dedicated download route for yt2mp3_server.py
+  app.get(["/yt2mp3_server.py", "/api/download-python-script"], (_req, res) => {
+    const scriptPath = path.join(process.cwd(), "public", "yt2mp3_server.py");
+    res.setHeader("Content-Type", "text/x-python");
+    res.setHeader("Content-Disposition", 'attachment; filename="yt2mp3_server.py"');
+    res.sendFile(scriptPath);
+  });
+
+  // 6. Direct YouTube to MP3 Audio Extraction API
+  app.post("/api/convert-youtube-mp3", async (req, res) => {
+    try {
+      const { url } = req.body || {};
+      if (!url || typeof url !== "string") {
+        return res.status(400).json({ error: "Falta el enlace de YouTube" });
+      }
+
+      const cleanUrl = url.trim();
+      if (!ytdl.validateURL(cleanUrl)) {
+        return res.status(400).json({ error: "La URL ingresada no es un enlace válido de YouTube." });
+      }
+
+      const info = await ytdl.getInfo(cleanUrl);
+      const rawTitle = info.videoDetails?.title || "youtube_audio";
+      const cleanTitle = rawTitle.replace(/[^\w\s-]/gi, "").trim() || "youtube_audio";
+
+      res.setHeader("Content-Type", "audio/mpeg");
+      res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(cleanTitle)}.mp3"`);
+      res.setHeader("X-Audio-Title", encodeURIComponent(cleanTitle));
+
+      const audioStream = ytdl(cleanUrl, {
+        filter: "audioonly",
+        quality: "highestaudio",
+        highWaterMark: 1 << 25,
+      });
+
+      audioStream.on("error", (streamErr) => {
+        console.warn("[YouTube Stream Notice]:", streamErr?.message);
+        if (!res.headersSent) {
+          res.status(422).json({ error: `Extracción directa no disponible: ${streamErr.message}` });
+        }
+      });
+
+      audioStream.pipe(res);
+    } catch (err: any) {
+      console.warn("[YouTube API Notice]: YouTube requiere verificación o servidor local:", err?.message);
+      res.status(422).json({
+        error: "YouTube requiere descarga local (ejecuta yt2mp3_server.py en tu PC) o usar el convertidor web directo.",
+        isBotProtected: true,
+      });
+    }
+  });
+
+  // Vite middleware for development
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), "dist");
+    app.use(express.static(distPath));
+    app.get("*", (_req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+  }
+
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://0.0.0.0:${PORT}`);
+  });
+}
+
+startServer();
