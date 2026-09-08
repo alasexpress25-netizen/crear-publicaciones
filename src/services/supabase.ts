@@ -1,4 +1,4 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient, Session } from '@supabase/supabase-js';
 
 // Default Agency Supabase configuration
 export const DEFAULT_SUPABASE_URL = 'https://redaqqxoeciycqgjhpbv.supabase.co';
@@ -40,7 +40,7 @@ export function getSupabaseClient(): SupabaseClient | null {
     }
     if (!supabaseInstance) {
       supabaseInstance = createClient(url, key, {
-        auth: { persistSession: false },
+        auth: { persistSession: true, autoRefreshToken: true, storageKey: 'lavisualmk_editor_auth' },
       });
     }
     return supabaseInstance;
@@ -48,6 +48,52 @@ export function getSupabaseClient(): SupabaseClient | null {
     console.warn('Error creating Supabase client instance:', err);
     return null;
   }
+}
+
+/**
+ * Auth helpers — the editor now requires a logged-in Supabase user so that
+ * RLS policies on socialbot_clients (which check auth.uid()) can match rows.
+ */
+export async function signInWithPassword(email: string, password: string): Promise<{ session: Session | null; error: string | null }> {
+  const supabase = getSupabaseClient();
+  if (!supabase) return { session: null, error: 'No se pudo inicializar el cliente de Supabase.' };
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    if (error) return { session: null, error: error.message };
+    return { session: data.session, error: null };
+  } catch (err: any) {
+    return { session: null, error: err?.message || String(err) };
+  }
+}
+
+export async function signOut(): Promise<void> {
+  const supabase = getSupabaseClient();
+  if (!supabase) return;
+  try {
+    await supabase.auth.signOut();
+  } catch (err) {
+    console.warn('Error signing out', err);
+  }
+}
+
+export async function getCurrentSession(): Promise<Session | null> {
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+  try {
+    const { data } = await supabase.auth.getSession();
+    return data.session;
+  } catch {
+    return null;
+  }
+}
+
+export function onAuthStateChange(callback: (session: Session | null) => void): () => void {
+  const supabase = getSupabaseClient();
+  if (!supabase) return () => {};
+  const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+    callback(session);
+  });
+  return () => data.subscription.unsubscribe();
 }
 
 export interface AgencyClient {

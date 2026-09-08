@@ -12,6 +12,7 @@ import {
   Check,
   RefreshCw,
   FilePlus2,
+  LogOut,
 } from 'lucide-react';
 import { AspectRatio, BrandInfo, VoiceoverAvatar } from '../types';
 import { safeAlert } from '../utils/notifications';
@@ -36,6 +37,7 @@ interface HeaderProps {
   onResetCarousel: () => void;
   onOpenAvatarModal?: () => void;
   voiceoverAvatar?: VoiceoverAvatar | null;
+  onLogout?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -57,6 +59,7 @@ export const Header: React.FC<HeaderProps> = ({
   onResetCarousel,
   onOpenAvatarModal,
   voiceoverAvatar,
+  onLogout,
 }) => {
   const [installPrompt, setInstallPrompt] = useState<any>(null);
   const [isInstalled, setIsInstalled] = useState<boolean>(false);
@@ -329,6 +332,17 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <RotateCcw className="w-3.5 h-3.5" />
           </button>
+
+          {/* Logout */}
+          {onLogout && (
+            <button
+              onClick={onLogout}
+              className="p-2 rounded-xl bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-400 hover:text-rose-400 transition"
+              title="Cerrar sesión"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+            </button>
+          )}
 
         </div>
 
