@@ -1,4 +1,4 @@
-import { Slide, BrandInfo, AspectRatio, TransitionType, SceneMotionEffect, VideoAudioTrack, SubtitleItem, VoiceoverTrack } from '../types';
+import { Slide, BrandInfo, AspectRatio, TransitionType, SceneMotionEffect, VideoAudioTrack, SubtitleItem, VoiceoverTrack, VoiceoverAvatar } from '../types';
 import { renderSlideToCanvas } from './exportUtils';
 import { generateProceduralAudioBuffer, generateProceduralSFXBuffer } from './audioLibrary';
 import { toBlob } from 'html-to-image';
@@ -20,6 +20,7 @@ export interface RenderOptions {
   subtitles?: SubtitleItem[];
   voiceoverTrack?: VoiceoverTrack | null;
   extraAudioTracks?: VideoAudioTrack[];
+  voiceoverAvatar?: VoiceoverAvatar | null;
   onProgress?: (p: RenderProgress) => void;
   shouldCancel?: () => boolean;
 }
@@ -336,6 +337,234 @@ function drawSubtitleOnCanvas(
 }
 
 /**
+ * Draws the HeyGen-style AI voiceover avatar onto the export canvas
+ */
+function drawAvatarOnCanvas(
+  ctx: CanvasRenderingContext2D,
+  avatar: VoiceoverAvatar,
+  avatarImg: HTMLImageElement,
+  cw: number,
+  ch: number,
+  isSpeaking: boolean,
+  currentTime: number
+) {
+  ctx.save();
+  // Scale size based on canvas width (normalized around 1080p)
+  const baseSize = (avatar.size || 96) * (cw / 1080) * 1.5;
+  const padding = cw * 0.04;
+
+  let x = cw - baseSize - padding;
+  let y = ch - baseSize - padding;
+  const pos = avatar.position || 'bottom_right';
+
+  if (pos === 'bottom_left') {
+    x = padding;
+    y = ch - baseSize - padding;
+  } else if (pos === 'bottom_center') {
+    x = (cw - baseSize) / 2;
+    y = ch - baseSize - padding;
+  } else if (pos === 'center_right') {
+    x = cw - baseSize - padding;
+    y = (ch - baseSize) / 2;
+  } else if (pos === 'center_left') {
+    x = padding;
+    y = (ch - baseSize) / 2;
+  } else if (pos === 'top_right') {
+    x = cw - baseSize - padding;
+    y = padding;
+  } else if (pos === 'top_left') {
+    x = padding;
+    y = padding;
+  } else if (pos === 'fullscreen_host') {
+    x = (cw - baseSize * 1.5) / 2;
+    y = (ch - baseSize * 1.5) / 2;
+  }
+
+  const cx = x + baseSize / 2;
+  const cy = y + baseSize / 2;
+  const radius = baseSize / 2;
+  const glowColor = avatar.borderGlowColor || '#e11d48';
+
+  // Micro-motion: natural breathing, head sway and jaw movement
+  let offsetY = 0;
+  if (avatar.enableHeadMotion !== false) {
+    offsetY = Math.sin(currentTime * 2.5) * (baseSize * 0.012) + Math.sin(currentTime * 1.2) * (baseSize * 0.008);
+  }
+
+  // Draw Voice Glow Halo & Backlight Diffusion if speaking
+  if (isSpeaking) {
+    const pulse = (Math.sin(currentTime * 7) + 1) / 2;
+    // Outer atmospheric glow
+    ctx.beginPath();
+    ctx.arc(cx, cy + offsetY, radius + 12 + pulse * 8, 0, Math.PI * 2);
+    ctx.fillStyle = glowColor + '20';
+    ctx.fill();
+
+    // Sharp voice aura ring
+    ctx.beginPath();
+    ctx.arc(cx, cy + offsetY, radius + 4 + pulse * 4, 0, Math.PI * 2);
+    ctx.fillStyle = glowColor + '40';
+    ctx.fill();
+  }
+
+  // Clip shape (circle or squircle)
+  ctx.save();
+  ctx.beginPath();
+  if (avatar.shape === 'rounded' && typeof (ctx as any).roundRect === 'function') {
+    (ctx as any).roundRect(x, y + offsetY, baseSize, baseSize, baseSize * 0.22);
+  } else {
+    ctx.arc(cx, cy + offsetY, radius, 0, Math.PI * 2);
+  }
+  ctx.clip();
+
+  // Draw Avatar Face Image
+  ctx.drawImage(avatarImg, x, y + offsetY, baseSize, baseSize);
+
+  // Studio Vignette & Depth
+  const vignetteGrad = ctx.createRadialGradient(cx, cy + offsetY, radius * 0.4, cx, cy + offsetY, radius);
+  vignetteGrad.addColorStop(0, 'rgba(0,0,0,0)');
+  vignetteGrad.addColorStop(1, 'rgba(0,0,0,0.35)');
+  ctx.fillStyle = vignetteGrad;
+  ctx.fillRect(x, y + offsetY, baseSize, baseSize);
+
+  // If lip sync and speaking, draw realistic anatomical mouth & dental aperture
+  if (isSpeaking && avatar.enableLipSync !== false) {
+    const mouthYPercent = avatar.mouthPositionPercent ?? 68;
+    const mouthXOffsetPercent = avatar.mouthOffsetXPercent ?? 0;
+    const mouthScale = avatar.mouthScale ?? 1.0;
+    const mouthSpeed = Math.max(0.2, avatar.mouthSpeed ?? 1.0);
+
+    const mouthY = (y + offsetY) + baseSize * (mouthYPercent / 100);
+    const mouthX = cx + baseSize * (mouthXOffsetPercent / 100);
+
+    // Multi-stage phoneme simulation based on speech harmonics and user speed
+    const phonemeHarmonic = Math.abs(Math.sin(currentTime * 11 * mouthSpeed) * 0.6 + Math.sin(currentTime * 17 * mouthSpeed) * 0.4);
+    const mouthW = baseSize * (0.22 + phonemeHarmonic * 0.04) * mouthScale;
+    const mouthH = baseSize * (0.025 + phonemeHarmonic * 0.09) * mouthScale;
+
+    ctx.save();
+    // 1. Oral cavity deep background
+    ctx.beginPath();
+    ctx.ellipse(mouthX, mouthY, mouthW / 2, mouthH / 2, 0, 0, Math.PI * 2);
+    const cavityGrad = ctx.createRadialGradient(mouthX, mouthY - mouthH * 0.2, 1, mouthX, mouthY, mouthW / 2);
+    cavityGrad.addColorStop(0, '#0f0204');
+    cavityGrad.addColorStop(0.65, '#22060b');
+    cavityGrad.addColorStop(1, '#3b0d16');
+    ctx.fillStyle = cavityGrad;
+    ctx.fill();
+
+    // 2. Upper dental row highlight when mouth opens wide enough
+    if (mouthH > baseSize * 0.04 * mouthScale) {
+      ctx.beginPath();
+      const teethW = mouthW * 0.72;
+      const teethH = mouthH * 0.38;
+      ctx.ellipse(mouthX, mouthY - mouthH * 0.22, teethW / 2, teethH / 2, 0, 0, Math.PI);
+      ctx.fillStyle = 'rgba(246, 244, 238, 0.94)';
+      ctx.fill();
+
+      // Upper lip shadow over top teeth
+      ctx.beginPath();
+      ctx.ellipse(mouthX, mouthY - mouthH * 0.28, teethW / 2, teethH * 0.4, 0, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(25, 6, 10, 0.75)';
+      ctx.fill();
+    }
+
+    // 3. Lower lip fleshy highlight
+    ctx.beginPath();
+    ctx.ellipse(mouthX, mouthY + mouthH * 0.42, mouthW * 0.45, mouthH * 0.28, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(215, 75, 95, 0.45)';
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  // Realistic natural eye blinks during speech
+  if (avatar.enableBlinking !== false) {
+    const blinkInterval = Math.max(1.0, avatar.blinkInterval ?? 4.2);
+    const blinkSpeed = Math.max(0.3, avatar.blinkSpeed ?? 1.0);
+    const cycleDuration = blinkInterval / blinkSpeed;
+    const blinkDuration = 0.15 / blinkSpeed;
+    const blinkCycle = currentTime % cycleDuration;
+    if (blinkCycle > (cycleDuration - blinkDuration)) {
+      // Natural blink frame
+      const eyesYPercent = avatar.eyesPositionPercent ?? ((avatar.mouthPositionPercent ?? 68) - 27);
+      const eyesXOffsetPercent = avatar.eyesOffsetXPercent ?? 0;
+      const eyesSpacingPercent = avatar.eyesSpacingPercent ?? 16;
+      const eyesScale = avatar.eyesScale ?? 1.0;
+
+      const eyeY = (y + offsetY) + baseSize * (eyesYPercent / 100);
+      const eyeSpacing = baseSize * (eyesSpacingPercent / 100);
+      const eyeXCenter = cx + baseSize * (eyesXOffsetPercent / 100);
+      const eyeW = baseSize * 0.11 * eyesScale;
+      const eyeH = baseSize * 0.024 * eyesScale;
+
+      ctx.save();
+      // Left eye closed lid
+      ctx.beginPath();
+      ctx.ellipse(eyeXCenter - eyeSpacing, eyeY, eyeW / 2, eyeH / 2, 0, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(24, 14, 12, 0.9)';
+      ctx.fill();
+
+      // Right eye closed lid
+      ctx.beginPath();
+      ctx.ellipse(eyeXCenter + eyeSpacing, eyeY, eyeW / 2, eyeH / 2, 0, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(24, 14, 12, 0.9)';
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  ctx.restore();
+
+  // Draw studio bevel border ring
+  ctx.beginPath();
+  if (avatar.shape === 'rounded' && typeof (ctx as any).roundRect === 'function') {
+    (ctx as any).roundRect(x, y + offsetY, baseSize, baseSize, baseSize * 0.22);
+  } else {
+    ctx.arc(cx, cy + offsetY, radius, 0, Math.PI * 2);
+  }
+  ctx.lineWidth = Math.max(3, Math.round(baseSize * 0.032));
+  ctx.strokeStyle = isSpeaking ? glowColor : 'rgba(255, 255, 255, 0.35)';
+  ctx.stroke();
+
+  // Draw Name & Role Badge if enabled
+  if (avatar.showNameTag !== false && avatar.name) {
+    ctx.save();
+    const tagW = baseSize * 1.15;
+    const tagH = baseSize * 0.26;
+    const tagX = cx - tagW / 2;
+    const tagY = y + offsetY + baseSize - tagH * 0.55;
+
+    ctx.fillStyle = 'rgba(2, 6, 23, 0.9)';
+    ctx.beginPath();
+    if (typeof (ctx as any).roundRect === 'function') {
+      (ctx as any).roundRect(tagX, tagY, tagW, tagH, tagH * 0.4);
+    } else {
+      ctx.rect(tagX, tagY, tagW, tagH);
+    }
+    ctx.fill();
+    ctx.strokeStyle = glowColor;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `bold ${Math.round(tagH * 0.44)}px sans-serif`;
+    ctx.fillText(avatar.name, cx, tagY + tagH * 0.38);
+
+    if (avatar.role) {
+      ctx.fillStyle = glowColor;
+      ctx.font = `600 ${Math.round(tagH * 0.3)}px sans-serif`;
+      ctx.fillText(avatar.role, cx, tagY + tagH * 0.74);
+    }
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+/**
  * Render complete video with transitions, motion effects, and audio
  */
 export async function renderCarouselToVideo(
@@ -375,6 +604,22 @@ export async function renderCarouselToVideo(
     });
     const assets = await prepareSlideAssets(s, brand, options.aspectRatio, dom);
     slideAssets.push(assets);
+  }
+
+  // 1b. Preload HeyGen Voiceover Avatar image if configured
+  let avatarImage: HTMLImageElement | null = null;
+  if (options.voiceoverAvatar?.enabled && options.voiceoverAvatar.imageUrl) {
+    try {
+      avatarImage = new Image();
+      avatarImage.crossOrigin = 'anonymous';
+      await new Promise<void>((resolve) => {
+        avatarImage!.onload = () => resolve();
+        avatarImage!.onerror = () => resolve();
+        avatarImage!.src = options.voiceoverAvatar!.imageUrl;
+      });
+    } catch (avErr) {
+      console.warn('Avatar image preload warning:', avErr);
+    }
   }
 
   // 2. Setup offline rendering canvas
@@ -1048,6 +1293,27 @@ export async function renderCarouselToVideo(
       );
       if (activeSub && activeSub.text) {
         drawSubtitleOnCanvas(ctx, activeSub, canvas.width, canvas.height);
+      }
+    }
+
+    // 6. Draw HeyGen Voiceover Avatar badge if enabled and visible
+    if (options.voiceoverAvatar?.enabled && avatarImage && avatarImage.complete && avatarImage.naturalWidth > 0) {
+      const isHidden = options.voiceoverAvatar.hideOnSlides?.includes(activeTimingIndex);
+      if (!isHidden) {
+        const isSpeaking = Boolean(
+          options.voiceoverTrack &&
+          currentTime >= 0 &&
+          currentTime <= (options.voiceoverTrack.duration || totalTime)
+        );
+        drawAvatarOnCanvas(
+          ctx,
+          options.voiceoverAvatar,
+          avatarImage,
+          canvas.width,
+          canvas.height,
+          isSpeaking,
+          currentTime
+        );
       }
     }
 

@@ -25,8 +25,9 @@ import {
   Film,
   Zap,
   Type,
+  User,
 } from 'lucide-react';
-import { Slide, BrandInfo, AspectRatio, TransitionType, SceneMotionEffect, VideoAudioTrack, SubtitleItem, VoiceoverTrack, AudioChannelLane } from '../types';
+import { Slide, BrandInfo, AspectRatio, TransitionType, SceneMotionEffect, VideoAudioTrack, SubtitleItem, VoiceoverTrack, AudioChannelLane, VoiceoverAvatar } from '../types';
 import { CanvasSlide } from './CanvasSlide';
 import { Timeline } from './Timeline';
 import { getActiveTransitionState, VideoPreviewPlayer } from '../utils/transitionEngine';
@@ -41,6 +42,8 @@ interface VideoStudioViewProps {
   onUpdateSubtitles?: (subtitles: SubtitleItem[]) => void;
   voiceoverTrack?: VoiceoverTrack | null;
   onUpdateVoiceoverTrack?: (track: VoiceoverTrack | null) => void;
+  voiceoverAvatar?: VoiceoverAvatar | null;
+  onOpenAvatarModal?: () => void;
   sfxClips?: VideoAudioTrack[];
   onUpdateSfxClips?: (clips: VideoAudioTrack[]) => void;
   audioChannels?: AudioChannelLane[];
@@ -59,6 +62,7 @@ interface VideoStudioViewProps {
   onChangeAspectRatio: (ratio: AspectRatio) => void;
   onSwitchToSlideEditor: (index?: number) => void;
   onOpenExportVideo: () => void;
+  language?: 'es' | 'pt' | 'en' | string;
 }
 
 export const VideoStudioView: React.FC<VideoStudioViewProps> = ({
@@ -71,6 +75,8 @@ export const VideoStudioView: React.FC<VideoStudioViewProps> = ({
   onUpdateSubtitles,
   voiceoverTrack = null,
   onUpdateVoiceoverTrack,
+  voiceoverAvatar = null,
+  onOpenAvatarModal,
   sfxClips,
   onUpdateSfxClips,
   audioChannels,
@@ -89,6 +95,7 @@ export const VideoStudioView: React.FC<VideoStudioViewProps> = ({
   onChangeAspectRatio,
   onSwitchToSlideEditor,
   onOpenExportVideo,
+  language,
 }) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const playerContainerRef = useRef<HTMLDivElement>(null);
@@ -228,6 +235,25 @@ export const VideoStudioView: React.FC<VideoStudioViewProps> = ({
             ))}
           </div>
 
+          {/* AI Avatar Button */}
+          {onOpenAvatarModal && (
+            <button
+              onClick={onOpenAvatarModal}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition cursor-pointer ${
+                voiceoverAvatar && voiceoverAvatar.enabled
+                  ? 'bg-rose-950/80 border-rose-600/70 text-rose-300'
+                  : 'bg-slate-900 hover:bg-slate-800 border-slate-800 text-slate-300'
+              }`}
+              title="Configurar Presentador / Avatar de Locución IA"
+            >
+              <User className="w-3.5 h-3.5 text-rose-400" />
+              <span className="hidden sm:inline">Avatar IA</span>
+              {voiceoverAvatar && voiceoverAvatar.enabled && (
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              )}
+            </button>
+          )}
+
           <button
             onClick={onOpenExportVideo}
             className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white text-xs font-black shadow-lg shadow-rose-950/50 transition cursor-pointer"
@@ -249,13 +275,28 @@ export const VideoStudioView: React.FC<VideoStudioViewProps> = ({
             className={`relative rounded-3xl overflow-hidden shadow-2xl shadow-black/80 border-2 border-slate-800/80 bg-slate-950 flex items-center justify-center transition-all ${getAspectClass()}`}
           >
             {/* Active Video Surface */}
-            <VideoPreviewPlayer
-              slides={slides}
-              brand={brand}
-              aspectRatio={aspectRatio}
-              currentTime={currentTime}
-              subtitles={subtitles}
-            />
+            {(() => {
+              const voStart = voiceoverTrack?.startOffset || 0;
+              const voDuration = voiceoverTrack?.duration || 9999;
+              const isVoiceoverActive =
+                isPlaying &&
+                !voiceoverTrack?.isMuted &&
+                currentTime >= voStart &&
+                currentTime <= voStart + voDuration;
+
+              return (
+                <VideoPreviewPlayer
+                  slides={slides}
+                  brand={brand}
+                  aspectRatio={aspectRatio}
+                  currentTime={currentTime}
+                  subtitles={subtitles}
+                  voiceoverAvatar={voiceoverAvatar}
+                  isVoiceoverActive={isVoiceoverActive}
+                  onOpenAvatarModal={onOpenAvatarModal}
+                />
+              );
+            })()}
 
             {/* Click-to-Play Overlay */}
             <div
@@ -433,6 +474,8 @@ export const VideoStudioView: React.FC<VideoStudioViewProps> = ({
           onUpdateSubtitles={onUpdateSubtitles}
           voiceoverTrack={voiceoverTrack}
           onUpdateVoiceoverTrack={onUpdateVoiceoverTrack}
+          voiceoverAvatar={voiceoverAvatar}
+          onOpenAvatarModal={onOpenAvatarModal}
           sfxClips={sfxClips}
           onUpdateSfxClips={onUpdateSfxClips}
           audioChannels={audioChannels}
@@ -452,6 +495,7 @@ export const VideoStudioView: React.FC<VideoStudioViewProps> = ({
           onTogglePlay={onTogglePlay}
           currentTime={currentTime}
           onSeek={onSeek}
+          language={language}
         />
       </div>
     </div>

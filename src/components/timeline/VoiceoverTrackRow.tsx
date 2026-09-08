@@ -1,12 +1,14 @@
 import React from 'react';
-import { Mic, Volume2, VolumeX, Settings, Plus } from 'lucide-react';
-import { VoiceoverTrack } from '../../types';
+import { Mic, Volume2, VolumeX, Settings, Plus, User } from 'lucide-react';
+import { VoiceoverTrack, VoiceoverAvatar } from '../../types';
 
 interface VoiceoverTrackRowProps {
   voiceoverTrack: VoiceoverTrack | null;
   pxPerSec: number;
   totalDuration: number;
+  voiceoverAvatar?: VoiceoverAvatar | null;
   onOpenVoiceoverModal: () => void;
+  onOpenAvatarModal?: () => void;
   onUpdateVoiceoverTrack: (track: VoiceoverTrack | null) => void;
 }
 
@@ -14,7 +16,9 @@ export const VoiceoverTrackRow: React.FC<VoiceoverTrackRowProps> = ({
   voiceoverTrack,
   pxPerSec,
   totalDuration,
+  voiceoverAvatar = null,
   onOpenVoiceoverModal,
+  onOpenAvatarModal,
   onUpdateVoiceoverTrack,
 }) => {
   return (
@@ -124,18 +128,55 @@ export const VoiceoverTrackRow: React.FC<VoiceoverTrackRowProps> = ({
         )}
       </div>
 
-      {/* Quick Add / Edit Button */}
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onOpenVoiceoverModal();
-        }}
-        className="ml-2 px-2.5 py-1.5 rounded-xl bg-rose-950/70 hover:bg-rose-900/80 text-rose-300 border border-rose-800/60 text-[11px] font-bold flex items-center gap-1 transition cursor-pointer shrink-0"
-        title="Configurar pista de locución o texto a voz"
-      >
-        <Plus className="w-3 h-3" />
-        <span>+ Voz en Off</span>
-      </button>
+      {/* Action Buttons: Avatar IA & Voiceover */}
+      <div className="flex items-center gap-1.5 ml-2 shrink-0">
+        {onOpenAvatarModal && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenAvatarModal();
+            }}
+            className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold flex items-center gap-1.5 transition cursor-pointer ${
+              voiceoverAvatar && voiceoverAvatar.enabled
+                ? 'bg-rose-950/80 hover:bg-rose-900/90 text-rose-200 border-rose-700/60 shadow-md'
+                : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-800 hover:text-white'
+            }`}
+            title="Presentador / Avatar de Locución en video"
+          >
+            {voiceoverAvatar && voiceoverAvatar.enabled ? (
+              <>
+                <div className="relative w-4 h-4 rounded-full overflow-hidden border border-rose-400 shrink-0">
+                  <img
+                    src={voiceoverAvatar.imageUrl}
+                    alt={voiceoverAvatar.name}
+                    className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
+                <span className="max-w-[70px] truncate">{voiceoverAvatar.name}</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              </>
+            ) : (
+              <>
+                <User className="w-3 h-3 text-rose-400" />
+                <span>+ Avatar IA</span>
+              </>
+            )}
+          </button>
+        )}
+
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenVoiceoverModal();
+          }}
+          className="px-2.5 py-1.5 rounded-xl bg-rose-950/70 hover:bg-rose-900/80 text-rose-300 border border-rose-800/60 text-[11px] font-bold flex items-center gap-1 transition cursor-pointer shrink-0"
+          title="Configurar pista de locución o texto a voz"
+        >
+          <Plus className="w-3 h-3" />
+          <span>+ Voz en Off</span>
+        </button>
+      </div>
     </div>
   );
 };

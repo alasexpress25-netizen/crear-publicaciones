@@ -53,3 +53,171 @@
   background: rgba(225, 29, 72, 0.95);
 }
 
+/* Ultra-Realistic AI Avatar Animations & Micro-Expressions */
+@keyframes heygenMouthPhonemes {
+  0% {
+    /* M / B / P (lips softly closed, natural line) */
+    transform: scaleY(0.12) scaleX(0.88);
+    filter: brightness(0.8);
+    opacity: 0.85;
+  }
+  14% {
+    /* Ah / Aa (wide natural vertical aperture, dental line reveal) */
+    transform: scaleY(1.05) scaleX(1.12);
+    filter: brightness(1);
+    opacity: 0.98;
+  }
+  28% {
+    /* Ee / I (wide horizontal spread, subtle height) */
+    transform: scaleY(0.48) scaleX(1.22);
+    filter: brightness(0.95);
+    opacity: 0.92;
+  }
+  42% {
+    /* Oh / Oo (rounded lip puckering, narrower aperture) */
+    transform: scaleY(0.95) scaleX(0.82);
+    filter: brightness(0.88);
+    opacity: 0.95;
+  }
+  56% {
+    /* Rest / Soft transition */
+    transform: scaleY(0.25) scaleX(0.92);
+    filter: brightness(0.84);
+    opacity: 0.88;
+  }
+  70% {
+    /* Dental / S / T (slight dental exposure, spread) */
+    transform: scaleY(0.65) scaleX(1.15);
+    filter: brightness(0.97);
+    opacity: 0.95;
+  }
+  85% {
+    /* U / W (compact vowel) */
+    transform: scaleY(0.72) scaleX(0.88);
+    filter: brightness(0.9);
+    opacity: 0.92;
+  }
+  100% {
+    /* Return to natural speaking rest */
+    transform: scaleY(0.12) scaleX(0.88);
+    filter: brightness(0.8);
+    opacity: 0.85;
+  }
+}
+
+/* Lower Jaw & Chin Micro-Movement when Speaking */
+@keyframes heygenJawMotion {
+  0%, 100% {
+    transform: translateY(0px) scaleY(1);
+  }
+  14% {
+    transform: translateY(1.6px) scaleY(1.012);
+  }
+  28% {
+    transform: translateY(0.5px) scaleY(1.004);
+  }
+  42% {
+    transform: translateY(1.2px) scaleY(1.008);
+  }
+  56% {
+    transform: translateY(0.2px) scaleY(1.002);
+  }
+  70% {
+    transform: translateY(0.9px) scaleY(1.006);
+  }
+  85% {
+    transform: translateY(1.1px) scaleY(1.008);
+  }
+}
+
+/* Organic Head Sway & Micro-Nods */
+@keyframes heygenHeadMotion {
+  0% {
+    transform: translateY(0px) rotate(0deg) scale(1.01);
+  }
+  18% {
+    transform: translateY(-1.2px) rotate(0.45deg) scale(1.014);
+  }
+  36% {
+    transform: translateY(0.6px) rotate(-0.3deg) scale(1.01);
+  }
+  54% {
+    transform: translateY(-0.8px) rotate(0.25deg) scale(1.012);
+  }
+  72% {
+    transform: translateY(0.4px) rotate(-0.2deg) scale(1.01);
+  }
+  90% {
+    transform: translateY(-0.4px) rotate(0.15deg) scale(1.011);
+  }
+  100% {
+    transform: translateY(0px) rotate(0deg) scale(1.01);
+  }
+}
+
+/* Diaphragmatic Natural Breathing (Gentle chest/shoulder rhythm) */
+@keyframes heygenBreathing {
+  0%, 100% {
+    transform: translateY(0px) scale(1);
+  }
+  50% {
+    transform: translateY(-1px) scale(1.006);
+  }
+}
+
+/* Realistic Human Eye Blink with Natural Lash Curve (120ms snap) */
+@keyframes heygenNaturalBlink {
+  0%, 93.5%, 100% {
+    transform: scaleY(0);
+    opacity: 0;
+  }
+  94.5% {
+    transform: scaleY(1);
+    opacity: 0.95;
+  }
+  96% {
+    transform: scaleY(1);
+    opacity: 0.95;
+  }
+  97.5% {
+    transform: scaleY(0);
+    opacity: 0;
+  }
+}
+
+/* Studio Rim Lighting Pulse */
+@keyframes heygenStudioRim {
+  0%, 100% {
+    opacity: 0.45;
+    filter: drop-shadow(0 0 12px var(--glow-color, #e11d48));
+  }
+  50% {
+    opacity: 0.85;
+    filter: drop-shadow(0 0 20px var(--glow-color, #e11d48));
+  }
+}
+
+.animate-heygen-mouth {
+  animation: heygenMouthPhonemes 0.38s ease-in-out infinite;
+}
+
+.animate-heygen-jaw {
+  animation: heygenJawMotion 0.38s ease-in-out infinite;
+}
+
+.animate-heygen-head {
+  animation: heygenHeadMotion 3.8s ease-in-out infinite;
+}
+
+.animate-heygen-breathing {
+  animation: heygenBreathing 4.5s ease-in-out infinite;
+}
+
+.animate-heygen-blink {
+  animation: heygenNaturalBlink 4.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.animate-heygen-rim {
+  animation: heygenStudioRim 2.4s ease-in-out infinite;
+}
+

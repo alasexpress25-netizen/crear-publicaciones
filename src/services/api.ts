@@ -294,6 +294,7 @@ export async function apiOptimizeVoiceoverScript(params: {
 export interface SynthesizeVoiceoverParams {
   text: string;
   voiceName?: string;
+  voice?: string;
   language?: string;
   tone?: string;
 }
@@ -322,4 +323,70 @@ export async function apiSynthesizeVoiceover(
 
   return await res.json();
 }
+
+export interface GenerateAiAvatarParams {
+  prompt: string;
+  style?: string;
+  role?: string;
+  name?: string;
+}
+
+export interface GenerateAiAvatarResult {
+  success: boolean;
+  imageUrl: string;
+  name: string;
+  role?: string;
+  suggestedVoice?: string;
+  promptUsed?: string;
+}
+
+export async function apiGenerateAiAvatar(
+  params: GenerateAiAvatarParams
+): Promise<GenerateAiAvatarResult> {
+  const res = await fetch('/api/generate-ai-avatar', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.error || `Error ${res.status} al generar avatar con IA`);
+  }
+
+  return await res.json();
+}
+
+export interface GenerateAvatarScriptParams {
+  slides: any[];
+  presenterName?: string;
+  presenterRole?: string;
+  tone?: string;
+  language?: string;
+}
+
+export interface GenerateAvatarScriptResult {
+  success: boolean;
+  script: string;
+  perSlideLines: string[];
+  estimatedDuration: number;
+}
+
+export async function apiGenerateAvatarScript(
+  params: GenerateAvatarScriptParams
+): Promise<GenerateAvatarScriptResult> {
+  const res = await fetch('/api/generate-avatar-script', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.error || `Error ${res.status} al generar guión de avatar con IA`);
+  }
+
+  return await res.json();
+}
+
 

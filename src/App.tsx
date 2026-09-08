@@ -18,7 +18,8 @@ import {
   VideoAudioTrack,
   SubtitleItem,
   VoiceoverTrack,
-  AudioChannelLane
+  AudioChannelLane,
+  VoiceoverAvatar
 } from './types';
 import {
   INITIAL_DEFAULT_SLIDES,
@@ -27,6 +28,7 @@ import {
 import { applyLayoutTemplateToSlide, getTemplateLocalization } from './data/templateLocalizations';
 import { AgencyClient, getFallbackAgencyClients } from './services/supabase';
 import { findLogoForClient } from './services/clientLogosStorage';
+import { DEFAULT_VOICEOVER_AVATAR } from './data/avatarPresets';
 import {
   getClientLanguage,
   saveClientLanguage,
@@ -57,6 +59,7 @@ import { SlideAiRewriteModal } from './components/SlideAiRewriteModal';
 import { FloatingMediaModal } from './components/FloatingMediaModal';
 import { VideoExportModal } from './components/VideoExportModal';
 import { VideoStudioView } from './components/VideoStudioView';
+import { VoiceoverAvatarModal } from './components/VoiceoverAvatarModal';
 import { previewAudio } from './utils/previewAudioEngine';
 import { getActiveTransitionState, VideoPreviewPlayer } from './utils/transitionEngine';
 
@@ -179,6 +182,26 @@ export default function App() {
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isSlideRewriteOpen, setIsSlideRewriteOpen] = useState(false);
   const [isMediaPopupOpen, setIsMediaPopupOpen] = useState(false);
+  const [isVoiceoverAvatarModalOpen, setIsVoiceoverAvatarModalOpen] = useState(false);
+  const [voiceoverAvatar, setVoiceoverAvatar] = useState<VoiceoverAvatar | null>(() => {
+    try {
+      const saved = localStorage.getItem('lavisualmk_carousel_avatar_v1');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return DEFAULT_VOICEOVER_AVATAR;
+  });
+
+  const handleSaveAvatar = (newAvatar: VoiceoverAvatar | null) => {
+    setVoiceoverAvatar(newAvatar);
+    try {
+      if (newAvatar) {
+        localStorage.setItem('lavisualmk_carousel_avatar_v1', JSON.stringify(newAvatar));
+      } else {
+        localStorage.removeItem('lavisualmk_carousel_avatar_v1');
+      }
+    } catch {}
+  };
+
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(() => {
     if (isExistingSession) {
       try {
@@ -1808,6 +1831,8 @@ export default function App() {
         onOpenClientSelector={() => setIsClientSelectorOpen(true)}
         onNewProject={handleCreateNewBlankProject}
         onResetCarousel={handleCreateNewBlankProject}
+        onOpenAvatarModal={() => setIsVoiceoverAvatarModalOpen(true)}
+        voiceoverAvatar={voiceoverAvatar}
       />
 
       {/* Main Workspace Area */}
@@ -1877,7 +1902,10 @@ export default function App() {
               if (typeof idx === 'number') setCurrentIndex(idx);
               setMobileTab('canvas');
             }}
+            voiceoverAvatar={voiceoverAvatar}
+            onOpenAvatarModal={() => setIsVoiceoverAvatarModalOpen(true)}
             onOpenExportVideo={() => setIsVideoExportOpen(true)}
+            language={language}
           />
         ) : mobileTab === 'ai' ? (
           /* Full AI Strategist View Mode */
@@ -2089,6 +2117,9 @@ export default function App() {
                             aspectRatio={aspectRatio}
                             currentTime={timelineCurrentTime}
                             subtitles={subtitles}
+                            voiceoverAvatar={voiceoverAvatar}
+                            isVoiceoverActive={isTimelinePlaying && Boolean(voiceoverTrack)}
+                            onOpenAvatarModal={() => setIsVoiceoverAvatarModalOpen(true)}
                           />
                         </div>
                       ) : (
@@ -2121,6 +2152,9 @@ export default function App() {
                             previewAnimationTime={animPreview?.time}
                             allSlides={slides}
                             slideIndex={currentIndex}
+                            voiceoverAvatar={voiceoverAvatar}
+                            isVoiceoverActive={isTimelinePlaying && Boolean(voiceoverTrack)}
+                            onOpenAvatarModal={() => setIsVoiceoverAvatarModalOpen(true)}
                           />
                         </div>
                       )}
@@ -2308,6 +2342,25 @@ export default function App() {
         subtitles={subtitles}
         voiceoverTrack={voiceoverTrack}
         extraAudioTracks={allExtraAudioTracks}
+        voiceoverAvatar={voiceoverAvatar}
+      />
+
+      <VoiceoverAvatarModal
+        isOpen={isVoiceoverAvatarModalOpen}
+        onClose={() => setIsVoiceoverAvatarModalOpen(false)}
+        currentAvatar={voiceoverAvatar}
+        slides={slides}
+        language={language}
+        onSaveAvatar={handleSaveAvatar}
+        onApplyVoiceoverTrack={(track) => {
+          setVoiceoverTrack({
+            audioUrl: track.audioUrl,
+            name: track.name,
+            duration: track.duration,
+            script: track.script,
+            volume: 1,
+          });
+        }}
       />
 
     </div>

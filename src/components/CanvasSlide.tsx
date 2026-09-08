@@ -10,8 +10,10 @@ import {
   SlideLayoutTemplate,
   CustomTextLayer,
   TextStyleItem,
-  SubtitleItem
+  SubtitleItem,
+  VoiceoverAvatar,
 } from '../types';
+import { VoiceoverAvatarBadge } from './VoiceoverAvatarBadge';
 import { getTemplateLocalization, resolveChecklistBullets } from '../data/templateLocalizations';
 import { computeElementAnimation } from '../utils/elementAnimationEngine';
 import { getActiveV2ClipsForSlide, isV2MediaLayer } from '../utils/v2OverlayHelper';
@@ -67,6 +69,9 @@ interface CanvasSlideProps {
   previewAnimationTime?: number;
   allSlides?: Slide[];
   slideIndex?: number;
+  voiceoverAvatar?: VoiceoverAvatar | null;
+  isVoiceoverActive?: boolean;
+  onOpenAvatarModal?: () => void;
 }
 
 export const CanvasSlide: React.FC<CanvasSlideProps> = ({
@@ -99,6 +104,9 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
   previewAnimationTime,
   allSlides,
   slideIndex = 0,
+  voiceoverAvatar = null,
+  isVoiceoverActive = false,
+  onOpenAvatarModal,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoBgRef = useRef<HTMLVideoElement>(null);
@@ -2648,6 +2656,17 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
               </div>
             )}
           </div>
+        )}
+
+        {/* Dynamic Voiceover Presenter Avatar Overlay */}
+        {voiceoverAvatar && voiceoverAvatar.enabled && (
+          <VoiceoverAvatarBadge
+            avatar={voiceoverAvatar}
+            isSpeaking={Boolean(isVoiceoverActive)}
+            slideIndex={slideIndex}
+            onClick={onOpenAvatarModal}
+            isInteractive={!isExportMode}
+          />
         )}
 
       </div>

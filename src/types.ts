@@ -146,6 +146,57 @@ export interface SubtitleItem {
   backgroundColor?: string;
 }
 
+export type AvatarShape = 'circle' | 'rounded' | 'pill' | 'portrait' | 'half_body' | 'cinema_wide';
+export type AvatarPosition = 'bottom_right' | 'bottom_left' | 'top_right' | 'top_left' | 'center_right' | 'center_left' | 'bottom_center' | 'fullscreen_host';
+export type AvatarAnimationType = 'heygen_lipsync' | 'audio_reactive' | 'pulse_wave' | 'glow_ring' | 'head_nod_breathing' | 'none';
+
+export interface VoiceoverAvatar {
+  enabled: boolean;
+  avatarId?: string;
+  name: string;
+  role?: string;
+  imageUrl: string;
+  avatarType?: 'image' | 'video';
+  videoUrl?: string; // High-definition talking presenter video
+  shape?: AvatarShape;
+  position?: AvatarPosition;
+  size?: number;
+  borderGlowColor?: string;
+  animation?: AvatarAnimationType;
+  showNameTag?: boolean;
+  hideOnSlides?: number[];
+  enableLipSync?: boolean;
+  enableBlinking?: boolean;
+  enableHeadMotion?: boolean;
+  enableJawMotion?: boolean;
+  enableBreathing?: boolean;
+  renderQuality?: 'standard' | 'cinematic' | 'ultra_real';
+  studioLighting?: 'none' | 'cinematic_rim' | 'soft_warm' | 'cool_tech';
+  skinToneBlend?: 'natural' | 'soft' | 'warm';
+  backgroundStyle?: 'original' | 'studio_blur' | 'gradient_backdrop' | 'chroma_green';
+  voiceGender?: 'female' | 'male' | 'neutral';
+  voiceStyle?: string;
+  script?: string;
+
+  // Visual Badges & Watermarks
+  showWatermark?: boolean; // Default false (sin texto 'Avatar IA')
+  showAudioEqualizer?: boolean; // Default false (sin barra de colores)
+
+  // Anatomical Mouth (Visemas) Calibration
+  mouthPositionPercent?: number; // Y position (default 68)
+  mouthOffsetXPercent?: number; // X offset percent (default 0, -30 to 30)
+  mouthScale?: number; // Scale / size (default 1.0, 0.4 to 1.8)
+  mouthSpeed?: number; // Speed multiplier (default 1.0, 0.4x to 2.5x)
+
+  // Anatomical Eyes / Eyelids (Pestañas y Parpadeo) Calibration
+  eyesPositionPercent?: number; // Y position (default 41)
+  eyesOffsetXPercent?: number; // X offset percent (default 0, -25 to 25)
+  eyesSpacingPercent?: number; // Inter-eye distance (default 16)
+  eyesScale?: number; // Scale / size (default 1.0, 0.4 to 1.8)
+  blinkInterval?: number; // Interval between blinks in seconds (default 4.2)
+  blinkSpeed?: number; // Blink animation speed multiplier (default 1.0)
+}
+
 export interface VoiceoverTrack {
   id?: string;
   url?: string;
@@ -157,10 +208,12 @@ export interface VoiceoverTrack {
   startOffset?: number;
   text?: string;
   scriptText?: string;
+  script?: string;
   language?: string;
   voiceName?: string;
   rate?: number;
   pitch?: number;
+  avatar?: VoiceoverAvatar;
 }
 
 export type TransitionType =
@@ -357,4 +410,5 @@ export interface SavedCarouselProject {
   sfxClips?: VideoAudioTrack[];
   extraAudioTracks?: VideoAudioTrack[];
   extraAudioChannels?: AudioChannelLane[];
+  voiceoverAvatar?: VoiceoverAvatar;
 }

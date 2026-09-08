@@ -11,10 +11,19 @@ interface TtsVoiceoverModalProps {
   totalDuration: number;
   currentVoiceoverTrack: VoiceoverTrack | null;
   currentSlideIndex?: number;
+  currentLanguage?: 'es' | 'pt' | 'en' | string;
   subtitles?: SubtitleItem[];
   onSaveVoiceoverTrack: (track: VoiceoverTrack | null) => void;
   onSaveSubtitles?: (subtitles: SubtitleItem[]) => void;
 }
+
+const isPortugueseText = (txt: string): boolean => {
+  if (!txt) return false;
+  return (
+    /[ãõçê]/i.test(txt) ||
+    /\b(você|voces|vocês|não|está|estão|são|para|com|trabalho|serviço|servicos|clientes|negócio|negocio|estratégia|estrategia|então|entao|também|tambem|mais|como|fazer|conteúdo|conteudo|atenção|atencao|porque|por que|isso|este|esta|muito|muita|neste|nesta|pode|podem|sua|seu|seus|suas|nosso|nossa|ações|acoes|solução|solucao|aprenda|clique|arraste|salve|comente|seja|olá|ola|aqui|temos|quando|onde|qual|tudo|agora)\b/i.test(txt)
+  );
+};
 
 export const TtsVoiceoverModal: React.FC<TtsVoiceoverModalProps> = ({
   isOpen,
@@ -23,13 +32,21 @@ export const TtsVoiceoverModal: React.FC<TtsVoiceoverModalProps> = ({
   totalDuration,
   currentVoiceoverTrack,
   currentSlideIndex = 0,
+  currentLanguage,
   subtitles = [],
   onSaveVoiceoverTrack,
   onSaveSubtitles,
 }) => {
   const [scriptText, setScriptText] = useState<string>(currentVoiceoverTrack?.scriptText || '');
   const [voiceName, setVoiceName] = useState<string>(currentVoiceoverTrack?.voiceName || 'Kore');
-  const [language, setLanguage] = useState<string>(currentVoiceoverTrack?.language || 'es-ES');
+  const [language, setLanguage] = useState<string>(() => {
+    if (currentVoiceoverTrack?.language) return currentVoiceoverTrack.language;
+    if (currentLanguage === 'pt' || currentLanguage === 'pt-BR') return 'pt-BR';
+    if (currentLanguage === 'en' || currentLanguage === 'en-US') return 'en-US';
+    const allSlides = extractAllSlidesText(slides);
+    if (isPortugueseText(allSlides)) return 'pt-BR';
+    return 'es-ES';
+  });
   const [rate, setRate] = useState<number>(currentVoiceoverTrack?.rate || 1.05);
   const [pitch, setPitch] = useState<number>(currentVoiceoverTrack?.pitch || 1.0);
   const [volume, setVolume] = useState<number>(currentVoiceoverTrack?.volume ?? 1.0);
@@ -96,6 +113,9 @@ export const TtsVoiceoverModal: React.FC<TtsVoiceoverModalProps> = ({
         .filter(Boolean)
         .join(' \n');
       setScriptText(extracted);
+      if (isPortugueseText(extracted)) {
+        setLanguage('pt-BR');
+      }
     }
   }, [isOpen, slides]);
 
@@ -147,6 +167,13 @@ export const TtsVoiceoverModal: React.FC<TtsVoiceoverModalProps> = ({
     }
   };
 
+  const resolveEffectiveLanguage = (txt: string = scriptText): string => {
+    if (language.startsWith('pt')) return 'pt-BR';
+    if (language.startsWith('en')) return 'en-US';
+    if (isPortugueseText(txt)) return 'pt-BR';
+    return language || 'es-ES';
+  };
+
   const handleOptimizeWithAI = async () => {
     if (!scriptText.trim()) {
       alert('Por favor escribe o copia primero el texto a optimizar.');
@@ -154,9 +181,14 @@ export const TtsVoiceoverModal: React.FC<TtsVoiceoverModalProps> = ({
     }
     try {
       setIsOptimizingScript(true);
+      const effectiveLang = resolveEffectiveLanguage(scriptText);
+      if (effectiveLang.startsWith('pt') && !language.startsWith('pt')) {
+        setLanguage('pt-BR');
+      }
+
       const optimized = await apiOptimizeVoiceoverScript({
         script: scriptText,
-        language: language,
+        language: effectiveLang,
         tone: 'energético, claro y persuasivo para video corto',
       });
       if (optimized) {
@@ -265,10 +297,11 @@ export const TtsVoiceoverModal: React.FC<TtsVoiceoverModalProps> = ({
 
     setIsGeneratingAiVoice(true);
     try {
+      const effectiveLang = resolveEffectiveLanguage(scriptText);
       const res = await apiSynthesizeVoiceover({
         text: scriptText.trim(),
         voiceName: geminiVoice,
-        language: language,
+        language: effectiveLang,
       });
 
       if (res && res.audioUrl) {
@@ -361,13 +394,14 @@ export const TtsVoiceoverModal: React.FC<TtsVoiceoverModalProps> = ({
     let finalDuration = totalDuration;
 
     // Auto-generate AI audio if using Gemini engine and haven't generated yet
+    const effectiveLang = resolveEffectiveLanguage(scriptText);
     if (voiceEngine === 'gemini' && (!finalAudioUrl || finalAudioUrl === 'voiceover://tts') && scriptText.trim()) {
       setIsGeneratingAiVoice(true);
       try {
         const res = await apiSynthesizeVoiceover({
           text: scriptText.trim(),
           voiceName: geminiVoice,
-          language: language,
+          language: effectiveLang,
         });
         if (res && res.audioUrl) {
           finalAudioUrl = res.audioUrl;
@@ -384,9 +418,9 @@ export const TtsVoiceoverModal: React.FC<TtsVoiceoverModalProps> = ({
     const trackToSave: VoiceoverTrack = {
       id: currentVoiceoverTrack?.id || `vo-${Date.now()}`,
       audioUrl: finalAudioUrl || 'voiceover://tts',
-      name: audioFileName || (voiceEngine === 'gemini' ? `Locución IA: ${geminiVoice}` : `Voz Sistema (${language})`),
+      name: audioFileName || (voiceEngine === 'gemini' ? `Locución IA: ${geminiVoice}` : `Voz Sistema (${effectiveLang})`),
       scriptText: scriptText,
-      language: language,
+      language: effectiveLang,
       voiceName: voiceEngine === 'gemini' ? geminiVoice : voiceName,
       duration: aiGeneratedInfo?.duration || finalDuration,
       volume: volume,
@@ -496,12 +530,33 @@ export const TtsVoiceoverModal: React.FC<TtsVoiceoverModalProps> = ({
                     <span>💬 Subtítulos ({subtitles.length})</span>
                   </button>
                 )}
+                <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg p-0.5 text-xs">
+                  {[
+                    { id: 'pt-BR', label: '🇧🇷 PT', full: 'Português' },
+                    { id: 'es-ES', label: '🇪🇸 ES', full: 'Español' },
+                    { id: 'en-US', label: '🇺🇸 EN', full: 'English' },
+                  ].map((l) => (
+                    <button
+                      key={l.id}
+                      type="button"
+                      onClick={() => setLanguage(l.id)}
+                      title={`Idioma de locución: ${l.full}`}
+                      className={`px-2 py-0.5 rounded-md font-bold text-[10px] transition cursor-pointer ${
+                        language.startsWith(l.id.slice(0, 2))
+                          ? 'bg-purple-600 text-white shadow-sm'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {l.label}
+                    </button>
+                  ))}
+                </div>
                 <button
                   type="button"
                   onClick={handleOptimizeWithAI}
                   disabled={isOptimizingScript}
                   className="text-[11px] font-bold text-emerald-400 hover:text-emerald-300 bg-emerald-950/70 border border-emerald-800/50 px-2 py-0.5 rounded-lg transition flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                  title="Optimizar el guión con IA para que suene dinámico y natural al leerse"
+                  title="Optimizar el guión con IA para que suene dinámico y natural en el idioma seleccionado"
                 >
                   {isOptimizingScript ? (
                     <Loader2 className="w-3 h-3 animate-spin" />

@@ -1099,7 +1099,7 @@ Devuelve estrictamente un arreglo JSON de subtítulos con este formato:
     }
   });
 
-  // 7. Optimize Voiceover / TTS Script
+  // 7. Optimize Voiceover / TTS Script with Multi-Language Support (Português, Español, English)
   app.post("/api/optimize-voiceover-script", async (req, res) => {
     try {
       const { script = "", language = "es", tone = "energético y persuasivo" } = req.body || {};
@@ -1107,18 +1107,52 @@ Devuelve estrictamente un arreglo JSON de subtítulos con este formato:
         return res.status(400).json({ error: "Falta el guión para optimizar" });
       }
 
-      const prompt = `Actúa como un copywriter y locutor publicitario experto en videos cortos virales.
-Reescribe y pule el siguiente guión para que suene dinámico, natural, fácil de pronunciar y altamente persuasivo para locución (Text-to-Speech).
-Idioma objetivo: ${language}.
-Tono: ${tone}.
-Elimina tecnicismos innecesarios o abreviaturas que confundan al sintetizador de voz. Usa puntuación estratégica para crear pausas rítmicas.
+      // Detect language from text and requested language parameter
+      const norm = (language || "").toLowerCase();
+      const isExplicitPt = norm.startsWith("pt") || norm.includes("portugu");
+      const isExplicitEn = norm.startsWith("en") || norm.includes("ingl") || norm.includes("engl");
 
-Guión original:
-"${script}"
+      const ptRegex = /\b(você|voces|vocês|não|está|estão|são|para|com|trabalho|serviço|servicos|clientes|negócio|negocio|estratégia|estrategia|então|entao|também|tambem|mais|como|fazer|conteúdo|conteudo|atenção|atencao|porque|por que|isso|este|esta|muito|muita|neste|nesta|pode|podem|sua|seu|seus|suas|nosso|nossa|ações|acoes|solução|solucao|aprenda|clique|arraste|salve|comente|seja|olá|ola|aqui|temos|quando|onde|qual|tudo|agora)\b|[ãõçê]/gi;
+      const esRegex = /\b(usted|ustedes|estás|tienes|hacer|nuestro|nuestra|servicio|trabajo|solución|atención|guarda|desliza|comenta|también|pero|por qué|porque|para|con|este|esta|aquí|hola)\b|[¿¡ñáíúó]/gi;
 
-Devuelve únicamente un JSON con la propiedad "optimizedScript":
+      const ptMatches = (script.match(ptRegex) || []).length;
+      const esMatches = (script.match(esRegex) || []).length;
+
+      let isPortuguese = isExplicitPt || (ptMatches > 0 && ptMatches >= esMatches);
+      let isEnglish = isExplicitEn && !isPortuguese;
+      let targetLangName = isPortuguese ? "Português (Brasil)" : isEnglish ? "English" : "Español";
+      let targetLangCode = isPortuguese ? "pt-BR" : isEnglish ? "en-US" : "es-ES";
+
+      const prompt = `Actúas como un Copywriter Senior y Locutor Publicitario de élite especializado en videos virales (TikTok, Reels, Shorts).
+Tu misión es reescribir, pulir y dinamizar el siguiente texto para que suene magnético, fluido, convincente y con pausas naturales al ser leído por un locutor de voz en off (TTS).
+
+🎯 IDIOMA OBLIGATORIO: ${targetLangName} (${targetLangCode}).
+${isPortuguese ? `
+⚠️ REGLA CRÍTICA Y ABSOLUTA DE IDIOMA:
+TODO el guión resultante DEBE estar redactado ESTRICTAMENTE en PORTUGUÊS (pt-BR / Português).
+JAMAIS traduza ou converta este texto para Espanhol ou qualquer outra língua.
+Se o texto original contiver termos em Português (ex: "você", "não", "clientes", etc.), preserve o Português e aprimore o ritmo, entonação e dicção para locução em Português.
+` : isEnglish ? `
+⚠️ CRITICAL LANGUAGE RULE:
+The script MUST be generated strictly in ENGLISH. Do NOT translate into Spanish or Portuguese.
+` : `
+⚠️ REGLA DE IDIOMA:
+El texto resultante DEBE estar redactado estrictamente en Español fluido y natural.
+`}
+
+- Tono: ${tone}.
+- Usa puntuación estratégica (comas, puntos y pausas) para crear un ritmo oral cómodo y dinámico para el sintetizador de voz.
+- Elimina redundancias, abreviaturas confusas o palabras difíciles de vocalizar.
+- Haz que la primera frase atrape inmediatamente la atención ("hook").
+
+TEXTO ORIGINAL:
+"""
+${script}
+"""
+
+Responde ÚNICAMENTE en formato JSON:
 {
-  "optimizedScript": "texto pulido aquí..."
+  "optimizedScript": "texto pulido y optimizado listo para la locución..."
 }`;
 
       const response = await executeWithFallback((ai, modelName) =>
@@ -1127,13 +1161,19 @@ Devuelve únicamente un JSON con la propiedad "optimizedScript":
           contents: prompt,
           config: {
             responseMimeType: "application/json",
-            temperature: 0.4,
+            temperature: 0.5,
           },
         })
       );
 
       const parsed = JSON.parse(response.text || "{}");
-      res.json({ success: true, data: parsed.optimizedScript || script });
+      const finalScript = parsed.optimizedScript || script;
+      res.json({
+        success: true,
+        data: finalScript,
+        optimizedScript: finalScript,
+        detectedLanguage: targetLangCode
+      });
     } catch (err: any) {
       console.error("Error optimizing voiceover script:", err);
       res.status(500).json({ error: err.message || "Error al optimizar guión de locución" });
@@ -1167,7 +1207,8 @@ Devuelve únicamente un JSON con la propiedad "optimizedScript":
   // 7. Synthesize High-Quality AI Voiceover Audio (Gemini TTS)
   app.post("/api/synthesize-voiceover", async (req, res) => {
     try {
-      const { text, voiceName = "Kore", language = "es-ES", tone = "natural, profesional y persuasivo" } = req.body || {};
+      const { text, voiceName = "Kore", voice, language = "es-ES", tone = "natural, profesional y persuasivo" } = req.body || {};
+      const requestedVoice = voice || voiceName;
       if (!text || typeof text !== "string" || !text.trim()) {
         return res.status(400).json({ error: "El texto es obligatorio para sintetizar la locución" });
       }
@@ -1175,13 +1216,13 @@ Devuelve únicamente un JSON con la propiedad "optimizedScript":
       const ai = getAI();
       const validVoices = ["Puck", "Charon", "Kore", "Fenrir", "Zephyr"];
       let selectedVoice = "Kore";
-      if (validVoices.includes(voiceName)) {
-        selectedVoice = voiceName;
-      } else if (voiceName.toLowerCase().includes("fenrir") || voiceName.toLowerCase().includes("hombre") || voiceName.toLowerCase().includes("male") || voiceName.toLowerCase().includes("grave")) {
+      if (validVoices.includes(requestedVoice)) {
+        selectedVoice = requestedVoice;
+      } else if (requestedVoice.toLowerCase().includes("fenrir") || requestedVoice.toLowerCase().includes("hombre") || requestedVoice.toLowerCase().includes("male") || requestedVoice.toLowerCase().includes("grave")) {
         selectedVoice = "Fenrir";
-      } else if (voiceName.toLowerCase().includes("puck") || voiceName.toLowerCase().includes("joven") || voiceName.toLowerCase().includes("dinam")) {
+      } else if (requestedVoice.toLowerCase().includes("puck") || requestedVoice.toLowerCase().includes("joven") || requestedVoice.toLowerCase().includes("dinam")) {
         selectedVoice = "Puck";
-      } else if (voiceName.toLowerCase().includes("charon")) {
+      } else if (requestedVoice.toLowerCase().includes("charon")) {
         selectedVoice = "Charon";
       } else if (voiceName.toLowerCase().includes("zephyr")) {
         selectedVoice = "Zephyr";
@@ -1190,7 +1231,24 @@ Devuelve únicamente un JSON con la propiedad "optimizedScript":
       }
 
       const cleanText = text.trim();
-      const promptText = `Narra el siguiente texto de forma fluida y clara en ${language} con tono ${tone}:\n${cleanText}`;
+      const norm = (language || "").toLowerCase();
+      const isExplicitPt = norm.startsWith("pt") || norm.includes("portugu");
+      const isExplicitEn = norm.startsWith("en") || norm.includes("ingl") || norm.includes("engl");
+
+      const ptRegex = /\b(você|voces|vocês|não|está|estão|são|para|com|trabalho|serviço|servicos|clientes|negócio|negocio|estratégia|estrategia|então|entao|também|tambem|mais|como|fazer|conteúdo|conteudo|atenção|atencao|porque|por que|isso|este|esta|muito|muita|neste|nesta|pode|podem|sua|seu|seus|suas|nosso|nossa|ações|acoes|solução|solucao|aprenda|clique|arraste|salve|comente|seja|olá|ola|aqui|temos|quando|onde|qual|tudo|agora)\b|[ãõçê]/gi;
+      const esRegex = /\b(usted|ustedes|estás|tienes|hacer|nuestro|nuestra|servicio|trabajo|solución|atención|guarda|desliza|comenta|también|pero|por qué|porque|para|con|este|esta|aquí|hola)\b|[¿¡ñáíúó]/gi;
+
+      const ptMatches = (cleanText.match(ptRegex) || []).length;
+      const esMatches = (cleanText.match(esRegex) || []).length;
+
+      const isPortuguese = isExplicitPt || (ptMatches > 0 && ptMatches >= esMatches);
+      const isEnglish = isExplicitEn && !isPortuguese;
+
+      const promptText = isPortuguese
+        ? `Narre o seguinte texto de forma fluida, natural, expressiva e envolvente em Português com tom ${tone}:\n${cleanText}`
+        : isEnglish
+        ? `Narrate the following text in fluent, natural and engaging English with a ${tone} tone:\n${cleanText}`
+        : `Narra el siguiente texto de forma fluida, natural y persuasiva en español con tono ${tone}:\n${cleanText}`;
 
       let lastErr: any = null;
       let response: any = null;
@@ -1358,32 +1416,172 @@ Devuelve OBLIGATORIAMENTE un JSON con esta estructura exacta:
     }
   });
 
-  // Optimize Voiceover Narration Script with AI
-  app.post("/api/optimize-voiceover-script", async (req, res) => {
+
+
+  // Generate Voiceover Avatar with AI (Gemini + Imagen 3)
+  app.post("/api/generate-ai-avatar", async (req, res) => {
     try {
-      const { script, language = "es", tone = "energético, persuasivo y claro" } = req.body;
-      if (!script || typeof script !== "string") {
-        return res.status(400).json({ error: "Guión obligatorio para optimizar" });
+      const { prompt, style = "fotorrealista", role = "Presentador", name = "Avatar IA" } = req.body;
+      if (!prompt || typeof prompt !== "string") {
+        return res.status(400).json({ error: "Descripción obligatoria para generar el avatar" });
       }
 
-      const prompt = `
-Actúas como un Guionista de Locución y Copywriter Senior para Reels y videos de ventas.
-Reescribe y optimiza el siguiente texto para que sea leído por una voz en off (Texto a Voz / TTS).
-- Tono: ${tone}
-- Idioma: ${language}
-- Debe sonar completamente natural, fluido y rítmico al ser pronunciado en voz alta.
-- Agrega pausas estratégicas con comas y puntos.
-- Elimina redundancias o palabras difíciles de vocalizar.
-- Haz que cada frase atrape la atención de principio a fin.
+      // 1. Optimize presenter description with Gemini
+      const promptOptimizer = `
+Actúas como un Director de Arte y Fotógrafo de Estudio de Retratos de Alta Gama.
+El usuario quiere un avatar de locutor/presentador para videos con esta idea:
+"${prompt}"
+Rol: "${role}"
+Estilo deseado: "${style}"
 
-TEXTO ORIGINAL:
-"""
-${script}
-"""
+Crea una descripción fotográfica profesional en inglés (1 o 2 frases) para un retrato en primer plano (headshot):
+- Mirada directa y empática a la cámara.
+- Iluminación de estudio impecable (rim light o softbox suave).
+- Fondo neutro o con suave desenfoque de estudio.
+- Composición centrada 1:1, detalles faciales nítidos, 8k, photorealistic studio headshot portrait.
+- Sin texto en la imagen, sin tipografías, sin marcas de agua.
 
-Devuelve un JSON con:
+Responde ÚNICAMENTE un JSON con:
 {
-  "optimizedScript": "Texto pulido listo para la voz en off..."
+  "avatarPrompt": "Professional studio headshot portrait of...",
+  "suggestedName": "Nombre adecuado",
+  "suggestedVoice": "Kore"
+}
+`;
+
+      let avatarPrompt = `Professional studio headshot portrait of ${prompt}, looking directly at camera, 8k, studio lighting, clean background, no text`;
+      let suggestedName = name || "Locutor IA";
+      let suggestedVoice = "Kore";
+
+      try {
+        const geminiRes = await executeWithFallback((ai, modelName) =>
+          ai.models.generateContent({
+            model: modelName,
+            contents: promptOptimizer,
+            config: {
+              responseMimeType: "application/json",
+              temperature: 0.7,
+            },
+          })
+        );
+        const parsed = JSON.parse(geminiRes.text || "{}");
+        if (parsed.avatarPrompt) avatarPrompt = parsed.avatarPrompt;
+        if (parsed.suggestedName) suggestedName = parsed.suggestedName;
+        if (parsed.suggestedVoice) suggestedVoice = parsed.suggestedVoice;
+      } catch (promptErr) {
+        console.warn("Error optimizing avatar prompt with Gemini, using fallback:", promptErr);
+      }
+
+      // 2. Try Imagen 3 generation with GoogleGenAI SDK
+      let generatedImageUrl = "";
+      const ai = getAI();
+      try {
+        const imgRes = await ai.models.generateImages({
+          model: "imagen-3.0-generate-002",
+          prompt: avatarPrompt,
+          config: {
+            numberOfImages: 1,
+            aspectRatio: "1:1",
+            outputMimeType: "image/jpeg",
+          },
+        });
+
+        if (imgRes?.generatedImages?.[0]?.image?.imageBytes) {
+          generatedImageUrl = `data:image/jpeg;base64,${imgRes.generatedImages[0].image.imageBytes}`;
+        }
+      } catch (imgErr: any) {
+        console.warn("Imagen generation not available or quota limit, using curated fallback:", imgErr?.message || imgErr);
+      }
+
+      // Fallback high-resolution studio portraits if Imagen is unavailable
+      if (!generatedImageUrl) {
+        const fallbackPool = [
+          "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=600&auto=format&fit=crop&crop=face",
+          "https://images.unsplash.com/photo-1560250097-0b93528c311a?q=80&w=600&auto=format&fit=crop&crop=face",
+          "https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=600&auto=format&fit=crop&crop=face",
+          "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?q=80&w=600&auto=format&fit=crop&crop=face",
+          "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=600&auto=format&fit=crop&crop=face",
+          "https://images.unsplash.com/photo-1580489944761-15a19d654956?q=80&w=600&auto=format&fit=crop&crop=face"
+        ];
+        const hash = Math.abs(prompt.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0));
+        generatedImageUrl = fallbackPool[hash % fallbackPool.length];
+      }
+
+      res.json({
+        success: true,
+        imageUrl: generatedImageUrl,
+        name: suggestedName,
+        role: role,
+        suggestedVoice: suggestedVoice,
+        promptUsed: avatarPrompt,
+      });
+    } catch (err: any) {
+      console.error("Error generating AI avatar:", err);
+      res.status(500).json({ error: err.message || "Error al generar avatar con IA" });
+    }
+  });
+
+  // Generate HeyGen-style Presenter Spoken Script with Gemini (Supports Português, Español, English)
+  app.post("/api/generate-avatar-script", async (req, res) => {
+    try {
+      const { slides = [], presenterName = "Elena", presenterRole = "Presentadora", tone = "dinámico y persuasivo", language = "es" } = req.body;
+      
+      const slidesContext = slides.map((s: any, idx: number) => {
+        return `Escena ${idx + 1}: Título "${s.title || ''}", Subtítulo "${s.subtitle || ''}", Contenido "${(s.bullets || []).join('; ')}", CTA "${s.ctaText || ''}"`;
+      }).join("\n");
+
+      const norm = (language || "").toLowerCase();
+      const isExplicitPt = norm.startsWith("pt") || norm.includes("portugu");
+      const isExplicitEn = norm.startsWith("en") || norm.includes("ingl") || norm.includes("engl");
+
+      const ptRegex = /\b(você|voces|vocês|não|está|estão|são|para|com|trabalho|serviço|servicos|clientes|negócio|negocio|estratégia|estrategia|então|entao|também|tambem|mais|como|fazer|conteúdo|conteudo|atenção|atencao|porque|por que|isso|este|esta|muito|muita|neste|nesta|pode|podem|sua|seu|seus|suas|nosso|nossa|ações|acoes|solução|solucao|aprenda|clique|arraste|salve|comente|seja|olá|ola|aqui|temos|quando|onde|qual|tudo|agora)\b|[ãõçê]/gi;
+      const esRegex = /\b(usted|ustedes|estás|tienes|hacer|nuestro|nuestra|servicio|trabajo|solución|atención|guarda|desliza|comenta|también|pero|por qué|porque|para|con|este|esta|aquí|hola)\b|[¿¡ñáíúó]/gi;
+
+      const ptMatches = (slidesContext.match(ptRegex) || []).length;
+      const esMatches = (slidesContext.match(esRegex) || []).length;
+
+      const isPortuguese = isExplicitPt || (ptMatches > 0 && ptMatches >= esMatches);
+      const isEnglish = isExplicitEn && !isPortuguese;
+      const targetLangName = isPortuguese ? "Português (Brasil)" : isEnglish ? "English" : "Español";
+      const targetLangCode = isPortuguese ? "pt-BR" : isEnglish ? "en-US" : "es-ES";
+
+      const prompt = `
+Actúas como un Guionista de Videos de Presentador IA (estilo HeyGen / Synthesia / TikTok Reels).
+Debes redactar la locución que hablará el avatar ${presenterName} (${presenterRole}) para acompañar el siguiente carrusel o video:
+
+Diapositivas:
+${slidesContext || 'Tema: Estrategia de crecimiento, marketing y conversión digital.'}
+
+🎯 IDIOMA OBLIGATORIO: ${targetLangName} (${targetLangCode})
+${isPortuguese ? `
+⚠️ REGLA ABSOLUTA DE IDIOMA:
+O roteiro gerado DEVE ser 100% em PORTUGUÊS (pt-BR / Português).
+JAMAIS escreva ou traduza para Espanhol. Todas as falas do apresentador devem soar autênticas e naturais em Português.
+` : isEnglish ? `
+⚠️ CRITICAL LANGUAGE RULE:
+The script MUST be generated strictly in English. Do NOT use Spanish or Portuguese.
+` : `
+⚠️ REGLA DE IDIOMA:
+El guión debe ser redactado estrictamente en Español fluido y natural.
+`}
+
+Tono de locución: ${tone}
+
+Reglas indispensables:
+1. Habla en primera persona, mirando al espectador, con gancho magnético en los primeros 3 segundos ("hook").
+2. Lenguaje fluido, natural, con frases directas hechas para ser habladas oralmente (evita jerga acartonada).
+3. Conduce la atención del usuario a través de cada punto clave sin leer literalmente el texto de la diapositiva.
+4. Cierre con llamada a la acción clara (comentar, guardar o compartir).
+5. Longitud total ideal: entre 40 y 85 palabras (15 a 30 segundos).
+
+Responde ÚNICAMENTE en formato JSON:
+{
+  "script": "Texto completo listo para que el avatar lo hable con entonación natural...",
+  "perSlideLines": [
+    "Línea o frase clave para la diapositiva 1...",
+    "Línea o frase clave para la diapositiva 2..."
+  ],
+  "estimatedDuration": 22
 }
 `;
 
@@ -1399,10 +1597,15 @@ Devuelve un JSON con:
       );
 
       const parsed = JSON.parse(response.text || "{}");
-      res.json({ success: true, optimizedScript: parsed.optimizedScript || script });
+      res.json({
+        success: true,
+        script: parsed.script || "",
+        perSlideLines: parsed.perSlideLines || [],
+        estimatedDuration: parsed.estimatedDuration || 20,
+      });
     } catch (err: any) {
-      console.error("Error optimizing voiceover script:", err);
-      res.status(500).json({ error: err.message || "Error al optimizar guión con IA" });
+      console.error("Error generating avatar script:", err);
+      res.status(500).json({ error: err.message || "Error al generar guión para avatar con IA" });
     }
   });
 

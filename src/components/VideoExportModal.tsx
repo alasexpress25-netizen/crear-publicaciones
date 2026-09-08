@@ -15,7 +15,7 @@ import {
   Play,
   RotateCcw
 } from 'lucide-react';
-import { Slide, BrandInfo, AspectRatio, VideoAudioTrack, SubtitleItem, VoiceoverTrack } from '../types';
+import { Slide, BrandInfo, AspectRatio, VideoAudioTrack, SubtitleItem, VoiceoverTrack, VoiceoverAvatar } from '../types';
 import { renderCarouselToVideo, RenderResult, RenderProgress } from '../utils/videoRenderer';
 import { CanvasSlide } from './CanvasSlide';
 import confetti from 'canvas-confetti';
@@ -30,6 +30,7 @@ interface VideoExportModalProps {
   subtitles?: SubtitleItem[];
   voiceoverTrack?: VoiceoverTrack | null;
   extraAudioTracks?: VideoAudioTrack[];
+  voiceoverAvatar?: VoiceoverAvatar | null;
 }
 
 export const VideoExportModal: React.FC<VideoExportModalProps> = ({
@@ -42,6 +43,7 @@ export const VideoExportModal: React.FC<VideoExportModalProps> = ({
   subtitles,
   voiceoverTrack,
   extraAudioTracks,
+  voiceoverAvatar,
 }) => {
   const [aspect, setAspect] = useState<AspectRatio>(currentAspectRatio);
   const [quality, setQuality] = useState<'720p' | '1080p' | '4k'>('1080p');
@@ -78,6 +80,7 @@ export const VideoExportModal: React.FC<VideoExportModalProps> = ({
           subtitles,
           voiceoverTrack,
           extraAudioTracks,
+          voiceoverAvatar,
           onProgress: (p) => setProgress(p),
           shouldCancel: () => cancelRef.current,
         },
@@ -249,6 +252,15 @@ export const VideoExportModal: React.FC<VideoExportModalProps> = ({
                   {audioTrack ? audioTrack.name : 'Silenciado / Sin música'}
                 </span>
               </div>
+              {voiceoverAvatar?.enabled && (
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-slate-400">Avatar IA (HeyGen):</span>
+                  <span className="font-bold text-rose-400 flex items-center gap-1">
+                    <Sparkles className="w-3 h-3 text-rose-400" />
+                    {voiceoverAvatar.name} ({voiceoverAvatar.role || 'Presentador'})
+                  </span>
+                </div>
+              )}
               <div className="flex items-center justify-between text-[11px]">
                 <span className="text-slate-400">Efectos aplicados:</span>
                 <span className="text-slate-300 font-bold">Ken Burns, Transiciones cruzadas & Fade</span>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Slide, BrandInfo, AspectRatio, TransitionType, SceneMotionEffect, SubtitleItem } from '../types';
+import { Slide, BrandInfo, AspectRatio, TransitionType, SceneMotionEffect, SubtitleItem, VoiceoverAvatar } from '../types';
 import { CanvasSlide } from '../components/CanvasSlide';
 
 export interface TransitionState {
@@ -326,6 +326,9 @@ interface VideoPreviewPlayerProps {
   aspectRatio: AspectRatio;
   currentTime: number;
   subtitles?: SubtitleItem[];
+  voiceoverAvatar?: VoiceoverAvatar | null;
+  isVoiceoverActive?: boolean;
+  onOpenAvatarModal?: () => void;
 }
 
 /**
@@ -338,6 +341,9 @@ export const VideoPreviewPlayer: React.FC<VideoPreviewPlayerProps> = ({
   aspectRatio,
   currentTime,
   subtitles,
+  voiceoverAvatar = null,
+  isVoiceoverActive = false,
+  onOpenAvatarModal,
 }) => {
   const transState = getActiveTransitionState(slides, currentTime);
   const activeSubtitle = subtitles?.find(
@@ -372,6 +378,9 @@ export const VideoPreviewPlayer: React.FC<VideoPreviewPlayerProps> = ({
             onSelectElement={() => {}}
             allSlides={slides}
             slideIndex={transState.slideIndexA}
+            voiceoverAvatar={voiceoverAvatar}
+            isVoiceoverActive={isVoiceoverActive}
+            onOpenAvatarModal={onOpenAvatarModal}
           />
         </div>
 
@@ -391,6 +400,9 @@ export const VideoPreviewPlayer: React.FC<VideoPreviewPlayerProps> = ({
             onSelectElement={() => {}}
             allSlides={slides}
             slideIndex={transState.slideIndexB}
+            voiceoverAvatar={voiceoverAvatar}
+            isVoiceoverActive={isVoiceoverActive}
+            onOpenAvatarModal={onOpenAvatarModal}
           />
         </div>
 
@@ -420,6 +432,9 @@ export const VideoPreviewPlayer: React.FC<VideoPreviewPlayerProps> = ({
           onSelectElement={() => {}}
           allSlides={slides}
           slideIndex={transState.slideIndexA}
+          voiceoverAvatar={voiceoverAvatar}
+          isVoiceoverActive={isVoiceoverActive}
+          onOpenAvatarModal={onOpenAvatarModal}
         />
       </div>
     </div>
