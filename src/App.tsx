@@ -18,19 +18,15 @@ import {
   VideoAudioTrack,
   SubtitleItem,
   VoiceoverTrack,
-  AudioChannelLane,
-  VoiceoverAvatar
+  AudioChannelLane
 } from './types';
 import {
   INITIAL_DEFAULT_SLIDES,
   DEFAULT_MARKETING_DOCUMENTS
 } from './data/marketingPlaybooks';
 import { applyLayoutTemplateToSlide, getTemplateLocalization } from './data/templateLocalizations';
-import { AgencyClient, getFallbackAgencyClients, getCurrentSession, onAuthStateChange, signOut } from './services/supabase';
-import type { Session } from '@supabase/supabase-js';
-import { LoginScreen } from './components/LoginScreen';
+import { AgencyClient, getFallbackAgencyClients } from './services/supabase';
 import { findLogoForClient } from './services/clientLogosStorage';
-import { DEFAULT_VOICEOVER_AVATAR } from './data/avatarPresets';
 import {
   getClientLanguage,
   saveClientLanguage,
@@ -61,7 +57,6 @@ import { SlideAiRewriteModal } from './components/SlideAiRewriteModal';
 import { FloatingMediaModal } from './components/FloatingMediaModal';
 import { VideoExportModal } from './components/VideoExportModal';
 import { VideoStudioView } from './components/VideoStudioView';
-import { VoiceoverAvatarModal } from './components/VoiceoverAvatarModal';
 import { previewAudio } from './utils/previewAudioEngine';
 import { getActiveTransitionState, VideoPreviewPlayer } from './utils/transitionEngine';
 
@@ -77,21 +72,6 @@ const SESSION_ACTIVE_KEY = 'lavisualmk_session_active_v1';
 export default function App() {
   // Determine if this is a fresh application open (session start) vs page refresh
   const isExistingSession = typeof window !== 'undefined' && Boolean(sessionStorage.getItem(SESSION_ACTIVE_KEY));
-
-  // Supabase Auth State — required so RLS policies on socialbot_clients (auth.uid()-based) can match rows
-  const [authSession, setAuthSession] = useState<Session | null>(null);
-  const [authChecked, setAuthChecked] = useState(false);
-
-  useEffect(() => {
-    let unsubscribe = () => {};
-    (async () => {
-      const session = await getCurrentSession();
-      setAuthSession(session);
-      setAuthChecked(true);
-      unsubscribe = onAuthStateChange((s) => setAuthSession(s));
-    })();
-    return () => unsubscribe();
-  }, []);
 
   // Agency Client State (Supabase connected)
   const [selectedClient, setSelectedClient] = useState<AgencyClient | null>(() => {
@@ -199,25 +179,6 @@ export default function App() {
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isSlideRewriteOpen, setIsSlideRewriteOpen] = useState(false);
   const [isMediaPopupOpen, setIsMediaPopupOpen] = useState(false);
-  const [isVoiceoverAvatarModalOpen, setIsVoiceoverAvatarModalOpen] = useState(false);
-  const [voiceoverAvatar, setVoiceoverAvatar] = useState<VoiceoverAvatar | null>(() => {
-    try {
-      const saved = localStorage.getItem('lavisualmk_carousel_avatar_v1');
-      if (saved) return JSON.parse(saved);
-    } catch {}
-    return DEFAULT_VOICEOVER_AVATAR;
-  });
-
-  const handleSaveAvatar = (newAvatar: VoiceoverAvatar | null) => {
-    setVoiceoverAvatar(newAvatar);
-    try {
-      if (newAvatar) {
-        localStorage.setItem('lavisualmk_carousel_avatar_v1', JSON.stringify(newAvatar));
-      } else {
-        localStorage.removeItem('lavisualmk_carousel_avatar_v1');
-      }
-    } catch {}
-  };
 
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(() => {
     if (isExistingSession) {
@@ -1827,18 +1788,6 @@ export default function App() {
     });
   };
 
-  if (!authChecked) {
-    return (
-      <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#0b0f1a] text-white/60 text-sm">
-        Cargando...
-      </div>
-    );
-  }
-
-  if (!authSession) {
-    return <LoginScreen onSuccess={setAuthSession} />;
-  }
-
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-rose-600 selection:text-white">
       
@@ -1860,9 +1809,6 @@ export default function App() {
         onOpenClientSelector={() => setIsClientSelectorOpen(true)}
         onNewProject={handleCreateNewBlankProject}
         onResetCarousel={handleCreateNewBlankProject}
-        onOpenAvatarModal={() => setIsVoiceoverAvatarModalOpen(true)}
-        voiceoverAvatar={voiceoverAvatar}
-        onLogout={async () => { await signOut(); setAuthSession(null); }}
       />
 
       {/* Main Workspace Area */}
@@ -1932,8 +1878,6 @@ export default function App() {
               if (typeof idx === 'number') setCurrentIndex(idx);
               setMobileTab('canvas');
             }}
-            voiceoverAvatar={voiceoverAvatar}
-            onOpenAvatarModal={() => setIsVoiceoverAvatarModalOpen(true)}
             onOpenExportVideo={() => setIsVideoExportOpen(true)}
             language={language}
           />
@@ -2147,9 +2091,6 @@ export default function App() {
                             aspectRatio={aspectRatio}
                             currentTime={timelineCurrentTime}
                             subtitles={subtitles}
-                            voiceoverAvatar={voiceoverAvatar}
-                            isVoiceoverActive={isTimelinePlaying && Boolean(voiceoverTrack)}
-                            onOpenAvatarModal={() => setIsVoiceoverAvatarModalOpen(true)}
                           />
                         </div>
                       ) : (
@@ -2182,9 +2123,6 @@ export default function App() {
                             previewAnimationTime={animPreview?.time}
                             allSlides={slides}
                             slideIndex={currentIndex}
-                            voiceoverAvatar={voiceoverAvatar}
-                            isVoiceoverActive={isTimelinePlaying && Boolean(voiceoverTrack)}
-                            onOpenAvatarModal={() => setIsVoiceoverAvatarModalOpen(true)}
                           />
                         </div>
                       )}
@@ -2372,25 +2310,6 @@ export default function App() {
         subtitles={subtitles}
         voiceoverTrack={voiceoverTrack}
         extraAudioTracks={allExtraAudioTracks}
-        voiceoverAvatar={voiceoverAvatar}
-      />
-
-      <VoiceoverAvatarModal
-        isOpen={isVoiceoverAvatarModalOpen}
-        onClose={() => setIsVoiceoverAvatarModalOpen(false)}
-        currentAvatar={voiceoverAvatar}
-        slides={slides}
-        language={language}
-        onSaveAvatar={handleSaveAvatar}
-        onApplyVoiceoverTrack={(track) => {
-          setVoiceoverTrack({
-            audioUrl: track.audioUrl,
-            name: track.name,
-            duration: track.duration,
-            script: track.script,
-            volume: 1,
-          });
-        }}
       />
 
     </div>

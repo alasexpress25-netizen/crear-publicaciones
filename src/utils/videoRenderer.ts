@@ -1,4 +1,4 @@
-import { Slide, BrandInfo, AspectRatio, TransitionType, SceneMotionEffect, VideoAudioTrack, SubtitleItem, VoiceoverTrack, VoiceoverAvatar } from '../types';
+import { Slide, BrandInfo, AspectRatio, TransitionType, SceneMotionEffect, VideoAudioTrack, SubtitleItem, VoiceoverTrack } from '../types';
 import { renderSlideToCanvas } from './exportUtils';
 import { generateProceduralAudioBuffer, generateProceduralSFXBuffer } from './audioLibrary';
 import { toBlob } from 'html-to-image';
@@ -20,7 +20,6 @@ export interface RenderOptions {
   subtitles?: SubtitleItem[];
   voiceoverTrack?: VoiceoverTrack | null;
   extraAudioTracks?: VideoAudioTrack[];
-  voiceoverAvatar?: VoiceoverAvatar | null;
   onProgress?: (p: RenderProgress) => void;
   shouldCancel?: () => boolean;
 }
@@ -68,8 +67,12 @@ export async function prepareSlideBitmap(
       let dataUrl = '';
       if (domElement) {
         try {
+          const dims = getVideoDimensions(aspectRatio, '1080p');
+          const elemW = domElement.clientWidth || 432;
+          const pixelRatio = Math.max(2, Math.min(3, dims.width / elemW));
+
           const blob = await toBlob(domElement, {
-            pixelRatio: 2,
+            pixelRatio,
             cacheBust: true,
             skipFonts: true,
             filter: (node) => {
@@ -174,8 +177,12 @@ export async function prepareSlideAssets(
   // 2. Capture transparent overlay of text, cards, and UI elements (excluding video and base background)
   if (isVideo && domElement) {
     try {
+      const dims = getVideoDimensions(aspectRatio, '1080p');
+      const elemW = domElement.clientWidth || 432;
+      const pixelRatio = Math.max(2, Math.min(3, dims.width / elemW));
+
       const overlayBlob = await toBlob(domElement, {
-        pixelRatio: 2,
+        pixelRatio,
         cacheBust: true,
         skipFonts: true,
         filter: (node) => {
@@ -233,13 +240,13 @@ export function calculateTimelineInfo(slides: Slide[]) {
   const defaultTransitionDuration = 0.6;
 
   let totalTime = 0;
-  const slideTimings = slides.map((s) => {
+  const slideTimings = slides.map((s, idx) => {
     const rawDur = s.duration || defaultSlideDuration;
     const speed = s.speed || 1;
     const duration = Math.max(1, rawDur / speed);
     const transType = s.transition || 'crossfade';
-    const transDur = transType !== 'none'
-      ? Math.min(duration * 0.4, s.transitionDuration || defaultTransitionDuration)
+    const transDur = idx < slides.length - 1 && transType !== 'none'
+      ? Math.min(1.0, duration * 0.35, s.transitionDuration || defaultTransitionDuration)
       : 0;
 
     const startTime = totalTime;
@@ -254,7 +261,18 @@ export function calculateTimelineInfo(slides: Slide[]) {
       endTime,
       transition: transType,
       effect: s.effect || 'ken_burns_zoom_in',
+      visibleStart: startTime,
+      visibleEnd: endTime,
+      totalVisibleDur: duration,
     };
+  });
+
+  slideTimings.forEach((t, idx) => {
+    const prev = idx > 0 ? slideTimings[idx - 1] : null;
+    const transInDur = prev && prev.transDur > 0 ? prev.transDur : 0;
+    t.visibleStart = t.startTime - transInDur;
+    t.visibleEnd = t.endTime;
+    t.totalVisibleDur = Math.max(0.1, t.visibleEnd - t.visibleStart);
   });
 
   return { totalTime, slideTimings };
@@ -337,234 +355,6 @@ function drawSubtitleOnCanvas(
 }
 
 /**
- * Draws the HeyGen-style AI voiceover avatar onto the export canvas
- */
-function drawAvatarOnCanvas(
-  ctx: CanvasRenderingContext2D,
-  avatar: VoiceoverAvatar,
-  avatarImg: HTMLImageElement,
-  cw: number,
-  ch: number,
-  isSpeaking: boolean,
-  currentTime: number
-) {
-  ctx.save();
-  // Scale size based on canvas width (normalized around 1080p)
-  const baseSize = (avatar.size || 96) * (cw / 1080) * 1.5;
-  const padding = cw * 0.04;
-
-  let x = cw - baseSize - padding;
-  let y = ch - baseSize - padding;
-  const pos = avatar.position || 'bottom_right';
-
-  if (pos === 'bottom_left') {
-    x = padding;
-    y = ch - baseSize - padding;
-  } else if (pos === 'bottom_center') {
-    x = (cw - baseSize) / 2;
-    y = ch - baseSize - padding;
-  } else if (pos === 'center_right') {
-    x = cw - baseSize - padding;
-    y = (ch - baseSize) / 2;
-  } else if (pos === 'center_left') {
-    x = padding;
-    y = (ch - baseSize) / 2;
-  } else if (pos === 'top_right') {
-    x = cw - baseSize - padding;
-    y = padding;
-  } else if (pos === 'top_left') {
-    x = padding;
-    y = padding;
-  } else if (pos === 'fullscreen_host') {
-    x = (cw - baseSize * 1.5) / 2;
-    y = (ch - baseSize * 1.5) / 2;
-  }
-
-  const cx = x + baseSize / 2;
-  const cy = y + baseSize / 2;
-  const radius = baseSize / 2;
-  const glowColor = avatar.borderGlowColor || '#e11d48';
-
-  // Micro-motion: natural breathing, head sway and jaw movement
-  let offsetY = 0;
-  if (avatar.enableHeadMotion !== false) {
-    offsetY = Math.sin(currentTime * 2.5) * (baseSize * 0.012) + Math.sin(currentTime * 1.2) * (baseSize * 0.008);
-  }
-
-  // Draw Voice Glow Halo & Backlight Diffusion if speaking
-  if (isSpeaking) {
-    const pulse = (Math.sin(currentTime * 7) + 1) / 2;
-    // Outer atmospheric glow
-    ctx.beginPath();
-    ctx.arc(cx, cy + offsetY, radius + 12 + pulse * 8, 0, Math.PI * 2);
-    ctx.fillStyle = glowColor + '20';
-    ctx.fill();
-
-    // Sharp voice aura ring
-    ctx.beginPath();
-    ctx.arc(cx, cy + offsetY, radius + 4 + pulse * 4, 0, Math.PI * 2);
-    ctx.fillStyle = glowColor + '40';
-    ctx.fill();
-  }
-
-  // Clip shape (circle or squircle)
-  ctx.save();
-  ctx.beginPath();
-  if (avatar.shape === 'rounded' && typeof (ctx as any).roundRect === 'function') {
-    (ctx as any).roundRect(x, y + offsetY, baseSize, baseSize, baseSize * 0.22);
-  } else {
-    ctx.arc(cx, cy + offsetY, radius, 0, Math.PI * 2);
-  }
-  ctx.clip();
-
-  // Draw Avatar Face Image
-  ctx.drawImage(avatarImg, x, y + offsetY, baseSize, baseSize);
-
-  // Studio Vignette & Depth
-  const vignetteGrad = ctx.createRadialGradient(cx, cy + offsetY, radius * 0.4, cx, cy + offsetY, radius);
-  vignetteGrad.addColorStop(0, 'rgba(0,0,0,0)');
-  vignetteGrad.addColorStop(1, 'rgba(0,0,0,0.35)');
-  ctx.fillStyle = vignetteGrad;
-  ctx.fillRect(x, y + offsetY, baseSize, baseSize);
-
-  // If lip sync and speaking, draw realistic anatomical mouth & dental aperture
-  if (isSpeaking && avatar.enableLipSync !== false) {
-    const mouthYPercent = avatar.mouthPositionPercent ?? 68;
-    const mouthXOffsetPercent = avatar.mouthOffsetXPercent ?? 0;
-    const mouthScale = avatar.mouthScale ?? 1.0;
-    const mouthSpeed = Math.max(0.2, avatar.mouthSpeed ?? 1.0);
-
-    const mouthY = (y + offsetY) + baseSize * (mouthYPercent / 100);
-    const mouthX = cx + baseSize * (mouthXOffsetPercent / 100);
-
-    // Multi-stage phoneme simulation based on speech harmonics and user speed
-    const phonemeHarmonic = Math.abs(Math.sin(currentTime * 11 * mouthSpeed) * 0.6 + Math.sin(currentTime * 17 * mouthSpeed) * 0.4);
-    const mouthW = baseSize * (0.22 + phonemeHarmonic * 0.04) * mouthScale;
-    const mouthH = baseSize * (0.025 + phonemeHarmonic * 0.09) * mouthScale;
-
-    ctx.save();
-    // 1. Oral cavity deep background
-    ctx.beginPath();
-    ctx.ellipse(mouthX, mouthY, mouthW / 2, mouthH / 2, 0, 0, Math.PI * 2);
-    const cavityGrad = ctx.createRadialGradient(mouthX, mouthY - mouthH * 0.2, 1, mouthX, mouthY, mouthW / 2);
-    cavityGrad.addColorStop(0, '#0f0204');
-    cavityGrad.addColorStop(0.65, '#22060b');
-    cavityGrad.addColorStop(1, '#3b0d16');
-    ctx.fillStyle = cavityGrad;
-    ctx.fill();
-
-    // 2. Upper dental row highlight when mouth opens wide enough
-    if (mouthH > baseSize * 0.04 * mouthScale) {
-      ctx.beginPath();
-      const teethW = mouthW * 0.72;
-      const teethH = mouthH * 0.38;
-      ctx.ellipse(mouthX, mouthY - mouthH * 0.22, teethW / 2, teethH / 2, 0, 0, Math.PI);
-      ctx.fillStyle = 'rgba(246, 244, 238, 0.94)';
-      ctx.fill();
-
-      // Upper lip shadow over top teeth
-      ctx.beginPath();
-      ctx.ellipse(mouthX, mouthY - mouthH * 0.28, teethW / 2, teethH * 0.4, 0, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(25, 6, 10, 0.75)';
-      ctx.fill();
-    }
-
-    // 3. Lower lip fleshy highlight
-    ctx.beginPath();
-    ctx.ellipse(mouthX, mouthY + mouthH * 0.42, mouthW * 0.45, mouthH * 0.28, 0, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(215, 75, 95, 0.45)';
-    ctx.fill();
-
-    ctx.restore();
-  }
-
-  // Realistic natural eye blinks during speech
-  if (avatar.enableBlinking !== false) {
-    const blinkInterval = Math.max(1.0, avatar.blinkInterval ?? 4.2);
-    const blinkSpeed = Math.max(0.3, avatar.blinkSpeed ?? 1.0);
-    const cycleDuration = blinkInterval / blinkSpeed;
-    const blinkDuration = 0.15 / blinkSpeed;
-    const blinkCycle = currentTime % cycleDuration;
-    if (blinkCycle > (cycleDuration - blinkDuration)) {
-      // Natural blink frame
-      const eyesYPercent = avatar.eyesPositionPercent ?? ((avatar.mouthPositionPercent ?? 68) - 27);
-      const eyesXOffsetPercent = avatar.eyesOffsetXPercent ?? 0;
-      const eyesSpacingPercent = avatar.eyesSpacingPercent ?? 16;
-      const eyesScale = avatar.eyesScale ?? 1.0;
-
-      const eyeY = (y + offsetY) + baseSize * (eyesYPercent / 100);
-      const eyeSpacing = baseSize * (eyesSpacingPercent / 100);
-      const eyeXCenter = cx + baseSize * (eyesXOffsetPercent / 100);
-      const eyeW = baseSize * 0.11 * eyesScale;
-      const eyeH = baseSize * 0.024 * eyesScale;
-
-      ctx.save();
-      // Left eye closed lid
-      ctx.beginPath();
-      ctx.ellipse(eyeXCenter - eyeSpacing, eyeY, eyeW / 2, eyeH / 2, 0, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(24, 14, 12, 0.9)';
-      ctx.fill();
-
-      // Right eye closed lid
-      ctx.beginPath();
-      ctx.ellipse(eyeXCenter + eyeSpacing, eyeY, eyeW / 2, eyeH / 2, 0, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(24, 14, 12, 0.9)';
-      ctx.fill();
-      ctx.restore();
-    }
-  }
-
-  ctx.restore();
-
-  // Draw studio bevel border ring
-  ctx.beginPath();
-  if (avatar.shape === 'rounded' && typeof (ctx as any).roundRect === 'function') {
-    (ctx as any).roundRect(x, y + offsetY, baseSize, baseSize, baseSize * 0.22);
-  } else {
-    ctx.arc(cx, cy + offsetY, radius, 0, Math.PI * 2);
-  }
-  ctx.lineWidth = Math.max(3, Math.round(baseSize * 0.032));
-  ctx.strokeStyle = isSpeaking ? glowColor : 'rgba(255, 255, 255, 0.35)';
-  ctx.stroke();
-
-  // Draw Name & Role Badge if enabled
-  if (avatar.showNameTag !== false && avatar.name) {
-    ctx.save();
-    const tagW = baseSize * 1.15;
-    const tagH = baseSize * 0.26;
-    const tagX = cx - tagW / 2;
-    const tagY = y + offsetY + baseSize - tagH * 0.55;
-
-    ctx.fillStyle = 'rgba(2, 6, 23, 0.9)';
-    ctx.beginPath();
-    if (typeof (ctx as any).roundRect === 'function') {
-      (ctx as any).roundRect(tagX, tagY, tagW, tagH, tagH * 0.4);
-    } else {
-      ctx.rect(tagX, tagY, tagW, tagH);
-    }
-    ctx.fill();
-    ctx.strokeStyle = glowColor;
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#ffffff';
-    ctx.font = `bold ${Math.round(tagH * 0.44)}px sans-serif`;
-    ctx.fillText(avatar.name, cx, tagY + tagH * 0.38);
-
-    if (avatar.role) {
-      ctx.fillStyle = glowColor;
-      ctx.font = `600 ${Math.round(tagH * 0.3)}px sans-serif`;
-      ctx.fillText(avatar.role, cx, tagY + tagH * 0.74);
-    }
-    ctx.restore();
-  }
-
-  ctx.restore();
-}
-
-/**
  * Render complete video with transitions, motion effects, and audio
  */
 export async function renderCarouselToVideo(
@@ -604,22 +394,6 @@ export async function renderCarouselToVideo(
     });
     const assets = await prepareSlideAssets(s, brand, options.aspectRatio, dom);
     slideAssets.push(assets);
-  }
-
-  // 1b. Preload HeyGen Voiceover Avatar image if configured
-  let avatarImage: HTMLImageElement | null = null;
-  if (options.voiceoverAvatar?.enabled && options.voiceoverAvatar.imageUrl) {
-    try {
-      avatarImage = new Image();
-      avatarImage.crossOrigin = 'anonymous';
-      await new Promise<void>((resolve) => {
-        avatarImage!.onload = () => resolve();
-        avatarImage!.onerror = () => resolve();
-        avatarImage!.src = options.voiceoverAvatar!.imageUrl;
-      });
-    } catch (avErr) {
-      console.warn('Avatar image preload warning:', avErr);
-    }
   }
 
   // 2. Setup offline rendering canvas
@@ -945,42 +719,65 @@ export async function renderCarouselToVideo(
     const cw = canvas.width;
     const ch = canvas.height;
 
+    // Helper to draw an image covering the canvas while preserving exact proportions without stretching
+    const drawCoverFit = (img: HTMLImageElement | HTMLCanvasElement, targetW: number, targetH: number) => {
+      const iw = img.width || targetW;
+      const ih = img.height || targetH;
+      const iRatio = iw / ih;
+      const tRatio = targetW / targetH;
+      let dw = targetW;
+      let dh = targetH;
+      if (Math.abs(iRatio - tRatio) > 0.01) {
+        if (iRatio > tRatio) {
+          dh = targetH;
+          dw = dh * iRatio;
+        } else {
+          dw = targetW;
+          dh = dw / iRatio;
+        }
+      }
+      ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+    };
+
     let scale = 1.0;
     let translateX = 0;
     let translateY = 0;
     let rotation = 0;
 
     if (effect === 'ken_burns_zoom_in') {
-      scale = 1.0 + progress * 0.12; // Zoom in 12%
+      scale = 1.0 + progress * 0.10;
     } else if (effect === 'ken_burns_zoom_out') {
-      scale = 1.12 - progress * 0.12; // Zoom out 12%
+      scale = 1.08 - progress * 0.08;
     } else if (effect === 'pan_left_right') {
-      scale = 1.06;
-      translateX = (progress - 0.5) * (cw * 0.06); // Smooth pan
+      scale = 1.0 + progress * 0.05;
+      translateX = progress * (cw * 0.035);
     } else if (effect === 'pan_right_left') {
-      scale = 1.06;
-      translateX = (0.5 - progress) * (cw * 0.06);
+      scale = 1.0 + progress * 0.05;
+      translateX = -progress * (cw * 0.035);
     } else if (effect === 'cinematic_float') {
-      scale = 1.04;
-      translateY = Math.sin(progress * Math.PI * 2) * (ch * 0.02);
-      rotation = Math.sin(progress * Math.PI) * 0.008;
+      scale = 1.0 + Math.sin(progress * Math.PI) * 0.03;
+      translateY = Math.sin(progress * Math.PI * 2) * (ch * 0.015);
+      rotation = Math.sin(progress * Math.PI * 2) * 0.005;
     } else if (effect === 'pulse') {
-      scale = 1.0 + Math.sin(progress * Math.PI * 6) * 0.025;
+      scale = 1.0 + Math.sin(progress * Math.PI * 4) * 0.02;
     } else if (effect === 'fade_elements') {
       scale = 1.0 + progress * 0.03;
     } else if (effect === 'parallax_drift') {
-      scale = 1.08;
-      translateX = (progress - 0.5) * (cw * 0.04);
-      translateY = (progress - 0.5) * (ch * 0.03);
-      rotation = (progress - 0.5) * 0.015;
+      scale = 1.0 + progress * 0.05;
+      translateX = progress * (cw * 0.025);
+      translateY = progress * (ch * 0.018);
+      rotation = progress * 0.008;
     } else if (effect === 'shaky_cam') {
-      scale = 1.05;
-      translateX = (Math.sin(progress * 48) * 0.6 + Math.cos(progress * 90) * 0.4) * (cw * 0.005);
-      translateY = (Math.cos(progress * 52) * 0.6 + Math.sin(progress * 85) * 0.4) * (ch * 0.005);
+      const env = Math.min(1, progress * 5);
+      scale = 1.0 + env * 0.03;
+      translateX = (Math.sin(progress * 48) * 0.6 + Math.cos(progress * 90) * 0.4) * (cw * 0.004) * env;
+      translateY = (Math.cos(progress * 52) * 0.6 + Math.sin(progress * 85) * 0.4) * (ch * 0.004) * env;
     } else if (effect === 'tilt_perspective') {
-      scale = 1.04;
-      translateY = (progress - 0.5) * (ch * 0.015);
-      rotation = (progress - 0.5) * 0.018;
+      scale = 1.0 + progress * 0.04;
+      translateY = progress * (ch * 0.01);
+      rotation = progress * 0.01;
+    } else if (effect === 'vignette_pulse') {
+      scale = 1.0 + Math.sin(progress * Math.PI * 4) * 0.02;
     }
 
     const hasLiveVideo = assets.isVideo && assets.videoElement && assets.videoLoaded && assets.overlayBitmap;
@@ -1058,7 +855,7 @@ export async function renderCarouselToVideo(
       if (rotation !== 0) ctx.rotate(rotation);
       ctx.scale(scale, scale);
       if (assets.overlayBitmap) {
-        ctx.drawImage(assets.overlayBitmap, -cw / 2, -ch / 2, cw, ch);
+        drawCoverFit(assets.overlayBitmap, cw, ch);
       }
       ctx.restore();
     } else {
@@ -1066,7 +863,7 @@ export async function renderCarouselToVideo(
       ctx.translate(cw / 2 + translateX, ch / 2 + translateY);
       if (rotation !== 0) ctx.rotate(rotation);
       ctx.scale(scale, scale);
-      ctx.drawImage(assets.fullBitmap, -cw / 2, -ch / 2, cw, ch);
+      drawCoverFit(assets.fullBitmap, cw, ch);
     }
 
     // RGB chromatic aberration / glitch pulse
@@ -1119,7 +916,24 @@ export async function renderCarouselToVideo(
     const nextAssets = nextTiming ? slideAssets[activeTimingIndex + 1] : null;
 
     const timeInSlide = currentTime - currentTiming.startTime;
-    const slideProgress = Math.min(1, Math.max(0, timeInSlide / currentTiming.duration));
+    const currentProgress = Math.min(
+      1,
+      Math.max(
+        0,
+        (currentTime - (currentTiming.visibleStart ?? currentTiming.startTime)) /
+          (currentTiming.totalVisibleDur ?? currentTiming.duration)
+      )
+    );
+    const nextProgress = nextTiming
+      ? Math.min(
+          1,
+          Math.max(
+            0,
+            (currentTime - (nextTiming.visibleStart ?? nextTiming.startTime)) /
+              (nextTiming.totalVisibleDur ?? nextTiming.duration)
+          )
+        )
+      : 0;
 
     // Synchronize video background time for current slide
     await syncVideoTime(currentAssets, timeInSlide);
@@ -1132,7 +946,7 @@ export async function renderCarouselToVideo(
 
     if (!isTransitioning || !nextAssets) {
       // Single slide rendering
-      drawSlideLayer(currentAssets, currentTiming.effect, slideProgress, 1);
+      drawSlideLayer(currentAssets, currentTiming.effect, currentProgress, 1);
     } else {
       // Transition compositing
       const transProgress = (timeInSlide - (currentTiming.duration - currentTiming.transDur)) / currentTiming.transDur;
@@ -1144,65 +958,65 @@ export async function renderCarouselToVideo(
       await syncVideoTime(nextAssets, nextTimeInSlide);
 
       if (transitionType === 'crossfade') {
-        drawSlideLayer(currentAssets, currentTiming.effect, slideProgress, 1 - t);
-        drawSlideLayer(nextAssets, nextTiming.effect, t * 0.15, t);
+        drawSlideLayer(currentAssets, currentTiming.effect, currentProgress, 1 - t);
+        drawSlideLayer(nextAssets, nextTiming.effect, nextProgress, t);
       } else if (transitionType === 'fade_black') {
         if (t < 0.5) {
           const fadeOutAlpha = 1 - t * 2;
-          drawSlideLayer(currentAssets, currentTiming.effect, slideProgress, fadeOutAlpha);
+          drawSlideLayer(currentAssets, currentTiming.effect, currentProgress, fadeOutAlpha);
         } else {
           const fadeInAlpha = (t - 0.5) * 2;
-          drawSlideLayer(nextAssets, nextTiming.effect, t * 0.15, fadeInAlpha);
+          drawSlideLayer(nextAssets, nextTiming.effect, nextProgress, fadeInAlpha);
         }
       } else if (transitionType === 'fade_white') {
         if (t < 0.5) {
-          drawSlideLayer(currentAssets, currentTiming.effect, slideProgress, 1);
+          drawSlideLayer(currentAssets, currentTiming.effect, currentProgress, 1);
           ctx.fillStyle = `rgba(255, 255, 255, ${t * 2})`;
           ctx.fillRect(0, 0, canvas.width, canvas.height);
         } else {
-          drawSlideLayer(nextAssets, nextTiming.effect, t * 0.15, 1);
+          drawSlideLayer(nextAssets, nextTiming.effect, nextProgress, 1);
           ctx.fillStyle = `rgba(255, 255, 255, ${(1 - t) * 2})`;
           ctx.fillRect(0, 0, canvas.width, canvas.height);
         }
       } else if (transitionType === 'slide_left') {
         ctx.save();
         ctx.translate(-canvas.width * t, 0);
-        drawSlideLayer(currentAssets, currentTiming.effect, slideProgress, 1);
+        drawSlideLayer(currentAssets, currentTiming.effect, currentProgress, 1);
         ctx.restore();
 
         ctx.save();
         ctx.translate(canvas.width * (1 - t), 0);
-        drawSlideLayer(nextAssets, nextTiming.effect, t * 0.15, 1);
+        drawSlideLayer(nextAssets, nextTiming.effect, nextProgress, 1);
         ctx.restore();
       } else if (transitionType === 'slide_right') {
         ctx.save();
         ctx.translate(canvas.width * t, 0);
-        drawSlideLayer(currentAssets, currentTiming.effect, slideProgress, 1);
+        drawSlideLayer(currentAssets, currentTiming.effect, currentProgress, 1);
         ctx.restore();
 
         ctx.save();
         ctx.translate(-canvas.width * (1 - t), 0);
-        drawSlideLayer(nextAssets, nextTiming.effect, t * 0.15, 1);
+        drawSlideLayer(nextAssets, nextTiming.effect, nextProgress, 1);
         ctx.restore();
       } else if (transitionType === 'slide_up') {
         ctx.save();
         ctx.translate(0, -canvas.height * t);
-        drawSlideLayer(currentAssets, currentTiming.effect, slideProgress, 1);
+        drawSlideLayer(currentAssets, currentTiming.effect, currentProgress, 1);
         ctx.restore();
 
         ctx.save();
         ctx.translate(0, canvas.height * (1 - t));
-        drawSlideLayer(nextAssets, nextTiming.effect, t * 0.15, 1);
+        drawSlideLayer(nextAssets, nextTiming.effect, nextProgress, 1);
         ctx.restore();
       } else if (transitionType === 'slide_down') {
         ctx.save();
         ctx.translate(0, canvas.height * t);
-        drawSlideLayer(currentAssets, currentTiming.effect, slideProgress, 1);
+        drawSlideLayer(currentAssets, currentTiming.effect, currentProgress, 1);
         ctx.restore();
 
         ctx.save();
         ctx.translate(0, -canvas.height * (1 - t));
-        drawSlideLayer(nextAssets, nextTiming.effect, t * 0.15, 1);
+        drawSlideLayer(nextAssets, nextTiming.effect, nextProgress, 1);
         ctx.restore();
       } else if (transitionType === 'zoom_in') {
         ctx.save();
@@ -1210,7 +1024,7 @@ export async function renderCarouselToVideo(
         ctx.translate(canvas.width / 2, canvas.height / 2);
         ctx.scale(scaleOut, scaleOut);
         ctx.translate(-canvas.width / 2, -canvas.height / 2);
-        drawSlideLayer(currentAssets, currentTiming.effect, slideProgress, 1 - t);
+        drawSlideLayer(currentAssets, currentTiming.effect, currentProgress, 1 - t);
         ctx.restore();
 
         ctx.save();
@@ -1218,7 +1032,7 @@ export async function renderCarouselToVideo(
         ctx.translate(canvas.width / 2, canvas.height / 2);
         ctx.scale(scaleIn, scaleIn);
         ctx.translate(-canvas.width / 2, -canvas.height / 2);
-        drawSlideLayer(nextAssets, nextTiming.effect, t * 0.15, t);
+        drawSlideLayer(nextAssets, nextTiming.effect, nextProgress, t);
         ctx.restore();
       } else if (transitionType === 'zoom_out') {
         ctx.save();
@@ -1226,7 +1040,7 @@ export async function renderCarouselToVideo(
         ctx.translate(canvas.width / 2, canvas.height / 2);
         ctx.scale(scaleOut, scaleOut);
         ctx.translate(-canvas.width / 2, -canvas.height / 2);
-        drawSlideLayer(currentAssets, currentTiming.effect, slideProgress, 1 - t);
+        drawSlideLayer(currentAssets, currentTiming.effect, currentProgress, 1 - t);
         ctx.restore();
 
         ctx.save();
@@ -1234,23 +1048,23 @@ export async function renderCarouselToVideo(
         ctx.translate(canvas.width / 2, canvas.height / 2);
         ctx.scale(scaleIn, scaleIn);
         ctx.translate(-canvas.width / 2, -canvas.height / 2);
-        drawSlideLayer(nextAssets, nextTiming.effect, t * 0.15, t);
+        drawSlideLayer(nextAssets, nextTiming.effect, nextProgress, t);
         ctx.restore();
       } else if (transitionType === 'wipe_left') {
-        drawSlideLayer(currentAssets, currentTiming.effect, slideProgress, 1);
+        drawSlideLayer(currentAssets, currentTiming.effect, currentProgress, 1);
         ctx.save();
         ctx.beginPath();
         ctx.rect(0, 0, canvas.width * t, canvas.height);
         ctx.clip();
-        drawSlideLayer(nextAssets, nextTiming.effect, t * 0.15, 1);
+        drawSlideLayer(nextAssets, nextTiming.effect, nextProgress, 1);
         ctx.restore();
       } else if (transitionType === 'wipe_right') {
-        drawSlideLayer(currentAssets, currentTiming.effect, slideProgress, 1);
+        drawSlideLayer(currentAssets, currentTiming.effect, currentProgress, 1);
         ctx.save();
         ctx.beginPath();
         ctx.rect(canvas.width * (1 - t), 0, canvas.width * t, canvas.height);
         ctx.clip();
-        drawSlideLayer(nextAssets, nextTiming.effect, t * 0.15, 1);
+        drawSlideLayer(nextAssets, nextTiming.effect, nextProgress, 1);
         ctx.restore();
       } else if (transitionType === 'spin_zoom') {
         ctx.save();
@@ -1258,7 +1072,7 @@ export async function renderCarouselToVideo(
         ctx.rotate(t * 0.4);
         ctx.scale(1 + t * 0.5, 1 + t * 0.5);
         ctx.translate(-canvas.width / 2, -canvas.height / 2);
-        drawSlideLayer(currentAssets, currentTiming.effect, slideProgress, 1 - t);
+        drawSlideLayer(currentAssets, currentTiming.effect, currentProgress, 1 - t);
         ctx.restore();
 
         ctx.save();
@@ -1266,11 +1080,11 @@ export async function renderCarouselToVideo(
         ctx.rotate((1 - t) * -0.4);
         ctx.scale(0.6 + t * 0.4, 0.6 + t * 0.4);
         ctx.translate(-canvas.width / 2, -canvas.height / 2);
-        drawSlideLayer(nextAssets, nextTiming.effect, t * 0.15, t);
+        drawSlideLayer(nextAssets, nextTiming.effect, nextProgress, t);
         ctx.restore();
       } else if (transitionType === 'light_leak') {
-        drawSlideLayer(currentAssets, currentTiming.effect, slideProgress, 1 - t);
-        drawSlideLayer(nextAssets, nextTiming.effect, t * 0.15, t);
+        drawSlideLayer(currentAssets, currentTiming.effect, currentProgress, 1 - t);
+        drawSlideLayer(nextAssets, nextTiming.effect, nextProgress, t);
         // Golden lens flare flash
         const leakGrad = ctx.createRadialGradient(canvas.width * t, canvas.height * 0.3, 20, canvas.width * t, canvas.height * 0.3, canvas.width * 0.8);
         const flashAlpha = Math.sin(t * Math.PI) * 0.7;
@@ -1281,8 +1095,8 @@ export async function renderCarouselToVideo(
         ctx.fillRect(0, 0, canvas.width, canvas.height);
       } else {
         // Fallback crossfade
-        drawSlideLayer(currentAssets, currentTiming.effect, slideProgress, 1 - t);
-        drawSlideLayer(nextAssets, nextTiming.effect, t * 0.15, t);
+        drawSlideLayer(currentAssets, currentTiming.effect, currentProgress, 1 - t);
+        drawSlideLayer(nextAssets, nextTiming.effect, nextProgress, t);
       }
     }
 
@@ -1293,27 +1107,6 @@ export async function renderCarouselToVideo(
       );
       if (activeSub && activeSub.text) {
         drawSubtitleOnCanvas(ctx, activeSub, canvas.width, canvas.height);
-      }
-    }
-
-    // 6. Draw HeyGen Voiceover Avatar badge if enabled and visible
-    if (options.voiceoverAvatar?.enabled && avatarImage && avatarImage.complete && avatarImage.naturalWidth > 0) {
-      const isHidden = options.voiceoverAvatar.hideOnSlides?.includes(activeTimingIndex);
-      if (!isHidden) {
-        const isSpeaking = Boolean(
-          options.voiceoverTrack &&
-          currentTime >= 0 &&
-          currentTime <= (options.voiceoverTrack.duration || totalTime)
-        );
-        drawAvatarOnCanvas(
-          ctx,
-          options.voiceoverAvatar,
-          avatarImage,
-          canvas.width,
-          canvas.height,
-          isSpeaking,
-          currentTime
-        );
       }
     }
 

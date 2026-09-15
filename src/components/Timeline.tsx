@@ -33,7 +33,7 @@ import {
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
-import { Slide, AspectRatio, TransitionType, SceneMotionEffect, VideoAudioTrack, SubtitleItem, VoiceoverTrack, CustomTextLayer, AudioChannelLane, VoiceoverAvatar } from '../types';
+import { Slide, AspectRatio, TransitionType, SceneMotionEffect, VideoAudioTrack, SubtitleItem, VoiceoverTrack, CustomTextLayer, AudioChannelLane } from '../types';
 import { AUDIO_PRESETS } from '../utils/audioLibrary';
 import { previewAudio } from '../utils/previewAudioEngine';
 import { AddMediaV2Modal } from './timeline/AddMediaV2Modal';
@@ -62,8 +62,6 @@ interface TimelineProps {
   onUpdateSubtitles?: (subtitles: SubtitleItem[]) => void;
   voiceoverTrack?: VoiceoverTrack | null;
   onUpdateVoiceoverTrack?: (track: VoiceoverTrack | null) => void;
-  voiceoverAvatar?: VoiceoverAvatar | null;
-  onOpenAvatarModal?: () => void;
   sfxClips?: VideoAudioTrack[];
   onUpdateSfxClips?: (clips: VideoAudioTrack[]) => void;
   audioChannels?: AudioChannelLane[];
@@ -127,8 +125,6 @@ export const Timeline: React.FC<TimelineProps> = ({
   onUpdateSubtitles,
   voiceoverTrack = null,
   onUpdateVoiceoverTrack,
-  voiceoverAvatar = null,
-  onOpenAvatarModal,
   sfxClips,
   onUpdateSfxClips,
   audioChannels,
@@ -1799,9 +1795,7 @@ export const Timeline: React.FC<TimelineProps> = ({
             voiceoverTrack={voiceoverTrack || null}
             pxPerSec={pxPerSec}
             totalDuration={totalDuration}
-            voiceoverAvatar={voiceoverAvatar}
             onOpenVoiceoverModal={() => setIsTtsModalOpen(true)}
-            onOpenAvatarModal={onOpenAvatarModal}
             onUpdateVoiceoverTrack={(tr) => {
               if (onUpdateVoiceoverTrack) onUpdateVoiceoverTrack(tr);
             }}

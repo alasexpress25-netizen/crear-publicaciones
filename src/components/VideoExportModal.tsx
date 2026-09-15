@@ -15,10 +15,17 @@ import {
   Play,
   RotateCcw
 } from 'lucide-react';
-import { Slide, BrandInfo, AspectRatio, VideoAudioTrack, SubtitleItem, VoiceoverTrack, VoiceoverAvatar } from '../types';
+import { Slide, BrandInfo, AspectRatio, VideoAudioTrack, SubtitleItem, VoiceoverTrack } from '../types';
 import { renderCarouselToVideo, RenderResult, RenderProgress } from '../utils/videoRenderer';
 import { CanvasSlide } from './CanvasSlide';
 import confetti from 'canvas-confetti';
+
+const EXPORT_SLIDE_DIMENSIONS: Record<AspectRatio, { width: number; height: number; cssAspect: string }> = {
+  '4:5': { width: 432, height: 540, cssAspect: '4 / 5' },
+  '1:1': { width: 500, height: 500, cssAspect: '1 / 1' },
+  '9:16': { width: 360, height: 640, cssAspect: '9 / 16' },
+  '16:9': { width: 640, height: 360, cssAspect: '16 / 9' },
+};
 
 interface VideoExportModalProps {
   isOpen: boolean;
@@ -30,7 +37,6 @@ interface VideoExportModalProps {
   subtitles?: SubtitleItem[];
   voiceoverTrack?: VoiceoverTrack | null;
   extraAudioTracks?: VideoAudioTrack[];
-  voiceoverAvatar?: VoiceoverAvatar | null;
 }
 
 export const VideoExportModal: React.FC<VideoExportModalProps> = ({
@@ -43,7 +49,6 @@ export const VideoExportModal: React.FC<VideoExportModalProps> = ({
   subtitles,
   voiceoverTrack,
   extraAudioTracks,
-  voiceoverAvatar,
 }) => {
   const [aspect, setAspect] = useState<AspectRatio>(currentAspectRatio);
   const [quality, setQuality] = useState<'720p' | '1080p' | '4k'>('1080p');
@@ -80,7 +85,6 @@ export const VideoExportModal: React.FC<VideoExportModalProps> = ({
           subtitles,
           voiceoverTrack,
           extraAudioTracks,
-          voiceoverAvatar,
           onProgress: (p) => setProgress(p),
           shouldCancel: () => cancelRef.current,
         },
@@ -122,13 +126,18 @@ export const VideoExportModal: React.FC<VideoExportModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
       {/* Offscreen DOM container for pixel-perfect 1:1 render extraction */}
-      <div className="fixed -left-[9999px] -top-[9999px] pointer-events-none opacity-0 overflow-hidden" aria-hidden="true">
+      <div className="fixed -left-[9999px] -top-[9999px] pointer-events-none opacity-0 overflow-hidden flex flex-col gap-6" aria-hidden="true">
         {slides.map((s) => (
           <div
             key={s.id}
             id={`export-dom-slide-${s.id}`}
             style={{
-              width: aspect === '9:16' ? '370px' : aspect === '16:9' ? '550px' : '450px',
+              width: `${EXPORT_SLIDE_DIMENSIONS[aspect]?.width || 432}px`,
+              height: `${EXPORT_SLIDE_DIMENSIONS[aspect]?.height || 540}px`,
+              aspectRatio: EXPORT_SLIDE_DIMENSIONS[aspect]?.cssAspect || '4 / 5',
+              flexShrink: 0,
+              position: 'relative',
+              overflow: 'hidden',
             }}
           >
             <CanvasSlide
@@ -252,15 +261,6 @@ export const VideoExportModal: React.FC<VideoExportModalProps> = ({
                   {audioTrack ? audioTrack.name : 'Silenciado / Sin música'}
                 </span>
               </div>
-              {voiceoverAvatar?.enabled && (
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-slate-400">Avatar IA (HeyGen):</span>
-                  <span className="font-bold text-rose-400 flex items-center gap-1">
-                    <Sparkles className="w-3 h-3 text-rose-400" />
-                    {voiceoverAvatar.name} ({voiceoverAvatar.role || 'Presentador'})
-                  </span>
-                </div>
-              )}
               <div className="flex items-center justify-between text-[11px]">
                 <span className="text-slate-400">Efectos aplicados:</span>
                 <span className="text-slate-300 font-bold">Ken Burns, Transiciones cruzadas & Fade</span>
@@ -334,13 +334,16 @@ export const VideoExportModal: React.FC<VideoExportModalProps> = ({
             </div>
 
             {/* Video Preview Player */}
-            <div className="bg-slate-950 rounded-2xl overflow-hidden border border-slate-800 shadow-xl max-h-64 flex items-center justify-center">
+            <div className="bg-slate-950 rounded-2xl overflow-hidden border border-slate-800 shadow-xl max-h-72 flex items-center justify-center p-2">
               <video
                 src={result.url}
                 controls
                 autoPlay
                 loop
-                className="max-h-60 max-w-full rounded-xl"
+                className="max-h-64 max-w-full rounded-xl object-contain"
+                style={{
+                  aspectRatio: EXPORT_SLIDE_DIMENSIONS[aspect]?.cssAspect || '4 / 5',
+                }}
               />
             </div>
 

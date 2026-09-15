@@ -1,5 +1,5 @@
 import React from 'react';
-import { Slide, BrandInfo, AspectRatio, TransitionType, SceneMotionEffect, SubtitleItem, VoiceoverAvatar } from '../types';
+import { Slide, BrandInfo, AspectRatio, TransitionType, SceneMotionEffect, SubtitleItem } from '../types';
 import { CanvasSlide } from '../components/CanvasSlide';
 
 export interface TransitionState {
@@ -47,45 +47,68 @@ export function getActiveTransitionState(slides: Slide[], currentTime: number): 
     };
   }
 
+  // Precompute exact slide timings
   let accumulated = 0;
-  for (let i = 0; i < slides.length; i++) {
-    const s = slides[i];
+  const timings = slides.map((s, idx) => {
     const rawDur = s.duration || 3.5;
     const speed = s.speed || 1;
     const dur = Math.max(1, rawDur / speed);
-    const startTime = accumulated;
+    const start = accumulated;
     accumulated += dur;
-    const endTime = accumulated;
+    const end = accumulated;
 
-    // Check if transition to next slide is active
-    if (i < slides.length - 1) {
-      const nextSlide = slides[i + 1];
-      const transType = s.transition || 'crossfade';
-      // Transition duration between 0.5s and 1.0s, max 35% of slide duration
-      const transDur = transType !== 'none'
-        ? Math.min(1.0, dur * 0.35, s.transitionDuration || 0.8)
-        : 0;
+    const transType = s.transition || 'crossfade';
+    const transDur = idx < slides.length - 1 && transType !== 'none'
+      ? Math.min(1.0, dur * 0.35, s.transitionDuration || 0.8)
+      : 0;
 
-      const tStart = endTime - transDur;
-      const tEnd = endTime;
+    return {
+      index: idx,
+      slide: s,
+      dur,
+      start,
+      end,
+      transType,
+      transDur,
+    };
+  });
 
-      if (transDur > 0 && currentTime >= tStart && currentTime < tEnd) {
-        const progress = Math.max(0, Math.min(1, (currentTime - tStart) / transDur));
-        const timeInA = currentTime - startTime;
+  // Calculate seamless visible windows [visibleStart, visibleEnd] for each slide
+  // Slide i becomes visible when the previous slide begins transitioning into it
+  const visibleWindows = timings.map((t, idx) => {
+    const prev = idx > 0 ? timings[idx - 1] : null;
+    const transInDur = prev && prev.transDur > 0 ? prev.transDur : 0;
+    const visibleStart = t.start - transInDur;
+    const visibleEnd = t.end;
+    const totalVisibleDur = Math.max(0.1, visibleEnd - visibleStart);
+    return { visibleStart, visibleEnd, totalVisibleDur };
+  });
+
+  // Check if currentTime is within an active transition between slide i and slide i+1
+  for (let i = 0; i < timings.length - 1; i++) {
+    const t = timings[i];
+    if (t.transDur > 0) {
+      const tStart = t.end - t.transDur;
+      const tEnd = t.end;
+      if (currentTime >= tStart && currentTime < tEnd) {
+        const transProgress = Math.max(0, Math.min(1, (currentTime - tStart) / t.transDur));
+        const winA = visibleWindows[i];
+        const winB = visibleWindows[i + 1];
+        const progA = Math.max(0, Math.min(1, (currentTime - winA.visibleStart) / winA.totalVisibleDur));
+        const progB = Math.max(0, Math.min(1, (currentTime - winB.visibleStart) / winB.totalVisibleDur));
+        const timeInA = currentTime - t.start;
         const timeInB = currentTime - tStart;
-        const progA = Math.min(1, timeInA / dur);
-        const progB = progress * 0.15; // Smooth start of slide B
 
         return {
           isTransitioning: true,
           slideIndexA: i,
           slideIndexB: i + 1,
-          slideA: s,
-          slideB: nextSlide,
-          progress,
-          type: transType as TransitionType,
-          effectA: (s.effect || 'ken_burns_zoom_in') as SceneMotionEffect,
-          effectB: (nextSlide.effect || 'ken_burns_zoom_in') as SceneMotionEffect,
+          slideA: t.slide,
+          slideB: timings[i + 1].slide,
+          progress: transProgress,
+          type: t.transType as TransitionType,
+          effectA: (t.slide.effect || 'ken_burns_zoom_in') as SceneMotionEffect,
+          effectB: (timings[i + 1].slide.effect || 'ken_burns_zoom_in') as SceneMotionEffect,
           progA,
           progB,
           timeInA,
@@ -93,21 +116,26 @@ export function getActiveTransitionState(slides: Slide[], currentTime: number): 
         };
       }
     }
+  }
 
-    // Inside current slide, not in transition
-    if (currentTime >= startTime && currentTime < endTime) {
-      const timeInSlide = currentTime - startTime;
-      const prog = Math.min(1, timeInSlide / dur);
+  // Inside current slide, not in transition
+  for (let i = 0; i < timings.length; i++) {
+    const t = timings[i];
+    if (currentTime >= t.start && currentTime < t.end) {
+      const win = visibleWindows[i];
+      const prog = Math.max(0, Math.min(1, (currentTime - win.visibleStart) / win.totalVisibleDur));
+      const timeInSlide = currentTime - t.start;
+
       return {
         isTransitioning: false,
         slideIndexA: i,
         slideIndexB: i,
-        slideA: s,
-        slideB: s,
+        slideA: t.slide,
+        slideB: t.slide,
         progress: 0,
         type: 'none',
-        effectA: (s.effect || 'ken_burns_zoom_in') as SceneMotionEffect,
-        effectB: (s.effect || 'ken_burns_zoom_in') as SceneMotionEffect,
+        effectA: (t.slide.effect || 'ken_burns_zoom_in') as SceneMotionEffect,
+        effectB: (t.slide.effect || 'ken_burns_zoom_in') as SceneMotionEffect,
         progA: prog,
         progB: 0,
         timeInA: timeInSlide,
@@ -117,73 +145,77 @@ export function getActiveTransitionState(slides: Slide[], currentTime: number): 
   }
 
   // Clamped at end of project: display final slide
-  const lastIdx = Math.max(0, slides.length - 1);
-  const lastSlide = slides[lastIdx];
-  const lastDur = (lastSlide?.duration || 3.5) / (lastSlide?.speed || 1);
+  const lastIdx = Math.max(0, timings.length - 1);
+  const lastTiming = timings[lastIdx];
   return {
     isTransitioning: false,
     slideIndexA: lastIdx,
     slideIndexB: lastIdx,
-    slideA: lastSlide,
-    slideB: lastSlide,
+    slideA: lastTiming.slide,
+    slideB: lastTiming.slide,
     progress: 0,
     type: 'none',
-    effectA: (lastSlide?.effect || 'ken_burns_zoom_in') as SceneMotionEffect,
-    effectB: (lastSlide?.effect || 'ken_burns_zoom_in') as SceneMotionEffect,
+    effectA: (lastTiming.slide.effect || 'ken_burns_zoom_in') as SceneMotionEffect,
+    effectB: (lastTiming.slide.effect || 'ken_burns_zoom_in') as SceneMotionEffect,
     progA: 1,
     progB: 0,
-    timeInA: lastDur,
+    timeInA: lastTiming.dur,
     timeInB: 0,
   };
 }
 
 /**
  * Generates continuous motion transforms and filters for a slide
+ * Designed to start seamlessly at identity (scale: 1, translate: 0) without any initial jump
  */
 export function getMotionStyle(effect: SceneMotionEffect, progress: number): React.CSSProperties {
   const p = Math.max(0, Math.min(1, progress));
   switch (effect) {
     case 'ken_burns_zoom_in':
-      return { transform: `scale(${1.0 + p * 0.12})`, transformOrigin: 'center center' };
+      return { transform: `scale(${1.0 + p * 0.10})`, transformOrigin: 'center center' };
     case 'ken_burns_zoom_out':
-      return { transform: `scale(${1.12 - p * 0.12})`, transformOrigin: 'center center' };
+      return { transform: `scale(${1.08 - p * 0.08})`, transformOrigin: 'center center' };
     case 'pan_left_right':
-      return { transform: `scale(1.06) translateX(${(p - 0.5) * 6}%)`, transformOrigin: 'center center' };
+      return { transform: `scale(${1.0 + p * 0.05}) translateX(${p * 3.5}%)`, transformOrigin: 'center center' };
     case 'pan_right_left':
-      return { transform: `scale(1.06) translateX(${(0.5 - p) * 6}%)`, transformOrigin: 'center center' };
+      return { transform: `scale(${1.0 + p * 0.05}) translateX(${-p * 3.5}%)`, transformOrigin: 'center center' };
     case 'cinematic_float':
       return {
-        transform: `scale(1.04) translateY(${Math.sin(p * Math.PI * 2) * 2}%) rotate(${Math.sin(p * Math.PI) * 0.6}deg)`,
+        transform: `scale(${1.0 + Math.sin(p * Math.PI) * 0.03}) translateY(${Math.sin(p * Math.PI * 2) * 1.5}%) rotate(${Math.sin(p * Math.PI * 2) * 0.4}deg)`,
         transformOrigin: 'center center',
       };
     case 'pulse':
-      return { transform: `scale(${1.0 + Math.sin(p * Math.PI * 6) * 0.025})`, transformOrigin: 'center center' };
+      return { transform: `scale(${1.0 + Math.sin(p * Math.PI * 4) * 0.02})`, transformOrigin: 'center center' };
     case 'fade_elements':
       return { transform: `scale(${1.0 + p * 0.03})`, transformOrigin: 'center center' };
     case 'parallax_drift':
       return {
-        transform: `scale(1.08) translate(${(p - 0.5) * 4}%, ${(p - 0.5) * 3}%) rotate(${(p - 0.5) * 1}deg)`,
+        transform: `scale(${1.0 + p * 0.05}) translate(${p * 2.5}%, ${p * 1.8}%) rotate(${p * 0.5}deg)`,
         transformOrigin: 'center center',
       };
     case 'shaky_cam': {
-      const rx = (Math.sin(p * 48) * 0.6 + Math.cos(p * 90) * 0.4) * 0.5;
-      const ry = (Math.cos(p * 52) * 0.6 + Math.sin(p * 85) * 0.4) * 0.5;
-      return { transform: `scale(1.05) translate(${rx}%, ${ry}%)`, transformOrigin: 'center center' };
+      const env = Math.min(1, p * 5);
+      const rx = (Math.sin(p * 48) * 0.6 + Math.cos(p * 90) * 0.4) * 0.4 * env;
+      const ry = (Math.cos(p * 52) * 0.6 + Math.sin(p * 85) * 0.4) * 0.4 * env;
+      return { transform: `scale(${1.0 + env * 0.03}) translate(${rx}%, ${ry}%)`, transformOrigin: 'center center' };
     }
     case 'tilt_perspective':
       return {
-        transform: `scale(1.04) perspective(900px) rotateY(${(p - 0.5) * 5}deg) rotateX(${(0.5 - p) * 3}deg)`,
+        transform: `scale(${1.0 + p * 0.04}) perspective(900px) rotateY(${p * 3.5}deg) rotateX(${-p * 2}deg)`,
         transformOrigin: 'center center',
       };
-    case 'rgb_glitch':
+    case 'rgb_glitch': {
+      const isGlitch = Math.sin(p * 32) > 0.88;
       return {
-        transform: `scale(1.03) translateX(${Math.sin(p * 40) > 0.8 ? (Math.random() - 0.5) * 6 : 0}px)`,
-        filter: Math.sin(p * 30) > 0.85 ? 'drop-shadow(3px 0 0 rgba(239, 68, 68, 0.6)) drop-shadow(-3px 0 0 rgba(6, 182, 212, 0.6))' : 'none',
+        transform: isGlitch ? `scale(1.02) translateX(${Math.sin(p * 50) * 4}px)` : 'scale(1.0)',
+        filter: isGlitch ? 'drop-shadow(3px 0 0 rgba(239, 68, 68, 0.6)) drop-shadow(-3px 0 0 rgba(6, 182, 212, 0.6))' : 'none',
       };
+    }
     case 'vignette_pulse':
-      return { transform: `scale(${1.02 + Math.sin(p * Math.PI * 4) * 0.02})`, transformOrigin: 'center center' };
+      return { transform: `scale(${1.0 + Math.sin(p * Math.PI * 4) * 0.02})`, transformOrigin: 'center center' };
+    case 'none':
     default:
-      return {};
+      return { transform: 'scale(1)', transformOrigin: 'center center' };
   }
 }
 
@@ -326,9 +358,6 @@ interface VideoPreviewPlayerProps {
   aspectRatio: AspectRatio;
   currentTime: number;
   subtitles?: SubtitleItem[];
-  voiceoverAvatar?: VoiceoverAvatar | null;
-  isVoiceoverActive?: boolean;
-  onOpenAvatarModal?: () => void;
 }
 
 /**
@@ -341,9 +370,6 @@ export const VideoPreviewPlayer: React.FC<VideoPreviewPlayerProps> = ({
   aspectRatio,
   currentTime,
   subtitles,
-  voiceoverAvatar = null,
-  isVoiceoverActive = false,
-  onOpenAvatarModal,
 }) => {
   const transState = getActiveTransitionState(slides, currentTime);
   const activeSubtitle = subtitles?.find(
@@ -378,9 +404,6 @@ export const VideoPreviewPlayer: React.FC<VideoPreviewPlayerProps> = ({
             onSelectElement={() => {}}
             allSlides={slides}
             slideIndex={transState.slideIndexA}
-            voiceoverAvatar={voiceoverAvatar}
-            isVoiceoverActive={isVoiceoverActive}
-            onOpenAvatarModal={onOpenAvatarModal}
           />
         </div>
 
@@ -400,9 +423,6 @@ export const VideoPreviewPlayer: React.FC<VideoPreviewPlayerProps> = ({
             onSelectElement={() => {}}
             allSlides={slides}
             slideIndex={transState.slideIndexB}
-            voiceoverAvatar={voiceoverAvatar}
-            isVoiceoverActive={isVoiceoverActive}
-            onOpenAvatarModal={onOpenAvatarModal}
           />
         </div>
 
@@ -432,9 +452,6 @@ export const VideoPreviewPlayer: React.FC<VideoPreviewPlayerProps> = ({
           onSelectElement={() => {}}
           allSlides={slides}
           slideIndex={transState.slideIndexA}
-          voiceoverAvatar={voiceoverAvatar}
-          isVoiceoverActive={isVoiceoverActive}
-          onOpenAvatarModal={onOpenAvatarModal}
         />
       </div>
     </div>

@@ -11,9 +11,7 @@ import {
   CustomTextLayer,
   TextStyleItem,
   SubtitleItem,
-  VoiceoverAvatar,
 } from '../types';
-import { VoiceoverAvatarBadge } from './VoiceoverAvatarBadge';
 import { getTemplateLocalization, resolveChecklistBullets } from '../data/templateLocalizations';
 import { computeElementAnimation } from '../utils/elementAnimationEngine';
 import { getActiveV2ClipsForSlide, isV2MediaLayer } from '../utils/v2OverlayHelper';
@@ -69,9 +67,6 @@ interface CanvasSlideProps {
   previewAnimationTime?: number;
   allSlides?: Slide[];
   slideIndex?: number;
-  voiceoverAvatar?: VoiceoverAvatar | null;
-  isVoiceoverActive?: boolean;
-  onOpenAvatarModal?: () => void;
 }
 
 export const CanvasSlide: React.FC<CanvasSlideProps> = ({
@@ -104,9 +99,6 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
   previewAnimationTime,
   allSlides,
   slideIndex = 0,
-  voiceoverAvatar = null,
-  isVoiceoverActive = false,
-  onOpenAvatarModal,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoBgRef = useRef<HTMLVideoElement>(null);
@@ -953,6 +945,14 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
   // Apply slight scale bump when blurred so outer edges don't show gradient/white blur bleed
   const effectiveZoom = bgBlur > 0 ? bgZoom * 1.06 : bgZoom;
 
+  // Exact dimensions when rendering in export or offscreen mode to ensure 100% aspect ratio parity without distortion
+  const exportSlideDimensions: Record<AspectRatio, { width: number; height: number; cssAspect: string }> = {
+    '4:5': { width: 432, height: 540, cssAspect: '4 / 5' },
+    '1:1': { width: 500, height: 500, cssAspect: '1 / 1' },
+    '9:16': { width: 360, height: 640, cssAspect: '9 / 16' },
+    '16:9': { width: 640, height: 360, cssAspect: '16 / 9' },
+  };
+
   return (
     <div
       ref={containerRef}
@@ -960,13 +960,21 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
       data-slide-id={slide.id}
       className={
         isExportMode
-          ? 'relative w-full h-full border-none shadow-none overflow-hidden select-none flex flex-col justify-between'
+          ? 'relative border-none shadow-none overflow-hidden select-none flex flex-col justify-between'
           : `relative w-full rounded-2xl shadow-2xl border border-slate-800 transition-transform duration-150 ${aspectClassMap[aspectRatio] || aspectClassMap['4:5']} mx-auto overflow-hidden select-none flex flex-col justify-between`
       }
       style={{
         backgroundColor: slide.backgroundColor || '#020617',
         transform: isExportMode ? undefined : `scale(${zoomLevel})`,
         transformOrigin: 'top center',
+        ...(isExportMode
+          ? {
+              width: `${exportSlideDimensions[aspectRatio]?.width || 432}px`,
+              height: `${exportSlideDimensions[aspectRatio]?.height || 540}px`,
+              aspectRatio: exportSlideDimensions[aspectRatio]?.cssAspect || '4 / 5',
+              flexShrink: 0,
+            }
+          : {}),
       }}
     >
       {/* CAPA 0: Base sólida inmutable (Color de Fondo) */}
@@ -2656,17 +2664,6 @@ export const CanvasSlide: React.FC<CanvasSlideProps> = ({
               </div>
             )}
           </div>
-        )}
-
-        {/* Dynamic Voiceover Presenter Avatar Overlay */}
-        {voiceoverAvatar && voiceoverAvatar.enabled && (
-          <VoiceoverAvatarBadge
-            avatar={voiceoverAvatar}
-            isSpeaking={Boolean(isVoiceoverActive)}
-            slideIndex={slideIndex}
-            onClick={onOpenAvatarModal}
-            isInteractive={!isExportMode}
-          />
         )}
 
       </div>
