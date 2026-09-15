@@ -12,9 +12,8 @@ import {
   Check,
   RefreshCw,
   FilePlus2,
-  LogOut,
 } from 'lucide-react';
-import { AspectRatio, BrandInfo, VoiceoverAvatar } from '../types';
+import { AspectRatio, BrandInfo } from '../types';
 import { safeAlert } from '../utils/notifications';
 
 interface HeaderProps {
@@ -35,9 +34,6 @@ interface HeaderProps {
   onNewProject?: () => void;
   onOpenExport?: () => void;
   onResetCarousel: () => void;
-  onOpenAvatarModal?: () => void;
-  voiceoverAvatar?: VoiceoverAvatar | null;
-  onLogout?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -57,9 +53,6 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenProjects,
   onNewProject,
   onResetCarousel,
-  onOpenAvatarModal,
-  voiceoverAvatar,
-  onLogout,
 }) => {
   const [installPrompt, setInstallPrompt] = useState<any>(null);
   const [isInstalled, setIsInstalled] = useState<boolean>(false);
@@ -246,30 +239,6 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Quick Tools */}
         <div className="flex items-center gap-2">
 
-          {/* Avatar IA HeyGen Studio Launcher Button */}
-          {onOpenAvatarModal && (
-            <button
-              onClick={onOpenAvatarModal}
-              className={`flex items-center gap-1.5 font-bold text-xs px-2.5 sm:px-3 py-1.5 rounded-xl border transition shadow-sm cursor-pointer ${
-                voiceoverAvatar?.enabled
-                  ? 'bg-rose-950/80 border-rose-500/70 text-rose-200 hover:bg-rose-900/80 shadow-rose-950/50'
-                  : 'bg-slate-900/90 border-slate-700/80 text-slate-300 hover:text-white hover:border-slate-600'
-              }`}
-              title="Configurar Avatar IA estilo HeyGen con lip-sync, visemas y locución"
-            >
-              <div className="relative flex items-center justify-center">
-                <Users className="w-3.5 h-3.5 text-rose-400" />
-                {voiceoverAvatar?.enabled && (
-                  <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                )}
-              </div>
-              <span className="hidden sm:inline">Avatar IA</span>
-              <span className="text-[9px] px-1 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 font-black uppercase tracking-wider hidden md:inline">
-                HeyGen
-              </span>
-            </button>
-          )}
-
           {/* Selector de Idioma y Traductor con IA en el Header */}
           {onChangeLanguage && (
             <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1 text-xs shadow-sm">
@@ -332,17 +301,6 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <RotateCcw className="w-3.5 h-3.5" />
           </button>
-
-          {/* Logout */}
-          {onLogout && (
-            <button
-              onClick={onLogout}
-              className="p-2 rounded-xl bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-400 hover:text-rose-400 transition"
-              title="Cerrar sesión"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-            </button>
-          )}
 
         </div>
 

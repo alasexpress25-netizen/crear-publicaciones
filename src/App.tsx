@@ -25,7 +25,9 @@ import {
   DEFAULT_MARKETING_DOCUMENTS
 } from './data/marketingPlaybooks';
 import { applyLayoutTemplateToSlide, getTemplateLocalization } from './data/templateLocalizations';
-import { AgencyClient, getFallbackAgencyClients } from './services/supabase';
+import { AgencyClient, getFallbackAgencyClients, getCurrentSession, onAuthStateChange, signOut } from './services/supabase';
+import type { Session } from '@supabase/supabase-js';
+import { LoginScreen } from './components/LoginScreen';
 import { findLogoForClient } from './services/clientLogosStorage';
 import {
   getClientLanguage,
@@ -72,6 +74,21 @@ const SESSION_ACTIVE_KEY = 'lavisualmk_session_active_v1';
 export default function App() {
   // Determine if this is a fresh application open (session start) vs page refresh
   const isExistingSession = typeof window !== 'undefined' && Boolean(sessionStorage.getItem(SESSION_ACTIVE_KEY));
+
+  // Supabase Auth State — required so RLS policies on socialbot_clients (auth.uid()-based) can match rows
+  const [authSession, setAuthSession] = useState<Session | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+
+  useEffect(() => {
+    let unsubscribe = () => {};
+    (async () => {
+      const session = await getCurrentSession();
+      setAuthSession(session);
+      setAuthChecked(true);
+      unsubscribe = onAuthStateChange((s) => setAuthSession(s));
+    })();
+    return () => unsubscribe();
+  }, []);
 
   // Agency Client State (Supabase connected)
   const [selectedClient, setSelectedClient] = useState<AgencyClient | null>(() => {
@@ -1787,6 +1804,18 @@ export default function App() {
       return copy;
     });
   };
+
+  if (!authChecked) {
+    return (
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#0b0f1a] text-white/60 text-sm">
+        Cargando...
+      </div>
+    );
+  }
+
+  if (!authSession) {
+    return <LoginScreen onSuccess={setAuthSession} />;
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-rose-600 selection:text-white">
